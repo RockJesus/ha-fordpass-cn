@@ -1,4 +1,4 @@
-refresh_vehicle:
+﻿refresh_vehicle:
   name: 刷新车辆数据
   description: 立即从福特派服务器刷新所有车辆的状态数据
   fields: {}
