@@ -5,6 +5,7 @@ DOMAIN = "fordpass_cn"
 # 配置项
 CONF_VEHICLE_TYPE = "vehicle_type"
 CONF_REFRESH_TOKEN = "refresh_token"
+CONF_ACCESS_TOKEN = "access_token"
 CONF_SCAN_INTERVAL = "scan_interval"
 
 # 默认值
