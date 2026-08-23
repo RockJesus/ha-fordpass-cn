@@ -1,0 +1,78 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "福特派 FordPass CN 配置",
+        "description": "请选择车辆类型并输入 refresh_token\n\n{token_help}",
+        "data": {
+          "vehicle_type": "车辆类型",
+          "refresh_token": "Refresh Token"
+        }
+      }
+    },
+    "error": {
+      "missing_refresh_token": "请输入 refresh_token",
+      "invalid_refresh_token": "refresh_token 无效或已过期，请重新获取",
+      "already_configured": "该账户已配置",
+      "cannot_connect": "无法连接到福特派服务器"
+    },
+    "abort": {
+      "already_configured": "该账户已配置"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "福特派设置",
+        "data": {
+          "scan_interval": "数据刷新间隔（分钟）"
+        }
+      }
+    }
+  },
+  "services": {
+    "refresh_vehicle": {
+      "name": "刷新车辆数据",
+      "description": "立即从福特派服务器刷新车辆状态数据"
+    },
+    "clear_tokens": {
+      "name": "清除令牌",
+      "description": "清除所有认证令牌，之后需要重新配置集成"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "fuel": { "name": "燃油量" },
+      "odometer": { "name": "总里程" },
+      "range": { "name": "剩余续航" },
+      "oil_life": { "name": "机油寿命" },
+      "battery_voltage": { "name": "电瓶电压" },
+      "battery_health": { "name": "电瓶健康状态" },
+      "tire_pressure_front_left": { "name": "左前胎压" },
+      "tire_pressure_front_right": { "name": "右前胎压" },
+      "tire_pressure_rear_left": { "name": "左后胎压" },
+      "tire_pressure_rear_right": { "name": "右后胎压" },
+      "window_front_left": { "name": "左前车窗位置" },
+      "window_front_right": { "name": "右前车窗位置" },
+      "alarm": { "name": "报警状态" }
+    },
+    "binary_sensor": {
+      "ignition_status": { "name": "发动机状态" },
+      "door_front_left": { "name": "左前车门" },
+      "door_front_right": { "name": "右前车门" },
+      "door_rear_left": { "name": "左后车门" },
+      "door_rear_right": { "name": "右后车门" },
+      "hood": { "name": "发动机舱盖" },
+      "trunk": { "name": "后备箱" }
+    },
+    "switch": {
+      "remote_start": { "name": "远程启动" }
+    },
+    "lock": {
+      "lock": { "name": "中控锁" }
+    },
+    "device_tracker": {
+      "location": { "name": "车辆位置" }
+    }
+  }
+}
