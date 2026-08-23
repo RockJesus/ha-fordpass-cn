@@ -45,38 +45,27 @@ Homeassistant FordPass CN - 福特派中国区 Home Assistant 集成
 1. 你的车辆已在福特派 App 中绑定并激活
 2. 车辆的 TCU（远程通信模块）已启用
 
-### 获取 refresh_token
+### 获取认证（两种方式）
 
-由于福特中国已禁用用户名密码直接登录 API，需要通过抓包获取 `refresh_token`：
+由于福特中国已升级为 Azure AD B2C OAuth 授权码认证，旧的用户名密码登录和直接抓包 refresh_token 方式已失效。推荐使用**方式一（浏览器登录）**。
 
-#### 方法 A：手机抓包（推荐）
+#### 方式一：浏览器 OAuth 登录（推荐）
 
-1. 在手机上安装抓包工具：
-   - Android: [HttpCanary](https://github.com/MegatronKing/HttpCanary) / [Charles](https://www.charlesproxy.com/)
-   - iOS: [Stream](https://apps.apple.com/cn/app/stream/id1312141691) / Charles
+集成会自动生成登录 URL，你只需在浏览器中完成登录：
 
-2. 配置抓包工具并安装 SSL 证书（按工具说明操作）
+1. 添加集成时选择「浏览器登录（推荐，OAuth 授权码）」
+2. 集成会生成一个登录 URL，复制它
+3. 在浏览器（建议无痕模式）中打开该 URL
+4. 使用你的福特派账号登录
+5. 登录后页面会显示错误/转圈（正常现象），此时地址栏会变成 `fordapp://userauthorized/?code=...` 格式
+6. 复制完整的地址栏 URL，回到 HA 粘贴
+7. 集成交自动完成 token 交换并发现车辆
 
-3. 启动抓包，然后打开福特派 App 并登录
+> **如果浏览器无法打开 fordapp:// 链接**：按 F12 打开开发者工具 → Network（网络）标签 → 找到最后一个请求 → 复制其 Location 响应头中的完整 URL。
 
-4. 在抓包结果中搜索以下请求：
-   ```
-   POST https://cn.api.mps.ford.com.cn/api/token/v2/cat-with-refresh-token
-   ```
-   或
-   ```
-   POST https://cn.api.mps.ford.com.cn/api/token/v2/cat-with-ci-access-token
-   ```
+#### 方式二：直接输入 refresh_token（备选）
 
-5. 查看请求的 **Request Body**，找到 `refresh_token` 字段，复制其值（一长串字符）
-
-#### 方法 B：电脑浏览器 + 开发者工具
-
-1. 电脑浏览器打开福特派官网并登录
-2. 按 `F12` 打开开发者工具 → **Network（网络）** 标签
-3. 刷新页面，在请求列表中筛选 `token`
-4. 找到 `cat-with-refresh-token` 或 `cat-with-ci-access-token` 请求
-5. 在 **Payload** 或 **Request** 标签中找到 `refresh_token`，复制其值
+如果你已经通过其他方式获取了有效的 refresh_token，可以直接粘贴。但注意福特中国的 refresh_token 有效期有限，且旧的 `cat-with-refresh-token` 端点可能已不再返回新的 refresh_token，因此优先推荐方式一。
 
 ### 添加集成
 
