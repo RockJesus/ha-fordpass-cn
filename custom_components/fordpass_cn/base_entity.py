@@ -1,4 +1,4 @@
-"""基础实体类."""
+﻿"""基础实体类."""
 
 from __future__ import annotations
 
@@ -10,16 +10,9 @@ from .coordinator import FordPassCoordinator
 
 
 class FordPassBaseEntity(CoordinatorEntity):
-    """FordPass 基础实体."""
-
     _attr_has_entity_name = True
 
-    def __init__(
-        self,
-        coordinator: FordPassCoordinator,
-        key: str,
-        name: str,
-    ) -> None:
+    def __init__(self, coordinator, key, name):
         super().__init__(coordinator)
         self._key = key
         self._attr_name = name
@@ -27,24 +20,20 @@ class FordPassBaseEntity(CoordinatorEntity):
         self._vin = coordinator.vin
 
     @property
-    def device_info(self) -> DeviceInfo:
-        """返回设备信息."""
+    def device_info(self):
         return DeviceInfo(
             identifiers={(DOMAIN, self._vin)},
             name=f"{self.coordinator.nickname or self.coordinator.model} ({self._vin[-6:]})",
-            manufacturer="Ford" if self.coordinator.vehicle_info.get("brandCode") != "L" else "Lincoln",
+            manufacturer="Ford",
             model=f"{self.coordinator.year} {self.coordinator.model}",
-            sw_version=None,
             hw_version=self._vin,
         )
 
     @property
-    def available(self) -> bool:
-        """实体是否可用."""
+    def available(self):
         return self.coordinator.data is not None
 
-    def _get_data(self, *keys: str, default=None):
-        """从协调器数据中安全获取嵌套值."""
+    def _get_data(self, *keys, default=None):
         data = self.coordinator.data
         if not data:
             return default

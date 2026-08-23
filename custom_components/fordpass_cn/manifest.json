@@ -1,6 +1,6 @@
-﻿{
+{
   "domain": "fordpass_cn",
-  "name": "绂忕壒娲?FordPass CN",
+  "name": "福特派 FordPass CN",
   "version": "1.2.0",
   "config_flow": true,
   "documentation": "https://github.com/fordpass-cn/fordpass_cn",
@@ -8,7 +8,10 @@
   "requirements": [],
   "dependencies": [],
   "iot_class": "cloud_polling",
-  "codeowners": ["@fordpass-cn"],
-  "loggers": ["custom_components.fordpass_cn"]
+  "codeowners": [
+    "@fordpass-cn"
+  ],
+  "loggers": [
+    "custom_components.fordpass_cn"
+  ]
 }
-
