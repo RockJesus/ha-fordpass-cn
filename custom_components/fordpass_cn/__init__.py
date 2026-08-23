@@ -6,16 +6,15 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    CONF_ACCESS_TOKEN,
     CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
     CONF_VEHICLE_TYPE,
-    COORDINATOR,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     FORD_API,
@@ -31,7 +30,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """设置集成（YAML 方式，当前不支持）."""
     hass.data.setdefault(DOMAIN, {})
     return True
 
@@ -41,7 +39,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     config = entry.data
 
     vehicle_type = config.get(CONF_VEHICLE_TYPE, "ford")
-    refresh_token = config.get(CONF_REFRESH_TOKEN, "")
+    refresh_token = config.get(CONF_REFRESH_TOKEN)
+    access_token = config.get(CONF_ACCESS_TOKEN)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
 
     # 创建 API 客户端
@@ -50,24 +49,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session=session,
         vehicle_type=vehicle_type,
         refresh_token=refresh_token,
+        access_token=access_token,
     )
 
-    # 验证 token
-    if not await api.refresh_token():
-        _LOGGER.error("FordPass CN: refresh_token 验证失败")
-        return False
-
-    # 获取车辆列表
+    # 验证 token（尝试获取车辆列表）
     vehicles = await api.get_vehicles()
     if not vehicles:
-        _LOGGER.error("FordPass CN: 未找到已绑定的车辆")
-        return False
+        _LOGGER.error(
+            "FordPass CN: 无法获取车辆列表，token 可能无效或已过期。"
+            "认证模式: %s", api.auth_mode
+        )
+        # 即使获取失败也继续设置，让实体显示为不可用
+        vehicles = []
 
     # 为每辆车创建协调器
     coordinators: list[FordPassCoordinator] = []
     for vehicle in vehicles:
         vin = vehicle.get("vin", "")
-        # 只添加已授权且 TCU 已启用的车辆
         if vehicle.get("vehicleAuthorizationIndicator") != 1:
             _LOGGER.warning("车辆 %s 未授权，跳过", vin)
             continue
@@ -81,14 +79,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             vehicle_info=vehicle,
             update_interval=scan_interval,
         )
-        # 首次刷新数据
         await coordinator.async_config_entry_first_refresh()
         coordinators.append(coordinator)
-        _LOGGER.info("已添加车辆: %s (%s %s)", vin, vehicle.get("modelYear"), vehicle.get("modelName"))
-
-    if not coordinators:
-        _LOGGER.error("FordPass CN: 没有可用的已授权车辆")
-        return False
+        _LOGGER.info(
+            "已添加车辆: %s (%s %s)",
+            vin, vehicle.get("modelYear"), vehicle.get("modelName")
+        )
 
     # 存储数据
     hass.data[DOMAIN][entry.entry_id] = {
@@ -121,7 +117,6 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """注册集成服务."""
 
     async def _refresh_vehicle(call: Any) -> None:
-        """手动刷新车辆数据."""
         entry_data = hass.data[DOMAIN].get(entry.entry_id)
         if not entry_data:
             return
@@ -129,7 +124,6 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             await coordinator.async_request_refresh()
 
     async def _clear_tokens(call: Any) -> None:
-        """清除 token（需要重新配置）."""
         entry_data = hass.data[DOMAIN].get(entry.entry_id)
         if not entry_data:
             return
@@ -152,6 +146,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """重新加载集成."""
     await async_unload_entry(hass, entry)
     await async_setup_entry(hass, entry)

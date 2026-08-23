@@ -1,5 +1,3 @@
-# ha-fordpass-cn
-Homeassistant FordPass CN - 福特派中国区 Home Assistant 集成
 # FordPass CN - 福特派中国区 Home Assistant 集成
 
 适用于中国大陆福特派（FordPass）/ 林肯之道（Lincoln Way）的 Home Assistant 自定义集成。
