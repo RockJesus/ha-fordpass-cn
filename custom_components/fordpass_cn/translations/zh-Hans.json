@@ -2,10 +2,28 @@
   "config": {
     "step": {
       "user": {
-        "title": "福特派 FordPass CN 配置",
-        "description": "请选择车辆类型并输入 refresh_token\n\n{token_help}",
+        "title": "福特派 FordPass CN - 选择认证方式",
+        "description": "请选择车辆类型和认证方式",
         "data": {
           "vehicle_type": "车辆类型",
+          "auth_type": "认证方式"
+        }
+      },
+      "oauth_url": {
+        "title": "福特派 FordPass CN - 浏览器登录",
+        "description": "登录 URL：\n{auth_url}\n\n{instructions}"
+      },
+      "oauth_code": {
+        "title": "福特派 FordPass CN - 粘贴授权码",
+        "description": "{hint}",
+        "data": {
+          "redirect_url": "回调 URL 或授权码 code"
+        }
+      },
+      "token": {
+        "title": "福特派 FordPass CN - 输入 Refresh Token",
+        "description": "{hint}",
+        "data": {
           "refresh_token": "Refresh Token"
         }
       }
@@ -13,6 +31,8 @@
     "error": {
       "missing_refresh_token": "请输入 refresh_token",
       "invalid_refresh_token": "refresh_token 无效或已过期，请重新获取",
+      "invalid_code": "无法从 URL 中提取授权码 code，请确认粘贴了完整的回调 URL",
+      "token_exchange_failed": "Token 交换失败，请重试或检查网络连接",
       "already_configured": "该账户已配置",
       "cannot_connect": "无法连接到福特派服务器"
     },

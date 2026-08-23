@@ -1,7 +1,7 @@
 {
   "domain": "fordpass_cn",
   "name": "福特派 FordPass CN",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "config_flow": true,
   "documentation": "https://github.com/fordpass-cn/fordpass_cn",
   "issue_tracker": "https://github.com/fordpass-cn/fordpass_cn/issues",
