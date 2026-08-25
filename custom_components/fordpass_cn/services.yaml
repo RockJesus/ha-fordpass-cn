@@ -1,9 +1,0 @@
-﻿refresh_vehicle:
-  name: 刷新车辆数据
-  description: 立即从福特派服务器刷新所有车辆的状态数据
-  fields: {}
-
-clear_tokens:
-  name: 清除令牌
-  description: 清除所有认证令牌，之后需要重新配置集成
-  fields: {}
