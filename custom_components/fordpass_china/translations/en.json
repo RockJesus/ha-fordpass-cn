@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "FordPass China",
+        "description": "Choose an authentication method. Since 2026 Ford China uses DLT tokens; the refresh_token in transit is white-box AES ciphertext, so a plaintext refresh_token can't be captured. Recommended: grab the auth-token (DLT access token) from the app's request headers.",
+        "data": {
+          "auth_type": "Authentication"
+        }
+      },
+      "dlt": {
+        "title": "Authenticate with DLT access token (2026)",
+        "description": "Open the FordPass app and trigger a vehicle status refresh, then capture the request to cnapi.cv.ford.com.cn and copy the value of the auth-token request header. See README.",
+        "data": {
+          "vehicle_type": "App",
+          "dlt_token": "DLT access token (auth-token)"
+        }
+      },
+      "token": {
+        "title": "Authenticate with refresh_token (legacy)",
+        "description": "Paste the refresh_token captured from the FordPass app. Note: in the 2026 app this value is encrypted; if you cannot capture it, use the DLT access token method instead.",
+        "data": {
+          "vehicle_type": "App",
+          "refresh_token": "refresh_token"
+        }
+      },
+      "account": {
+        "title": "Authenticate with account/password",
+        "description": "Note: Ford China migrated the SSO; this method usually does not work. Use the DLT access token instead.",
+        "data": {
+          "vehicle_type": "App",
+          "username": "Account (phone)",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cant_auth": "Could not read user info with this token: invalid or expired, please capture a new one",
+      "cant_login": "Account login failed: auth rejected (use the DLT access token instead)",
+      "account_exist": "Account already configured"
+    },
+    "abort": {
+      "already_configured": "Account already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FordPass China options",
+        "description": "Set the vehicle status polling interval (minutes). Note: too-frequent polling may trigger Ford risk control.",
+        "data": {
+          "scan_interval": "Polling interval (minutes)"
+        }
+      }
+    }
+  }
+}
