@@ -8,13 +8,13 @@ DOMAIN = "fordpass"
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.LOCK]
 
 # Version
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # API Configuration
-DEFAULT_BASE_URL = "https://api-connect.ford.com.cn/lbsp2c-app"
+DEFAULT_BASE_URL = "https://api-connect.ford.com.cn"
 
 # API Endpoints
-API_LOGIN = "/v1/user/login"
+API_LOGIN = "/v1/device/login"
 API_LOGOUT = "/v1/user/logout"
 API_USER_INFO = "/v1/user/info"
 API_VEHICLE_LIST = "/v1/vehicle/list"

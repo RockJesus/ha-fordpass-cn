@@ -125,15 +125,17 @@ class FordPassClient:
     async def login(self) -> None:
         """Login with username and password."""
         payload = {
-            "username": self.username,
+            "account": self.username,
             "password": self.password,
+            "deviceId": "homeassistant",
+            "clientType": "android",
         }
 
         _LOGGER.debug("Logging in...")
         data = await self._request("POST", API_LOGIN, payload=payload)
 
         result = data.get("data", data)
-        self._access_token = result.get("accessToken") or result.get("access_token")
+        self._access_token = result.get("accessToken") or result.get("access_token") or result.get("token")
         self._refresh_token = result.get("refreshToken") or result.get("refresh_token")
 
         if not self._access_token:
