@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "福特派",
+        "description": "请输入福特派账号密码",
+        "data": {
+          "username": "用户名/手机号",
+          "password": "密码"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "用户名或密码错误",
+      "unknown": "未知错误，请稍后重试"
+    },
+    "abort": {
+      "already_configured": "该账号已配置"
+    }
+  }
+}
