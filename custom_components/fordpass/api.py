@@ -14,7 +14,15 @@ from .const import (
     API_USER_INFO,
     API_VEHICLE_LIST,
     API_VEHICLE_STATUS,
+    API_VEHICLE_COMMAND,
+    API_VEHICLE_SEND,
     DEFAULT_BASE_URL,
+    COMMAND_LOCK,
+    COMMAND_UNLOCK,
+    COMMAND_START,
+    COMMAND_STOP,
+    COMMAND_HORN,
+    COMMAND_LIGHTS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -180,11 +188,48 @@ class FordPassClient:
         """Get vehicle status."""
         data = await self._request(
             "GET",
-            API_VEHICLE_STATUS,
+            f"{API_VEHICLE_STATUS}/{vehicle_id}",
             token=self._access_token,
-            params={"vehicleId": vehicle_id},
         )
         return data.get("data", data)
+
+    async def send_vehicle_command(self, vehicle_id: str, command: str) -> dict[str, Any]:
+        """Send command to vehicle."""
+        payload = {
+            "vehicleId": vehicle_id,
+            "command": command,
+        }
+        data = await self._request(
+            "POST",
+            API_VEHICLE_COMMAND,
+            token=self._access_token,
+            payload=payload,
+        )
+        return data.get("data", data)
+
+    async def lock_vehicle(self, vehicle_id: str) -> dict[str, Any]:
+        """Lock vehicle."""
+        return await self.send_vehicle_command(vehicle_id, COMMAND_LOCK)
+
+    async def unlock_vehicle(self, vehicle_id: str) -> dict[str, Any]:
+        """Unlock vehicle."""
+        return await self.send_vehicle_command(vehicle_id, COMMAND_UNLOCK)
+
+    async def start_vehicle(self, vehicle_id: str) -> dict[str, Any]:
+        """Start vehicle."""
+        return await self.send_vehicle_command(vehicle_id, COMMAND_START)
+
+    async def stop_vehicle(self, vehicle_id: str) -> dict[str, Any]:
+        """Stop vehicle."""
+        return await self.send_vehicle_command(vehicle_id, COMMAND_STOP)
+
+    async def honk_vehicle(self, vehicle_id: str) -> dict[str, Any]:
+        """Honk horn."""
+        return await self.send_vehicle_command(vehicle_id, COMMAND_HORN)
+
+    async def flash_lights(self, vehicle_id: str) -> dict[str, Any]:
+        """Flash lights."""
+        return await self.send_vehicle_command(vehicle_id, COMMAND_LIGHTS)
 
     async def async_close(self) -> None:
         """Close the session."""
