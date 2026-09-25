@@ -5,7 +5,7 @@
   "config_flow": true,
   "documentation": "https://www.ford.com.cn/fordpass/get-app/",
   "iot_class": "cloud_polling",
-  "requirements": ["unicorn==2.1.4"],
-  "version": "2.1.0",
+  "requirements": ["unicorn==2.1.4", "pyelftools"],
+  "version": "2.1.9",
   "translations": ["translations"]
 }

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "福特派互联登录",
-        "description": "输入注册福特派的手机号，我们会发送短信验证码。",
+        "description": "输入注册福特派的手机号，我们会发送短信验证码。如提示失败，请查看 Home Assistant 日志（设置 → 系统 → 日志）中的 fordpass_cn 记录。",
         "data": {
           "phone": "手机号"
         }
@@ -17,9 +17,11 @@
       }
     },
     "error": {
-      "passcode_failed": "验证码发送失败，请检查手机号或稍后重试",
-      "login_failed": "登录失败，请检查验证码是否正确",
-      "unknown": "发生未知错误，请稍后重试"
+      "bad_phone": "请输入 11 位有效手机号",
+      "passcode_failed": "验证码发送失败，请检查手机号是否已注册福特派，或稍后重试（详见日志）",
+      "missing_deps": "缺少依赖（unicorn 或 pyelftools），请确认集成安装时已自动安装成功，或在 HA 环境执行 pip install unicorn pyelftools 后重启",
+      "login_failed": "登录失败，请检查验证码是否正确（详见日志）",
+      "unknown": "发生未知错误，请查看 Home Assistant 日志中的 fordpass_cn 记录"
     },
     "abort": {
       "already_configured": "该手机号已配置"

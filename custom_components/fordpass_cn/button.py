@@ -28,8 +28,9 @@ class FordPassButton(ButtonEntity):
         self.coordinator = coordinator
         self._command = command
         self._attr_unique_id = f"{coordinator.vin}-{key}"
-        self._attr_name = f"{coordinator.vin[-6:]} {label}"
+        self._attr_name = label
         self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
 
     async def async_press(self) -> None:

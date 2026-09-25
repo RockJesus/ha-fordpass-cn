@@ -133,13 +133,18 @@ class FordPassCrypto:
         p = 16 - len(data) % 16
         return data + bytes([p]) * p
 
-    def encrypt_field(self, text: str) -> tuple[str, str]:
+    def encrypt_field(self, text: str, iv: bytes | None = None) -> tuple[str, str]:
         """Encrypt a string the way the app does.
+
+        The official app reuses one IV (xjw) for every encrypted field of the
+        same login session (verified against live captures #79/#83), so a
+        caller may pass the session IV explicitly; otherwise a fresh random
+        IV is generated.
 
         Returns (base64_ciphertext, xjw) where xjw is the hex-encoded IV.
         """
         with self._lock:
-            iv = self._new_iv()
+            iv = iv if iv is not None else self._new_iv()
             data = self._pkcs7(text.encode("utf-8"))
             prev, out = iv, b""
             for i in range(0, len(data), 16):
