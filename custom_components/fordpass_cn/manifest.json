@@ -1,0 +1,11 @@
+{
+  "domain": "fordpass_cn",
+  "name": "FordPass China 福特派互联",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://www.ford.com.cn/fordpass/get-app/",
+  "iot_class": "cloud_polling",
+  "requirements": ["unicorn==2.1.4"],
+  "version": "2.1.0",
+  "translations": ["translations"]
+}

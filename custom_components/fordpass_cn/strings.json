@@ -1,0 +1,39 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "福特派互联登录",
+        "description": "输入注册福特派的手机号，我们会发送短信验证码。",
+        "data": {
+          "phone": "手机号"
+        }
+      },
+      "code": {
+        "title": "输入验证码",
+        "description": "验证码已发送至 {phone}，请输入 6 位短信验证码。",
+        "data": {
+          "passcode": "短信验证码"
+        }
+      }
+    },
+    "error": {
+      "passcode_failed": "验证码发送失败，请检查手机号或稍后重试",
+      "login_failed": "登录失败，请检查验证码是否正确",
+      "unknown": "发生未知错误，请稍后重试"
+    },
+    "abort": {
+      "already_configured": "该手机号已配置"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "福特派互联选项",
+        "data": {
+          "scan_interval": "状态刷新间隔（秒）",
+          "track_location": "启用车辆定位追踪"
+        }
+      }
+    }
+  }
+}
