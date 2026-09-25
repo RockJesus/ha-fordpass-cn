@@ -77,13 +77,18 @@ class FordPassApi:
         self._session = session
         self._log = logger
         self._access_token: str | None = None
+        self._refresh_token: str | None = None
+        self._retrying = False
+        self.on_token_refresh = None
 
     @property
     def crypto(self) -> FordPassCrypto:
         return FordPassCrypto.get()
 
-    def set_token(self, token: str | None) -> None:
+    def set_token(self, token: str | None, refresh_token: str | None = None) -> None:
         self._access_token = token
+        if refresh_token is not None:
+            self._refresh_token = refresh_token
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
@@ -130,6 +135,20 @@ class FordPassApi:
         ) as resp:
             text = await resp.text()
             self._log.debug("FordPass %s -> %s %s", path, resp.status, text[:2000])
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    self._log.info("FordPass access token expired, refreshing once")
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    return await self._request(method, path, body, query, base, raw)
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -149,18 +168,39 @@ class FordPassApi:
         return data
 
     # ------------------------------------------------------------------ auth
-    async def generate_passcode(self, phone: str) -> None:
-        enc, xjw = self.crypto.encrypt_field(phone)
+    async def generate_passcode(
+        self, phone: str, iv_hex: str | None = None
+    ) -> str:
+        """Send the SMS passcode; returns the session xjw (hex IV).
+
+        The official app reuses the same IV across the whole login session
+        (verified live: captures #79 and #83 carry the identical xjw), so the
+        caller should keep the returned xjw and pass it to passcode_login.
+        """
+        iv = bytes.fromhex(iv_hex) if iv_hex else None
+        enc, xjw = self.crypto.encrypt_field(phone, iv)
         await self._request(
             "POST",
             PATH_GENERATE_PASSCODE,
             {"encryptedPhoneNumber": enc, "touchPoint": TOUCH_POINT, "xjw": xjw},
         )
+        return xjw
 
-    async def passcode_login(self, phone: str, passcode: str) -> dict[str, str]:
-        """Exchange SMS passcode for access/refresh JWTs (verified live)."""
-        enc_phone, xjw = self.crypto.encrypt_field(phone)
-        enc_code, _ = self.crypto.encrypt_field(passcode)
+    async def passcode_login(
+        self,
+        phone: str,
+        passcode: str,
+        iv_hex: str | None = None,
+    ) -> dict[str, str]:
+        """Exchange SMS passcode for access/refresh JWTs (verified live).
+
+        Phone and passcode are encrypted with the SAME session IV (one xjw
+        field per request, as the official app does); otherwise the server
+        fails with ``whitebox decrypt error``.
+        """
+        iv = bytes.fromhex(iv_hex) if iv_hex else None
+        enc_phone, xjw = self.crypto.encrypt_field(phone, iv)
+        enc_code, _ = self.crypto.encrypt_field(passcode, iv)
         data = await self._request(
             "POST",
             PATH_PASSCODE_LOGIN,
@@ -187,6 +227,8 @@ class FordPassApi:
         }
 
     async def refresh_token(self, refresh_token: str) -> dict[str, str]:
+        # The server DTO (RefreshDLTTokenRequest) rejects any extra field
+        # (e.g. touchPoint -> JSON parse error); only these three are allowed.
         enc, xjw = self.crypto.encrypt_field(refresh_token)
         data = await self._request(
             "POST",

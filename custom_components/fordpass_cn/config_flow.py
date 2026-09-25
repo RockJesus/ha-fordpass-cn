@@ -14,6 +14,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import FordPassApi, FordPassApiError
 from .const import (
@@ -35,14 +36,6 @@ STEP_CODE_SCHEMA = vol.Schema(
         vol.Required("passcode"): str,
     }
 )
-STEP_OPTIONS_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL_SECONDS): vol.All(
-            vol.Coerce(int), vol.Range(min=60, max=3600)
-        ),
-        vol.Optional("track_location", default=False): bool,
-    }
-)
 
 
 class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -50,44 +43,62 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._phone: str | None = None
+        self._xjw: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             self._phone = user_input["phone"].strip()
-            await self.async_set_unique_id(self._phone)
-            self._abort_if_unique_id_configured()
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
-            api = FordPassApi(session, _LOGGER)
-            try:
-                await api.generate_passcode(self._phone)
-            except FordPassApiError as err:
-                errors["base"] = "passcode_failed"
-                _LOGGER.warning("send passcode failed: %s", err)
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("unexpected error sending passcode")
-                errors["base"] = "unknown"
-            if not errors:
-                return self.async_show_form(
-                    step_id="code",
-                    data_schema=STEP_CODE_SCHEMA,
-                    description_placeholders={"phone": self._phone},
-                )
+            if not self._phone.isdigit() or len(self._phone) != 11:
+                errors["base"] = "bad_phone"
+            else:
+                await self.async_set_unique_id(self._phone)
+                self._abort_if_unique_id_configured()
+                session = async_get_clientsession(self.hass)
+                api = FordPassApi(session, _LOGGER)
+                try:
+                    self._xjw = await api.generate_passcode(self._phone)
+                except ImportError as err:
+                    errors["base"] = "missing_deps"
+                    _LOGGER.exception("dependency import failed: %s", err)
+                except FordPassApiError as err:
+                    errors["base"] = "passcode_failed"
+                    _LOGGER.warning(
+                        "send passcode failed: code=%s msg=%s", err.code, err.message
+                    )
+                except Exception as err:  # noqa: BLE001
+                    errors["base"] = "unknown"
+                    _LOGGER.exception("unexpected error sending passcode: %s", err)
+                else:
+                    return self.async_show_form(
+                        step_id="code",
+                        data_schema=STEP_CODE_SCHEMA,
+                        description_placeholders={"phone": self._phone},
+                    )
         return self.async_show_form(step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors)
 
     async def async_step_code(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            session = async_get_clientsession(self.hass)
             api = FordPassApi(session, _LOGGER)
             try:
-                tokens = await api.passcode_login(self._phone or "", user_input["passcode"].strip())
+                tokens = await api.passcode_login(
+                    self._phone or "",
+                    user_input["passcode"].strip(),
+                    self._xjw,
+                )
+            except ImportError as err:
+                errors["base"] = "missing_deps"
+                _LOGGER.exception("dependency import failed: %s", err)
             except FordPassApiError as err:
                 errors["base"] = "login_failed"
-                _LOGGER.warning("login failed: %s", err)
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("unexpected error during login")
+                _LOGGER.warning(
+                    "login failed: code=%s msg=%s", err.code, err.message
+                )
+            except Exception as err:  # noqa: BLE001
                 errors["base"] = "unknown"
+                _LOGGER.exception("unexpected error during login: %s", err)
             else:
                 return self.async_create_entry(
                     title=self._phone or DOMAIN,
@@ -96,12 +107,22 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "access_token": tokens["access_token"],
                         "refresh_token": tokens["refresh_token"],
                     },
-                    options={CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_SECONDS, "track_location": False},
+                    options={
+                        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_SECONDS,
+                        "track_location": False,
+                    },
                 )
-        return self.async_show_form(step_id="code", data_schema=STEP_CODE_SCHEMA, errors=errors)
+        return self.async_show_form(
+            step_id="code",
+            data_schema=STEP_CODE_SCHEMA,
+            errors=errors,
+            description_placeholders={"phone": self._phone or ""},
+        )
 
     @staticmethod
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
         return FordPassOptionsFlow(config_entry)
 
 
@@ -119,9 +140,13 @@ class FordPassOptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Required(
                         CONF_SCAN_INTERVAL,
-                        default=data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS),
+                        default=data.get(
+                            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
+                        ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
-                    vol.Optional("track_location", default=data.get("track_location", False)): bool,
+                    vol.Optional(
+                        "track_location", default=data.get("track_location", False)
+                    ): bool,
                 }
             ),
         )
