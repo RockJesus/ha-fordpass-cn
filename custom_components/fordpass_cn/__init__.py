@@ -85,8 +85,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
+    track_location = bool(entry.options.get("track_location", False))
     coordinator = FordPassCoordinator(
-        hass, api, vin, int(interval), vehicle_label, license_plate
+        hass, api, vin, int(interval), vehicle_label, license_plate, track_location
     )
     await coordinator.async_config_entry_first_refresh()
 

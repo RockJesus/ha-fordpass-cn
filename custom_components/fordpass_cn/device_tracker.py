@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.device_tracker import TrackerEntity
+try:
+    # Recommended path on modern HA; also valid on older versions
+    from homeassistant.components.device_tracker import TrackerEntity
+except ImportError:  # pragma: no cover - very old HA
+    from homeassistant.components.device_tracker.config_entry import TrackerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -11,13 +15,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import FordPassCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     if not entry.options.get("track_location", False):
-        _LOGGER = logging.getLogger(__name__)
         _LOGGER.debug("device tracker disabled (track_location off)")
         return
     async_add_entities([FordPassDeviceTracker(coordinator)])
@@ -27,10 +32,15 @@ class FordPassDeviceTracker(TrackerEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-tracker"
-        self._attr_name = "位置"
+        self._attr_name = "车辆定位"
         self._attr_has_entity_name = False
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
+
+    @property
+    def source_type(self) -> str:
+        """Return the tracker source type (GPS)."""
+        return "gps"
 
     @property
     def _location(self) -> dict | None:
@@ -41,14 +51,24 @@ class FordPassDeviceTracker(TrackerEntity):
     @property
     def latitude(self) -> float | None:
         if self._location and self._location.get("lat"):
-            return float(self._location["lat"])
+            try:
+                return float(self._location["lat"])
+            except (TypeError, ValueError):
+                return None
         return None
 
     @property
     def longitude(self) -> float | None:
         if self._location and self._location.get("lon"):
-            return float(self._location["lon"])
+            try:
+                return float(self._location["lon"])
+            except (TypeError, ValueError):
+                return None
         return None
+
+    @property
+    def gps_accuracy(self) -> int | None:
+        return 0
 
     @property
     def extra_state_attributes(self) -> dict:

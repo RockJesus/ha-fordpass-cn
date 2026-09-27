@@ -1,58 +1,61 @@
-# FordPass 中国版（福特派互联）Home Assistant 集成
+# FordPass China 福特派互联
 
-通过手机号+短信验证码登录福特派，在 Home Assistant 中远程控制你的福特/林肯车辆（中国区）。
+Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务，支持短信验证码登录、远程控车与车辆定位追踪。
 
-## 功能
+> ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
 
-- **门锁**：远程上锁 / 解锁
-- **远程启动**：启动发动机 / 熄火
-- **按钮**：鸣笛寻车、报警、强制刷新车辆状态
-- **传感器**：燃油量、续航里程、总里程、机油寿命、蓄电池电压、四轮胎压、门锁/报警/远程启动状态
+## 功能特性
+
+- **手机号短信验证码登录**：无需密码，验证码直登
+- **远程控车**：上锁 / 解锁 / 远程启动 / 远程熄火 / 鸣笛 / 报警 / 刷新车辆状态
+- **车辆状态**：门锁、报警、燃油量、胎压、里程等实时状态
+- **车辆定位追踪**：GPS 车辆位置（设备追踪器），可在 HA 地图上显示
+- **多实体中文命名**：设备名为车型（如「锐际 Escape」），车牌号、地址等属性齐全
+- **自动令牌刷新**：访问令牌过期自动刷新，无需重新登录
 
 ## 安装
 
-1. 将 `custom_components/fordpass_cn` 整个文件夹复制到 Home Assistant 的 `custom_components/` 目录下
-2. 重启 Home Assistant
-3. 设置 → 设备与服务 → 添加集成 → 搜索 **福特派互联**
-4. 输入注册福特派的**手机号** → 点下一步（将发送短信验证码）
-5. 输入收到的 **6 位验证码** → 完成登录
-6. 集成会自动绑定该账号下的第一辆车（后续版本支持多车选择）
+### 方式一：HACS（推荐）
 
-## 依赖
+1. 将本仓库添加为 HACS 自定义仓库（类别：Integration）
+2. 搜索并安装 `FordPass China 福特派互联`
+3. 重启 Home Assistant
 
-- `unicorn`（CPU 模拟器，用于执行 App 的白盒 AES 加密代码）。首次安装集成时 HA 会自动安装；若失败，请在 HA 容器/宿主机执行 `pip install unicorn`。
-- 需要 Home Assistant 能够访问 `cn.api.mps.ford.com.cn`（中国区福特网关）。
+### 方式二：手动安装
 
-## 工作原理（协议已从官方 App 6.14.0 逆向并实测验证）
+1. 下载最新版 Release（`fordpass_cn_2.5.3.zip`）
+2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
+3. 重启 Home Assistant
 
-- 认证：`generate-passcode`（发验证码）→ `dlt-token-by-phone-passcode-login`（验证码换 JWT）→ `auth-token` 请求头
-- 加密：敏感字段使用 App 内置的**白盒 AES-256-CBC**（运行时无明文密钥），集成通过 Unicorn 执行 App 原始机器码，结果与官方 App 逐位一致
-- 签名：`sign = SHA256(secretKey2 & 参数 & secretKey)`，已对 19 组真实请求验证
-- 状态：`GET /api/cnxapi-cvinfo/v1/vehicle-status`，响应体加密后解密
-- 命令：`POST /api/cnxapi-cvinfo/v1/vehicles/send-command`
+## 配置
 
-## 注意事项
+1. 设置 → 设备与服务 → 添加集成 → 搜索「福特派互联」
+2. 输入注册福特派的手机号
+3. 获取短信验证码并输入，完成登录
+4. 在集成选项（Options）中可开启「启用车辆定位追踪」
 
-- **车控命令值**（上锁/解锁/启动）依据 APK 内的命令枚举实现（`Lock`/`Unlock`/`EngineStart`/`EngineStop`）。如果首次使用时命令报错，请打开 Debug 日志并反馈，集成会适配为正确的命令值。
-- 状态默认每 5 分钟刷新一次，可在集成选项中调整（60–3600 秒）。
-- 车辆定位（LBS）接口需要额外的 APIM 订阅密钥（App 白盒保护），暂未集成。
-- 请勿将登录 token 透露给第三方；token 过期后集成会自动用 refresh token 续期。
+> 依赖 `unicorn`（ARM64 白盒 AES 仿真）与 `pyelftools`，HA 首次加载时会自动安装。
 
-## 文件结构
+## 支持的实体
 
-```
-custom_components/fordpass_cn/
-├── __init__.py       # 集成入口
-├── config_flow.py    # 手机号+验证码登录流程
-├── api.py            # 福特网关 API 客户端（签名/加密/接口）
-├── wbsk.py           # 白盒 AES 加解密（Unicorn 执行官方机器码）
-├── const.py          # 常量（端点、命令、密钥）
-├── coordinator.py    # 数据轮询协调器
-├── lock.py / switch.py / button.py / sensor.py
-├── data/             # 官方白盒加密库与密钥文件（来自官方 App）
-└── translations/
-```
+| 类型 | 实体 | 说明 |
+|---|---|---|
+| device_tracker | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
+| lock | 车门锁 | 上锁 / 解锁 |
+| button | 远程启动 / 熄火 | 远程启动引擎 |
+| switch | 远程启动状态 | 已远程启动 / 未远程启动 |
+| sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌等 |
 
-## 版本
+## 版本历史
 
-2.1.0（2026-09-25）· 已在真实账号上端到端验证（车辆列表、车辆状态、token 解密）
+- **v2.5.3**：LBS 白盒加密初始化移出事件循环（asyncio.to_thread），消除 unicorn/读文件导致的阻塞警告
+- **v2.5.2**：device_tracker 不再依赖易变的常量导入（SOURCE_TYPE_GPS 直接用 "gps"），彻底消除废弃别名警告与加载失败
+- **v2.5.1**：修复新版 Home Assistant（2025+）中 device_tracker 旧导入路径导致的加载失败，兼容新旧版本
+- **v2.5.0**：打通车辆定位全链路（LBS token 服务端签发 + 白盒加密 VIN + x-sign 签名 + 响应解密），HA 地图可显示车辆位置
+- **v2.4.0**：LBS 签名与 VIN 加密破解，车辆定位实验版
+- **v2.3.0**：实体中文化、车牌传感器、设备名=车型、令牌自动刷新修复
+- **v2.1.0**：修复 refresh-dlt-token 请求体多余字段导致的 400 错误
+
+## 免责声明
+
+本项目仅供学习研究使用，使用过程中产生的任何账号风险、功能失效或法律问题，均由使用者自行承担。

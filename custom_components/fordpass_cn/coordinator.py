@@ -27,6 +27,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         interval: int,
         vehicle_name: str | None = None,
         license_plate: str | None = None,
+        track_location: bool = False,
     ) -> None:
         super().__init__(
             hass,
@@ -37,6 +38,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = api
         self.vin = vin
         self.license_plate = license_plate
+        self.track_location = track_location
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
 
     @property
@@ -62,15 +64,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except asyncio.TimeoutError as err:
             raise UpdateFailed("FordPass update timed out") from err
 
-        # Best-effort location (LBS endpoint may require an extra APIM
-        # subscription key; never fail the whole update for it).
-        try:
-            loc = await self.api.get_location(self.vin)
-            if isinstance(loc, dict) and loc.get("lat"):
-                data["location"] = loc
-            else:
+        # Best-effort location (only when the user enabled tracking; the LBS
+        # gateway is a separate APIM endpoint and costs a remote round trip).
+        if self.track_location:
+            try:
+                loc = await self.api.get_location(self.vin)
+                if isinstance(loc, dict) and loc.get("lat"):
+                    data["location"] = loc
+                else:
+                    data["location"] = None
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass location fetch failed: %s", exc)
                 data["location"] = None
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass location fetch failed: %s", exc)
-            data["location"] = None
         return data

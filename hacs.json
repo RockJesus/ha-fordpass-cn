@@ -1,6 +1,7 @@
 {
-  "name": "FordPass China",
+  "name": "FordPass China 福特派互联",
+  "content_in_root": false,
   "render_readme": true,
-  "homeassistant": "2024.8.0",
-  "hacs": "1.33.0"
+  "country": "CN",
+  "homeassistant": "2024.6.0"
 }
