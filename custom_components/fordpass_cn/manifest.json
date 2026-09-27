@@ -1,14 +1,16 @@
 {
   "domain": "fordpass_cn",
   "name": "FordPass China 福特派互联",
-  "codeowners": [],
+  "codeowners": [
+    "@RockJesus"
+  ],
   "config_flow": true,
-  "documentation": "https://github.com/fordpass-cn/fordpass_cn",
-  "issue_tracker": "https://github.com/fordpass-cn/fordpass_cn/issues",
+  "documentation": "https://github.com/RockJesus/ha-fordpass-cn",
+  "issue_tracker": "https://github.com/RockJesus/ha-fordpass-cn/issues",
   "iot_class": "cloud_polling",
   "requirements": [
     "unicorn==2.1.4",
     "pyelftools"
   ],
-  "version": "2.5.3"
+  "version": "2.5.4"
 }
