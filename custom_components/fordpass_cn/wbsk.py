@@ -29,13 +29,43 @@ _STACK_BASE = 0x800000
 _HALT = 0x900000
 
 
+def _load_key_hex(path: str, scene: str = "x_api") -> tuple[str, str]:
+    """Read a white-box key file. Supports the app's JSON (per-scene
+    encrypt / decrypt, e.g. x_api / lbs / lbs_p2c) and the raw
+    244-hex-char txt variant (single direction file, used by e.g. the LBS
+    'wb_local_*' keys: the same file serves as both encrypt and decrypt
+    body)."""
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read().strip()
+    if text.startswith("{"):
+        wj = json.loads(text)
+        return wj[scene]["encrypt"], wj[scene]["decrypt"]
+    # raw hex: 244 chars -> 122 bytes; de-obfuscated body is 240 bytes
+    return text, text
+
+
 class FordPassCrypto:
     """Thread-safe wrapper around the emulated white-box block cipher."""
 
     _instance: "FordPassCrypto | None" = None
     _lock = threading.Lock()
+    _instance_key: str | None = None
 
-    def __init__(self) -> None:
+    @classmethod
+    def get(cls, key_file: str | None = None, scene: str = "x_api") -> "FordPassCrypto":
+        """Singleton; key_file + scene select the white-box key. The default
+        is the main prod key (x_api); the LBS gateway uses its own key
+        (lbs_p2c for request fields, lbs for response fields)."""
+        identity = f"{key_file or _KEY_PATH}#{scene}"
+        if cls._instance is None or cls._instance_key != identity:
+            with cls._lock:
+                if cls._instance is None or cls._instance_key != identity:
+                    inst = cls(key_file, scene)
+                    cls._instance = inst
+                    cls._instance_key = identity
+        return cls._instance
+
+    def __init__(self, key_file: str | None = None, scene: str = "x_api") -> None:
         from elftools.elf.elffile import ELFFile
         from elftools.elf.relocation import RelocationSection
         from unicorn import Uc, UC_ARCH_ARM64, UC_MODE_LITTLE_ENDIAN, UC_PROT_ALL
@@ -83,11 +113,10 @@ class FordPassCrypto:
         self._out = _SCRATCH + 0x100
         self._key = _SCRATCH + 0x200
         # de-obfuscate encrypt / decrypt bodies
-        with open(_KEY_PATH, encoding="utf-8") as fh:
-            wj = json.load(fh)
+        enc_hex, dec_hex = _load_key_hex(key_file or _KEY_PATH, scene)
         self._bodies: dict[str, int] = {}
         for direction, addr in (("encrypt", _SCRATCH + 0x300), ("decrypt", _SCRATCH + 0x1300)):
-            raw = bytes.fromhex(wj["x_api"][direction])
+            raw = bytes.fromhex(enc_hex if direction == "encrypt" else dec_hex)
             body = bytes(x ^ raw[(i + 4) % 3] for i, x in enumerate(raw[4:]))
             if len(body) != 240:
                 raise RuntimeError("Unexpected white-box key length")
@@ -98,14 +127,6 @@ class FordPassCrypto:
         uc.mem_map(_STACK_BASE, 0x10000)
         uc.mem_map(_HALT, _PAGE)
         self._uc = uc
-
-    @classmethod
-    def get(cls) -> "FordPassCrypto":
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = cls()
-        return cls._instance
 
     def _block(self, data: bytes, direction: str) -> bytes:
         if len(data) != 16:

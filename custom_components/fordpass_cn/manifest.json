@@ -3,9 +3,12 @@
   "name": "FordPass China 福特派互联",
   "codeowners": [],
   "config_flow": true,
-  "documentation": "https://www.ford.com.cn/fordpass/get-app/",
+  "documentation": "https://github.com/fordpass-cn/fordpass_cn",
+  "issue_tracker": "https://github.com/fordpass-cn/fordpass_cn/issues",
   "iot_class": "cloud_polling",
-  "requirements": ["unicorn==2.1.4", "pyelftools"],
-  "version": "2.1.9",
-  "translations": ["translations"]
+  "requirements": [
+    "unicorn==2.1.4",
+    "pyelftools"
+  ],
+  "version": "2.5.3"
 }

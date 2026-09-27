@@ -7,6 +7,13 @@ DOMAIN = "fordpass_cn"
 BASE_URL = "https://cn.api.mps.ford.com.cn"
 LBS_BASE_URL = "https://api-connect.ford.com.cn"
 
+# LBS (vehicle location) gateway — recovered from the app's Dart AOT code and
+# verified against 26 live captures (x-sign 26/26).
+#   x-sign = base64(SHA256(SK + sorted-body-params + ts + PKL + SK[:5] + ts[8:])).upper()
+LBS_APP_ID = "632b3c058abe42f8b82889a935296911"   # ocp-application-id
+LBS_APP_KEY = "211c2122-d829-4f5e-ad36-95d16fd0bf16"  # x-appkey == signature_lbs_secretKey
+LBS_PAYLOAD_KEY = "3e432474-6f0e-4c48-ab48-d4858ccb8df2"  # signature_lbs_payLoadKey
+
 # Fixed headers (observed from official app)
 APPLICATION_ID = "46409D04-BD1B-40C6-9D51-13A52666E9F9"
 APP_VERSION = "6.14.0"
@@ -14,9 +21,13 @@ CLIENT_TYPE = "FP"
 OS_TYPE = "android"
 OS_VERSION = "12"
 
-# sign secrets (fixed constants, recovered from app memory)
+# sign secrets (recovered from the app binary, verified against live captures)
+# secretKey2 rotates every day:
+#   secretKey2 = URLEncode(SHA256(SHA256(BeijingDate "yyyy-MM-dd") + PAYLOAD_KEY))
+# (the old fixed constant 1607f4c12d... was the 2026-09-25 derived value and is
+#  rejected by the server since 2026-09-26; compute_sign() derives it at runtime)
 SECRET_KEY = "as24#02_"
-SECRET_KEY2 = "1607f4c12d200c8e7303e273aef64791eca3f10ab1c4abc529eb16d511b8c015"
+PAYLOAD_KEY = "B_sd*ow7"
 
 TOUCH_POINT = "FORD_APP_LOGIN"
 
@@ -60,4 +71,4 @@ DEFAULT_SCAN_INTERVAL_SECONDS = 300
 DEFAULT_CONF_FLOW_TITLE = "福特派互联"
 
 # Platforms
-PLATFORMS = ["lock", "switch", "button", "sensor"]
+PLATFORMS = ["lock", "switch", "button", "sensor", "device_tracker"]
