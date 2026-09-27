@@ -23,7 +23,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_2.5.4.zip`）
+1. 下载最新版 Release（`fordpass_cn_2.5.5.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -48,6 +48,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v2.5.5**：brand 目录规范（logo/icon 移至 brand/）；车辆定位追踪默认开启
 - **v2.5.4**：添加集成 logo / icon，更新仓库地址（github.com/RockJesus/ha-fordpass-cn），通过隐私信息检测
 - **v2.5.3**：LBS 白盒加密初始化移出事件循环（asyncio.to_thread），消除 unicorn/读文件导致的阻塞警告
 - **v2.5.2**：device_tracker 不再依赖易变的常量导入（SOURCE_TYPE_GPS 直接用 "gps"），彻底消除废弃别名警告与加载失败

@@ -27,7 +27,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         interval: int,
         vehicle_name: str | None = None,
         license_plate: str | None = None,
-        track_location: bool = False,
+        track_location: bool = True,
     ) -> None:
         super().__init__(
             hass,
