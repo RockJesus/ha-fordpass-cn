@@ -22,7 +22,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    if not entry.options.get("track_location", False):
+    if not entry.options.get("track_location", True):
         _LOGGER.debug("device tracker disabled (track_location off)")
         return
     async_add_entities([FordPassDeviceTracker(coordinator)])

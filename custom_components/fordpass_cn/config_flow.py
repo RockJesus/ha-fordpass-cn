@@ -109,7 +109,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options={
                         CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_SECONDS,
-                        "track_location": False,
+                        "track_location": True,
                     },
                 )
         return self.async_show_form(
@@ -145,7 +145,7 @@ class FordPassOptionsFlow(config_entries.OptionsFlow):
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
                     vol.Optional(
-                        "track_location", default=data.get("track_location", False)
+                        "track_location", default=data.get("track_location", True)
                     ): bool,
                 }
             ),
