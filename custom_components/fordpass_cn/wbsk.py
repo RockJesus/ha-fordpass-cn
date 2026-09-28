@@ -77,6 +77,19 @@ class FordPassCrypto:
             X2=UC_ARM64_REG_X2, X3=UC_ARM64_REG_X3, LR=UC_ARM64_REG_LR,
         )
 
+        if not os.path.exists(_SO_PATH):
+            raise RuntimeError(
+                "FordPass 集成数据文件缺失：找不到 data/libwbsk_crypto_tool.so。"
+                "请确认 custom_components/fordpass_cn/ 目录完整（含 data 子目录），"
+                "完整复制后重启 HA。"
+            )
+        if not os.path.exists(key_file or _KEY_PATH):
+            raise RuntimeError(
+                "FordPass 集成数据文件缺失：找不到 data/whitebox_keys_for_prod.json。"
+                "请确认 custom_components/fordpass_cn/ 目录完整（含 data 子目录），"
+                "完整复制后重启 HA。"
+            )
+
         with open(_SO_PATH, "rb") as fh:
             elf = ELFFile(fh)
             loads = [
