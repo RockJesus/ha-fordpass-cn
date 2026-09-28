@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime
 from datetime import timedelta
 import logging
 from typing import Any
@@ -45,14 +44,6 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.track_location = track_location
         self.vehicle_image_url = vehicle_image_url
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
-        # UTC timestamp of the most recent *successful* fetch — manual refresh
-        # feedback for the "最后刷新时间" sensor (v2.6.7).
-        self._last_success_ts: str | None = None
-
-    @property
-    def last_success_ts(self) -> str | None:
-        """Local time string of the last successful data fetch."""
-        return self._last_success_ts
 
     @property
     def vehicle_model(self) -> str:
@@ -70,6 +61,22 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sw_version="6.14.0",
         )
 
+    async def force_refresh(self) -> None:
+        """Fetch data immediately and push it to entities (v2.7.0).
+
+        HA's ``async_request_refresh`` only executes right away when the last
+        poll is older than ``update_interval``; otherwise it re-schedules the
+        refresh to the next interval tick, which makes a manual "刷新车辆状态"
+        button appear dead.  This method bypasses that throttle: it fetches
+        now and pushes the result with ``async_set_updated_data``.
+        """
+        try:
+            data = await self._async_update_data()
+        except Exception as exc:  # noqa: BLE001 - keep old data, log clearly
+            self.logger.error("FordPass forced refresh failed: %s", exc)
+            raise UpdateFailed(f"FordPass update failed: {exc}") from exc
+        self.async_set_updated_data(data)
+
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             status = await self.api.get_vehicle_status(self.vin)
@@ -81,13 +88,6 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"FordPass update failed: {err}") from err
         except asyncio.TimeoutError as err:
             raise UpdateFailed("FordPass update timed out") from err
-
-        # Successful fetch — remember the time for manual-refresh feedback.
-        try:
-            now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-            self._last_success_ts = now.strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:  # noqa: BLE001
-            pass
 
         # Best-effort location (only when the user enabled tracking; the LBS
         # gateway is a separate APIM endpoint and costs a remote round trip).
