@@ -33,8 +33,7 @@
         "title": "福特派互联选项",
         "data": {
           "scan_interval": "状态刷新间隔（秒）",
-          "track_location": "启用车辆定位追踪",
-          "traffic_token": "流量管理令牌（可选）：打开福特派 App 的影音娱乐-流量管理页，从地址栏 VIN= 参数复制 64 位令牌"
+          "track_location": "启用车辆定位追踪"
         }
       }
     }

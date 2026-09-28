@@ -125,15 +125,6 @@ async def async_setup_entry(
         FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
                        transform=lambda v: "不可用" if isinstance(v, str) and "NotAvailable" in v else v),
     ]
-
-    # ===== D 组：流量管理（影音娱乐剩余流量，需在集成选项配置流量管理令牌） =====
-    sensors += [
-        FordPassTrafficSensor(coordinator, "traffic_surplus", "剩余流量", "MB", "mdi:data-usage", "surplusFlow", kb_to_mb=True),
-        FordPassTrafficSensor(coordinator, "traffic_total", "流量总量", "MB", "mdi:chart-pie", "totalFlow", kb_to_mb=True),
-        FordPassTrafficSensor(coordinator, "traffic_used", "已用流量", "MB", "mdi:chart-donut", "usedFlow", kb_to_mb=True),
-        FordPassTrafficSensor(coordinator, "traffic_ratio", "流量剩余比例", "%", "mdi:percent-outline", "trafficRatio", strip_percent=True),
-        FordPassTrafficSensor(coordinator, "traffic_expiry", "流量到期时间", None, None, "mdi:calendar-clock", "expirationTime"),
-    ]
     async_add_entities(sensors)
 
 
@@ -270,52 +261,3 @@ class FordPassAlertSensor(SensorEntity):
             titles = [a.get("headline") for a in alerts if isinstance(a, dict) and a.get("headline")]
             return "、".join(titles) if titles else "无异常"
         return str(alerts)
-
-
-class FordPassTrafficSensor(SensorEntity):
-    """In-car media-data quota sensor from the venusplatform H5 backend.
-
-    Reads a field of coordinator.data["traffic"]; sizes come in KB and are
-    converted to MB (integer) when ``kb_to_mb`` is set; the remaining ratio
-    ("98%") is stripped of its percent sign when ``strip_percent`` is set.
-    """
-
-    def __init__(self, coordinator, key, label, unit, device_class, icon,
-                 field, kb_to_mb: bool = False, strip_percent: bool = False) -> None:
-        self.coordinator = coordinator
-        self._field = field
-        self._kb_to_mb = kb_to_mb
-        self._strip_percent = strip_percent
-        self._attr_unique_id = f"{coordinator.vin}-{key}"
-        self._attr_name = label
-        self._attr_has_entity_name = False
-        self._attr_device_info = coordinator.device_info
-        self._attr_icon = icon
-        if unit:
-            self._attr_native_unit_of_measurement = unit
-        if device_class:
-            self._attr_device_class = device_class
-
-    @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success
-
-    @property
-    def native_value(self):
-        data = self.coordinator.data or {}
-        traffic = data.get("traffic")
-        if not traffic or not isinstance(traffic, dict):
-            return None
-        value = traffic.get(self._field)
-        if value is None:
-            return None
-        if self._kb_to_mb and isinstance(value, (int, float)) and not isinstance(value, bool):
-            return int(round(value / 1024))
-        if self._strip_percent and isinstance(value, str) and value.endswith("%"):
-            try:
-                return int(value[:-1])
-            except ValueError:
-                return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        return value

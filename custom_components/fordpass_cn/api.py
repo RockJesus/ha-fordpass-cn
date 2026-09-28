@@ -44,15 +44,11 @@ from .const import (
     PATH_REVOKE_TOKEN,
     PATH_SEND_COMMAND,
     PATH_THIRD_PARTY_TOKEN,
-    PATH_TRAFFIC_LOGIN,
-    PATH_TRAFFIC_MANAGE,
     PATH_VEHICLES_LIST,
     PATH_VEHICLE_STATUS,
     PAYLOAD_KEY,
     SECRET_KEY,
     TOUCH_POINT,
-    VENUS_BASE_URL,
-    X_V_KEY,
 )
 from .wbsk import FordPassCrypto
 
@@ -430,96 +426,6 @@ class FordPassApi:
                         }
                     )
         return alerts
-
-    # ------------------------------------------------------------ traffic
-    async def get_traffic_info(self, vin_token: str) -> dict[str, Any]:
-        """Query in-car media-data quotas from the venusplatform H5 backend.
-
-        Two-step flow recovered from the official app WebView capture:
-          1. POST /ford-phase3/h5/login/{vin_token}/1 (empty body) returns
-             abilityUserId / customerId / shopCode for this vehicle;
-          2. POST /ford-phase3/h5/traffic/manage/{vin_token}/2 returns
-             {trafficRatio, totalFlow, surplusFlow, expirationTime, ...}
-             (sizes in KB; trafficRatio is the REMAINING ratio, e.g. "98%").
-        Fixed header X-V-Key comes from the H5 JS bundle.
-        """
-        if not vin_token:
-            raise FordPassApiError(400, "no traffic token configured")
-
-        async def _h5_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
-            h = {
-                "Accept": "application/json, text/plain, */*",
-                "X-V-Key": X_V_KEY,
-                "User-Agent": "Mozilla/5.0 (Linux; Android 12; wv) "
-                              "AppleWebKit/537.36 (KHTML, like Gecko) "
-                              "Chrome/110.0.5481.154 Mobile Safari/537.",
-                "Origin": "https://ford.venusplatform.com",
-                "X-Requested-With": "com.ford.fordpasscn",
-                "Referer": (f"https://ford.venusplatform.com/ford-phase3/"
-                            f"FlowMgt?VIN={vin_token}&encryType=1"),
-                "Accept-Encoding": "gzip, deflate",
-            }
-            if extra:
-                h.update(extra)
-            return h
-
-        # step 1: H5 login -> abilityUserId / customerId / shopCode
-        login_url = VENUS_BASE_URL + PATH_TRAFFIC_LOGIN.format(token=vin_token)
-        async with self._session.post(
-            login_url, headers=await _h5_headers(), data=b""
-        ) as resp:
-            login_text = await resp.text()
-            self._log.debug("FordPass venus login -> %s %s", resp.status, login_text[:400])
-            if resp.status >= 400:
-                raise FordPassApiError(resp.status, login_text[:300])
-        try:
-            login_data = json.loads(login_text)
-        except json.JSONDecodeError:
-            raise FordPassApiError(resp.status, f"non-JSON venus login: {login_text[:200]}")
-        if login_data.get("status") != "SUCCEED":
-            raise FordPassApiError(login_data.get("status"), str(login_data.get("data"))[:200])
-        login_inner = login_data.get("data", {})
-        ability_user = login_inner.get("abilityUserId")
-        customer_id = login_inner.get("customerId")
-        shop_code = login_inner.get("shopCode")
-
-        # step 2: traffic/manage
-        traffic_url = VENUS_BASE_URL + PATH_TRAFFIC_MANAGE.format(token=vin_token)
-        extra: dict[str, str] = {}
-        if ability_user:
-            extra["X-F-abilityUserId"] = str(ability_user)
-        if customer_id:
-            extra["X-F-customerId"] = str(customer_id)
-        if shop_code:
-            extra["shop-code"] = str(shop_code)
-        async with self._session.post(
-            traffic_url, headers=await _h5_headers(extra), data=b""
-        ) as resp:
-            text = await resp.text()
-            self._log.debug("FordPass venus traffic -> %s %s", resp.status, text[:400])
-            if resp.status >= 400:
-                raise FordPassApiError(resp.status, text[:300])
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            raise FordPassApiError(resp.status, f"non-JSON venus traffic: {text[:200]}")
-        if data.get("status") != "SUCCEED":
-            raise FordPassApiError(data.get("status"), str(data.get("data"))[:200])
-        inner = data.get("data", {}) or {}
-        total = inner.get("totalFlow")
-        surplus = inner.get("surplusFlow")
-        used = None
-        if isinstance(total, (int, float)) and isinstance(surplus, (int, float)):
-            used = max(0, int(total) - int(surplus))
-        return {
-            "trafficRatio": inner.get("trafficRatio"),
-            "totalFlow": total,
-            "surplusFlow": surplus,
-            "usedFlow": used,
-            "expirationTime": inner.get("expirationTime"),
-            "currentTime": inner.get("currentTime"),
-            "unLimitFlowFlag": inner.get("unLimitFlowFlag"),
-        }
 
     # ------------------------------------------------------------ location
     async def get_lbs_token(self, vin: str) -> str:
