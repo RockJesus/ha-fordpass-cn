@@ -402,36 +402,42 @@ class FordPassApi:
             return json.loads(plain)
         return inner
 
-    async def wait_status_refresh(
-        self, vin: str, timeout: float = 60.0, poll: float = 2.0, baseline: str | None = None
-    ) -> tuple[bool, str | None]:
-        """After a ForceRefresh command, wait for Ford's backend to propagate.
+    async def wait_command_complete(
+        self, vin: str, command_id: str, command_type: str,
+        timeout: float = 60.0, poll: float = 2.0,
+    ) -> tuple[bool, dict[str, Any] | None]:
+        """Poll command-execution-status until ForceRefresh finishes (v2.7.1).
 
-        ForceRefresh only tells Ford's server to pull fresh data from the car
-        (the vehicle may be asleep and takes seconds to wake up and report).
-        Fetching the status immediately just returns the old cached snapshot,
-        so entities never visibly change.  Poll vehicle-status until its data
-        timestamp (lastModifiedDate / lastRefresh) moves past ``baseline``.
+        Verified from the official app capture (2026-09-29): after
+        send-command returns a commandId, the app polls
+        /vehicles/command-execution-status?commandType=..&commandId=..
+        every ~2.2 s.  While the command is still running the decrypted
+        vehiclestatus is a placeholder (every field status=LAST_KNOWN,
+        timestamp=01-01-0001, vin=null); once it finishes every field flips
+        to status=CURRENT with the real timestamp AND the response already
+        carries the complete fresh snapshot.
 
-        ``baseline`` must be the stamp captured BEFORE sending the command, so
-        a fast backend update right after the command is still detected.
-
-        Returns ``(changed, latest_stamp)``.
+        Returns ``(completed, latest_result)`` where latest_result is the
+        decrypted command-execution-status body (contains vehiclestatus).
         """
         start = time.monotonic()
-        last = baseline
+        last: dict[str, Any] | None = None
         while time.monotonic() - start < timeout:
             try:
-                status = await self.get_vehicle_status(vin)
-                vs = status.get("vehiclestatus", status)
-                stamp = str(vs.get("lastModifiedDate") or vs.get("lastRefresh") or "")
-                if not stamp:
-                    return False, last
-                last = stamp
-                if baseline is None or stamp != baseline:
-                    return True, stamp
+                result = await self.command_status(vin, command_id, command_type)
+                if not isinstance(result, dict):
+                    continue
+                last = result
+                vs = result.get("vehiclestatus", result)
+                if isinstance(vs, dict) and vs.get("vin"):
+                    # fresh snapshot: key fields carry status=CURRENT
+                    if any(
+                        isinstance(v, dict) and v.get("status") == "CURRENT"
+                        for v in vs.values()
+                    ):
+                        return True, result
             except Exception as exc:  # noqa: BLE001 - keep polling on transient errors
-                self._log.debug("wait_status_refresh poll failed: %s", exc)
+                self._log.debug("wait_command_complete poll failed: %s", exc)
             await asyncio.sleep(poll)
         return False, last
 

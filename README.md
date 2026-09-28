@@ -27,7 +27,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_2.7.0.zip`）
+1. 下载最新版 Release（`fordpass_cn_2.7.1.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -54,7 +54,8 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
-- **v2.7.0**：修复「刷新车辆状态」按钮不生效的根因（HA `async_request_refresh` 受 `update_interval` 节流，距上次轮询不足 60 秒时会重新调度而不是立即刷新）——新增 `force_refresh()` 绕过节流直接拉数据并立即推送实体；按钮改为三段式（记录刷新前数据时间戳 → 发 ForceRefresh 命令 → 立即强刷 + 轮询等福特服务端数据传播（最长 60 秒）→ 再强刷）；删除「最后刷新时间」传感器实体（避免每轮轮询都刷新刷屏）
+- **v2.7.1**：刷新按钮改为与官方 App 一致的流程（经抓包验证）——`send-command` 返回 `commandId` 后，轮询 `command-execution-status`（每 2 秒，最长 60 秒）直到解密数据从占位（`LAST_KNOWN`/`01-01-0001`/`vin=null`）变为 `CURRENT` 真实快照，命令完成响应本身已含完整最新数据，直接推送实体；不再轮询 vehicle-status 时间戳（官方并不以此判断刷新完成）
+- **v2.7.0**：修复「刷新车辆状态」按钮不生效的根因（HA `async_request_refresh` 受 `update_interval` 节流，距上次轮询不足 60 秒时会重新调度而不是立即刷新）——新增 `force_refresh()` 绕过节流直接拉数据并立即推送实体；删除「最后刷新时间」传感器实体（避免每轮轮询都刷新刷屏）
 - **v2.6.9**：修复「车辆图片」实体在事件循环内的阻塞文件 IO——本地图片读取与持久化写入改由 executor 线程池执行（`hass.async_add_executor_job`），消除 `Detected blocking call to open ... image.py` 警告，事件循环不再被磁盘操作卡住
 - **v2.6.8**：符合 HA 集成开发规范——manifest 补全 `integration_type: hub`、`requirements` 版本钉住（`pyelftools==0.29`）；hacs.json 补全 HACS 必填字段（`domains`、`iot_class`）；确认 `brand/`（logo/icon）、`data/`（白盒密钥库）、`translations/` 均在 `custom_components/fordpass_cn/` 规范目录下
 - **v2.6.7**：修复「刷新车辆状态」按钮——`ForceRefresh` 只通知福特服务器从车机拉取最新数据，车机唤醒+数据回传需要数秒；此前点击后立即拉取拿到的是旧缓存，导致所有实体看起来"没刷新"。现在点击后自动轮询等待福特数据时间戳（`lastModifiedDate`）变化（最多 30 秒）再更新实体；命令失败不再阻断刷新；新增「最后刷新时间」传感器（显示最近一次成功获取车辆数据的时间，点刷新后有明确反馈）
