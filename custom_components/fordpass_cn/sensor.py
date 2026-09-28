@@ -46,17 +46,31 @@ async def async_setup_entry(
         FordPassSensor(coordinator, "lr_tire", "左后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "outerLeftRearTirePressure"], round_value=True),
         FordPassSensor(coordinator, "rr_tire", "右后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "outerRightRearTirePressure"], round_value=True),
         FordPassSensor(coordinator, "lock_status", "门锁状态", None, None, "mdi:lock", ["lockStatus"], enum_map={"LOCKED": "已锁定", "UNLOCKED": "已解锁", 1: "已锁定", 0: "已解锁", "1": "已锁定", "0": "已解锁", True: "已锁定", False: "已解锁"}),
-        FordPassSensor(coordinator, "alarm_status", "报警状态", None, None, "mdi:alarm", ["alarm"], enum_map={"SET": "车辆已设防", "NOTSET": "车辆被盗报警中", "NOT_IN_ALARM": "解除报警", "NOT_IN_ALARMS": "解除报警", "DISARMED": "解除报警", "ALARM": "车辆被盗报警中", "ARMED": "车辆被盗报警中", 0: "解除报警", 1: "车辆被盗报警中", "0": "解除报警", "1": "车辆被盗报警中", False: "解除报警", True: "车辆被盗报警中"}),
+        # 报警状态映射（v2.6.3 最新语义）：SET=已设防 / NOTSET=未设防 /
+        # NOT_IN_ALARM·DISARMED=解除报警 / ALARM·ARMED=被盗声光报警中
+        FordPassSensor(coordinator, "alarm_status", "报警状态", None, None, "mdi:alarm", ["alarm"],
+                       enum_map={"SET": "车辆已设防", "NOTSET": "车辆未设防",
+                                 "NOT_IN_ALARM": "解除报警", "NOT_IN_ALARMS": "解除报警",
+                                 "DISARMED": "解除报警", "ALARM": "被盗声光报警中",
+                                 "ARMED": "被盗声光报警中", 0: "解除报警", 1: "被盗声光报警中",
+                                 "0": "解除报警", "1": "被盗声光报警中",
+                                 False: "解除报警", True: "被盗声光报警中"}),
         FordPassSensor(coordinator, "remote_start", "远程启动状态", None, None, "mdi:engine", ["remoteStartStatus"], enum_map={1: "已远程启动", 0: "未远程启动", "1": "已远程启动", "0": "未远程启动", True: "已远程启动", False: "未远程启动", "true": "已远程启动", "false": "未远程启动"}),
-        # 车辆异常警示（真实字段 PrmtAlarmEvent，值 Null = 无异常）
-        FordPassSensor(
-            coordinator, "vehicle_warning", "车辆异常警示", None, None, "mdi:alert",
-            [["PrmtAlarmEvent"], ["warning"], ["warnings"], ["alerts"], ["vehicleAbnormal"],
-             ["abnormal"], ["abnormalWarning"], ["abnormalStatus"], ["warningStatus"],
-             ["faults"], ["diagnostics"], ["warningInfo"], ["vehicleWarning"]],
-            enum_map={"Null": "无异常", "null": "无异常", "NONE": "无异常"},
-        ),
     ]
+    # 车辆异常警示：优先读 vha/activealert 真实告警（明文中文标题）；
+    # 拉取失败时回退 PrmtAlarmEvent 字段（Null = 无异常）。
+    sensors.append(FordPassAlertSensor(coordinator))
+    sensors.append(
+        FordPassSensor(
+            coordinator, "vehicle_warning_fallback", "车辆异常警示", None, None,
+            "mdi:alert",
+            [["PrmtAlarmEvent"], ["warning"], ["warnings"], ["alerts"],
+             ["vehicleAbnormal"], ["abnormal"], ["abnormalWarning"],
+             ["abnormalStatus"], ["warningStatus"], ["faults"],
+             ["diagnostics"], ["warningInfo"], ["vehicleWarning"]],
+            enum_map={"Null": "无异常", "null": "无异常", "NONE": "无异常"},
+        )
+    )
     sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
@@ -110,6 +124,15 @@ async def async_setup_entry(
                        enum_map={"Normal": "标准模式", "Life_Cycle_Mode": "长寿命模式", "Deep_Discharge": "深度放电"}),
         FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
                        transform=lambda v: "不可用" if isinstance(v, str) and "NotAvailable" in v else v),
+    ]
+
+    # ===== D 组：流量管理（影音娱乐剩余流量，需在集成选项配置流量管理令牌） =====
+    sensors += [
+        FordPassTrafficSensor(coordinator, "traffic_surplus", "剩余流量", "MB", "mdi:data-usage", "surplusFlow", kb_to_mb=True),
+        FordPassTrafficSensor(coordinator, "traffic_total", "流量总量", "MB", "mdi:chart-pie", "totalFlow", kb_to_mb=True),
+        FordPassTrafficSensor(coordinator, "traffic_used", "已用流量", "MB", "mdi:chart-donut", "usedFlow", kb_to_mb=True),
+        FordPassTrafficSensor(coordinator, "traffic_ratio", "流量剩余比例", "%", "mdi:percent-outline", "trafficRatio", strip_percent=True),
+        FordPassTrafficSensor(coordinator, "traffic_expiry", "流量到期时间", None, None, "mdi:calendar-clock", "expirationTime"),
     ]
     async_add_entities(sensors)
 
@@ -213,6 +236,86 @@ class FordPassSensor(SensorEntity):
             value = self._enum_map.get(value, value)
         if self._transform is not None:
             value = self._transform(value)
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+
+
+class FordPassAlertSensor(SensorEntity):
+    """Vehicle health alerts from /vha/activealert (plaintext Chinese).
+
+    Shows a joined list of active alert headlines; falls back to "无异常"
+    when the list is empty or the endpoint is unavailable.
+    """
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-vehicle_alerts"
+        self._attr_name = "车辆异常警示"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:alert"
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data or {}
+        alerts = data.get("active_alerts")
+        if not alerts:
+            return "无异常"
+        if isinstance(alerts, list):
+            titles = [a.get("headline") for a in alerts if isinstance(a, dict) and a.get("headline")]
+            return "、".join(titles) if titles else "无异常"
+        return str(alerts)
+
+
+class FordPassTrafficSensor(SensorEntity):
+    """In-car media-data quota sensor from the venusplatform H5 backend.
+
+    Reads a field of coordinator.data["traffic"]; sizes come in KB and are
+    converted to MB (integer) when ``kb_to_mb`` is set; the remaining ratio
+    ("98%") is stripped of its percent sign when ``strip_percent`` is set.
+    """
+
+    def __init__(self, coordinator, key, label, unit, device_class, icon,
+                 field, kb_to_mb: bool = False, strip_percent: bool = False) -> None:
+        self.coordinator = coordinator
+        self._field = field
+        self._kb_to_mb = kb_to_mb
+        self._strip_percent = strip_percent
+        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_name = label
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = icon
+        if unit:
+            self._attr_native_unit_of_measurement = unit
+        if device_class:
+            self._attr_device_class = device_class
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data or {}
+        traffic = data.get("traffic")
+        if not traffic or not isinstance(traffic, dict):
+            return None
+        value = traffic.get(self._field)
+        if value is None:
+            return None
+        if self._kb_to_mb and isinstance(value, (int, float)) and not isinstance(value, bool):
+            return int(round(value / 1024))
+        if self._strip_percent and isinstance(value, str) and value.endswith("%"):
+            try:
+                return int(value[:-1])
+            except ValueError:
+                return value
         if isinstance(value, float) and value.is_integer():
             return int(value)
         return value

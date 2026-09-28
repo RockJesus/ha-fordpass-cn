@@ -15,6 +15,7 @@ from .const import (
     CONF_ACCESS_TOKEN,
     CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
+    CONF_TRAFFIC_TOKEN,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
 )
@@ -93,8 +94,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
     track_location = bool(entry.options.get("track_location", True))
+    traffic_token = str(entry.options.get(CONF_TRAFFIC_TOKEN, "") or "").strip()
     coordinator = FordPassCoordinator(
-        hass, api, vin, int(interval), vehicle_label, license_plate, track_location, nickname
+        hass, api, vin, int(interval), vehicle_label, license_plate,
+        track_location, nickname, traffic_token,
     )
     await coordinator.async_config_entry_first_refresh()
 
@@ -121,10 +124,14 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS))
     coordinator.update_interval = timedelta(seconds=interval)
     coordinator.track_location = bool(entry.options.get("track_location", True))
+    coordinator.traffic_token = str(
+        entry.options.get(CONF_TRAFFIC_TOKEN, "") or ""
+    ).strip()
     _LOGGER.info(
-        "fordpass_cn options updated: scan_interval=%ss track_location=%s",
+        "fordpass_cn options updated: scan_interval=%ss track_location=%s traffic_token=%s",
         interval,
         coordinator.track_location,
+        bool(coordinator.traffic_token),
     )
     await coordinator.async_request_refresh()
 
