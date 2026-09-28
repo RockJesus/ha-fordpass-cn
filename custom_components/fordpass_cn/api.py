@@ -17,6 +17,7 @@ import base64
 import datetime
 import hashlib
 import json
+import math
 import time
 import urllib.parse
 import uuid
@@ -51,6 +52,55 @@ from .const import (
     TOUCH_POINT,
 )
 from .wbsk import FordPassCrypto
+
+
+def wgs84_to_gcj02(lat: float, lng: float) -> tuple[float, float]:
+    """Convert WGS-84 (GPS raw) coordinates to GCJ-02 (国测局加密坐标).
+
+    FordPass CN LBS returns WGS-84 coordinates; China map tiles (Gaode,
+    Tencent, ...) use GCJ-02, so the raw point lands ~600 m off on the map.
+    Converting at the source makes every map card show the vehicle accurately.
+    """
+    if lng < 72.004 or lng > 137.8347 or lat < 0.8293 or lat > 55.8271:
+        # outside China: no offset applies
+        return lat, lng
+
+    a = 6378245.0
+    ee = 0.00669342162296594323
+
+    def _lat(x: float, y: float) -> float:
+        ret = -100.0 + 2.0*x + 3.0*y + 0.2*y*y + 0.1*x*y + 0.2*math.sqrt(abs(x))
+        ret += (20.0*math.sin(6.0*x*math.pi) + 20.0*math.sin(2.0*x*math.pi)) * 2.0/3.0
+        ret += (20.0*math.sin(y*math.pi) + 40.0*math.sin(y/3.0*math.pi)) * 2.0/3.0
+        ret += (160.0*math.sin(y/12.0*math.pi) + 320.0*math.sin(y*math.pi/30.0)) * 2.0/3.0
+        return ret
+
+    def _lng(x: float, y: float) -> float:
+        ret = 300.0 + x + 2.0*y + 0.1*x*x + 0.1*x*y + 0.1*math.sqrt(abs(x))
+        ret += (20.0*math.sin(6.0*x*math.pi) + 20.0*math.sin(2.0*x*math.pi)) * 2.0/3.0
+        ret += (20.0*math.sin(x*math.pi) + 40.0*math.sin(x/3.0*math.pi)) * 2.0/3.0
+        ret += (150.0*math.sin(x/12.0*math.pi) + 300.0*math.sin(x/30.0*math.pi)) * 2.0/3.0
+        return ret
+
+    d_lat = _lat(lng - 105.0, lat - 35.0)
+    d_lng = _lng(lng - 105.0, lat - 35.0)
+    rad_lat = lat / 180.0 * math.pi
+    magic = math.sin(rad_lat)
+    magic = 1 - ee * magic * magic
+    sqrt_magic = math.sqrt(magic)
+    d_lat = (d_lat * 180.0) / ((a * (1 - ee)) / (magic * sqrt_magic) * math.pi)
+    d_lng = (d_lng * 180.0) / (a / sqrt_magic * math.cos(rad_lat) * math.pi)
+    return lat + d_lat, lng + d_lng
+
+
+def normalize_gcj02(lat, lng):
+    """Apply WGS84->GCJ02 and preserve the original value type (str/float)."""
+    lat_f = float(lat)
+    lng_f = float(lng)
+    lat_g, lng_g = wgs84_to_gcj02(lat_f, lng_f)
+    if isinstance(lat, str):
+        return f"{lat_g:.6f}", f"{lng_g:.6f}"
+    return lat_g, lng_g
 
 
 def _canonical(params: dict[str, Any]) -> str:
@@ -352,6 +402,39 @@ class FordPassApi:
             return json.loads(plain)
         return inner
 
+    async def wait_status_refresh(
+        self, vin: str, timeout: float = 30.0, poll: float = 4.0
+    ) -> tuple[bool, str | None]:
+        """After a ForceRefresh command, wait for Ford's backend to propagate.
+
+        ForceRefresh only tells Ford's server to pull fresh data from the car
+        (the vehicle may be asleep and takes seconds to wake up and report).
+        Fetching the status immediately just returns the old cached snapshot,
+        so entities never visibly change.  Poll vehicle-status until its data
+        timestamp (lastModifiedDate / lastRefresh) moves.
+
+        Returns ``(changed, latest_stamp)``.
+        """
+        base: str | None = None
+        last: str | None = None
+        start = time.monotonic()
+        while time.monotonic() - start < timeout:
+            try:
+                status = await self.get_vehicle_status(vin)
+                vs = status.get("vehiclestatus", status)
+                stamp = str(vs.get("lastModifiedDate") or vs.get("lastRefresh") or "")
+                if not stamp:
+                    return False, last
+                if base is None:
+                    base = stamp
+                last = stamp
+                if stamp != base:
+                    return True, stamp
+            except Exception as exc:  # noqa: BLE001 - keep polling on transient errors
+                self._log.debug("wait_status_refresh poll failed: %s", exc)
+            await asyncio.sleep(poll)
+        return False, last
+
     async def command_status(
         self, vin: str, command_id: str, command_type: str
     ) -> dict[str, Any]:
@@ -532,9 +615,14 @@ class FordPassApi:
         try:
             iv = inner["iv"]
             resp_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "lbs_p2c")
+            lat = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lat"], iv))
+            lon = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lon"], iv))
+            # FordPass CN returns WGS-84; convert to GCJ-02 so China map tiles
+            # (Gaode/Tencent) show the vehicle accurately (v2.6.6).
+            lat, lon = normalize_gcj02(lat, lon)
             return {
-                "lat": await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lat"], iv)),
-                "lon": await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lon"], iv)),
+                "lat": lat,
+                "lon": lon,
                 "address": await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["address"], iv)),
                 "uploadTime": inner.get("uploadTime"),
                 "iv": iv,
