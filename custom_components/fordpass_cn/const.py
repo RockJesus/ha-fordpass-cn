@@ -6,6 +6,14 @@ DOMAIN = "fordpass_cn"
 # Production gateways (verified from official app captures)
 BASE_URL = "https://cn.api.mps.ford.com.cn"
 LBS_BASE_URL = "https://api-connect.ford.com.cn"
+# In-car connectivity / media-data H5 backend (流量管理 / 影音娱乐), verified
+# from the official app's WebView capture:
+#   POST /ford-phase3/h5/login/{vin_token}/1          -> abilityUserId/customerId/shopCode
+#   POST /ford-phase3/h5/traffic/manage/{vin_token}/2 -> traffic quotas
+# The {vin_token} (64-hex, encryType=1) is what the app puts in the FlowMgt
+# page URL; the integration exposes it as an optional config option.
+VENUS_BASE_URL = "https://ford.venusplatform.com/ford-phase3"
+X_V_KEY = "be13d03807d84c3ea1733a92edaa5923"  # fixed X-V-Key header (in H5 JS)
 
 # LBS (vehicle location) gateway — recovered from the app's Dart AOT code and
 # verified against 26 live captures (x-sign 26/26).
@@ -43,6 +51,14 @@ PATH_VEHICLE_STATUS = "/api/cnxapi-cvinfo/v1/vehicle-status"
 PATH_SEND_COMMAND = "/api/cnxapi-cvinfo/v1/vehicles/send-command"
 PATH_COMMAND_STATUS = "/api/cnxapi-cvinfo/v1/vehicles/command-execution-status"
 PATH_QUERY_LOCATION = "/lbs-map/v2/public/app/queryLocation"
+# Vehicle health alerts (明文中文告警, auth-token only, no sign) — verified
+# from the official app capture:
+#   GET /api/cnxapi-cds/v1/vha/activealert?hmiPreferredLanguage=zh-cn&
+#       preferredLanguage=zh-cn&source=TCU&encryptedVin={wb}&xjw={iv}
+PATH_ACTIVE_ALERT = "/api/cnxapi-cds/v1/vha/activealert"
+# Media-data H5 backend (venusplatform)
+PATH_TRAFFIC_LOGIN = "/h5/login/{token}/1"
+PATH_TRAFFIC_MANAGE = "/h5/traffic/manage/{token}/2"
 
 # Remote command values (camelCase style, consistent with Auto/ForceRefresh;
 # FORD_* enum lives in the app; verify against a live command before trusting)
@@ -65,6 +81,7 @@ CONF_ACCESS_TOKEN = "access_token"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_VEHICLE_INDEX = "vehicle_index"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_TRAFFIC_TOKEN = "traffic_token"  # optional 64-hex FlowMgt VIN token
 
 # Defaults
 DEFAULT_SCAN_INTERVAL_SECONDS = 300

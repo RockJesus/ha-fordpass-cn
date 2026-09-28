@@ -29,6 +29,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         license_plate: str | None = None,
         track_location: bool = True,
         nickname: str | None = None,
+        traffic_token: str | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -41,6 +42,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.license_plate = license_plate
         self.nickname = nickname
         self.track_location = track_location
+        self.traffic_token = traffic_token or ""
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
 
     @property
@@ -78,4 +80,21 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception as exc:  # noqa: BLE001
                 self.logger.debug("FordPass location fetch failed: %s", exc)
                 data["location"] = None
+
+        # Vehicle health alerts (plaintext Chinese headlines) — best effort.
+        try:
+            alerts = await self.api.get_active_alerts(self.vin)
+            data["active_alerts"] = alerts or []
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass active alerts fetch failed: %s", exc)
+            data["active_alerts"] = []
+
+        # In-car media-data traffic quota (only when the user configured the
+        # FlowMgt VIN token in options).
+        if self.traffic_token:
+            try:
+                data["traffic"] = await self.api.get_traffic_info(self.traffic_token)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass traffic fetch failed: %s", exc)
+                data["traffic"] = None
         return data

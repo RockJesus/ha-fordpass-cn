@@ -19,6 +19,7 @@ from .api import FordPassApi, FordPassApiError
 from .const import (
     CONF_PHONE,
     CONF_SCAN_INTERVAL,
+    CONF_TRAFFIC_TOKEN,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
 )
@@ -146,6 +147,10 @@ class FordPassOptionsFlow(config_entries.OptionsFlow):
                     vol.Optional(
                         "track_location", default=data.get("track_location", True)
                     ): bool,
+                    vol.Optional(
+                        CONF_TRAFFIC_TOKEN,
+                        default=data.get(CONF_TRAFFIC_TOKEN, ""),
+                    ): str,
                 }
             ),
         )
