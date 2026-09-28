@@ -399,7 +399,16 @@ class FordPassApi:
         inner = data.get("data", {})
         if inner.get("encryptedResponseBody"):
             plain = await asyncio.to_thread(lambda: self.crypto.decrypt_field(inner["encryptedResponseBody"], inner["xjw"]))
-            return json.loads(plain)
+            result = json.loads(plain)
+            self._log.debug(
+                "FordPass send-command %s decrypted: %s",
+                command_type, json.dumps(result, ensure_ascii=False)[:400],
+            )
+            return result
+        self._log.debug(
+            "FordPass send-command %s raw data (no encryptedResponseBody): %s",
+            command_type, json.dumps(inner, ensure_ascii=False)[:400],
+        )
         return inner
 
     async def wait_command_complete(
