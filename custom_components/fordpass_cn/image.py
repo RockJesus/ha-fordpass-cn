@@ -29,6 +29,30 @@ def _local_path(hass: HomeAssistant, vin: str) -> str:
     return os.path.join(hass.config.path("www"), "fordpass_cn", f"{vin}.png")
 
 
+def _read_local(path: str) -> bytes | None:
+    """Read the persisted picture from www/fordpass_cn (run in executor)."""
+    try:
+        if os.path.isfile(path):
+            with open(path, "rb") as fh:
+                return fh.read()
+    except OSError as exc:
+        _LOGGER.warning("vehicle image local read failed: %s", exc)
+    return None
+
+
+def _persist_sync(path: str, data: bytes) -> None:
+    """Write the picture to www/fordpass_cn atomically (run in executor)."""
+    try:
+        directory = os.path.dirname(path)
+        os.makedirs(directory, exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+        os.replace(tmp, path)
+    except OSError as exc:
+        _LOGGER.warning("vehicle image persist failed: %s", exc)
+
+
 class FordPassVehicleImage(ImageEntity):
     """Vehicle model picture, persisted locally and never deleted."""
 
@@ -66,36 +90,16 @@ class FordPassVehicleImage(ImageEntity):
             "image_path": self._persist_path,
         }
 
-    def _read_local(self) -> bytes | None:
-        """Read the persisted picture from www/fordpass_cn (never delete it)."""
-        try:
-            if os.path.isfile(self._persist_path):
-                with open(self._persist_path, "rb") as fh:
-                    return fh.read()
-        except OSError as exc:
-            _LOGGER.warning("vehicle image local read failed: %s", exc)
-        return None
-
-    async def _persist(self, data: bytes) -> None:
-        try:
-            directory = os.path.dirname(self._persist_path)
-            os.makedirs(directory, exist_ok=True)
-            tmp = f"{self._persist_path}.tmp"
-            with open(tmp, "wb") as fh:
-                fh.write(data)
-            os.replace(tmp, self._persist_path)
-        except OSError as exc:
-            _LOGGER.warning("vehicle image persist failed: %s", exc)
-
     async def async_image(self) -> bytes | None:
         """Return the picture: local file first, then remote URL once.
 
         Once downloaded the bytes are kept in memory AND written to the www
         folder, so the image is never deleted or re-downloaded on restart.
+        File IO runs in the executor to keep the event loop responsive.
         """
         if self._image_bytes:
             return self._image_bytes
-        local = self._read_local()
+        local = await self.hass.async_add_executor_job(_read_local, self._persist_path)
         if local:
             self._image_bytes = local
             return local
@@ -115,7 +119,9 @@ class FordPassVehicleImage(ImageEntity):
                 data = await resp.read()
                 if data:
                     self._image_bytes = data
-                    await self._persist(data)
+                    await self.hass.async_add_executor_job(
+                        _persist_sync, self._persist_path, data
+                    )
                 return data or None
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("vehicle image fetch error: %s", exc)
