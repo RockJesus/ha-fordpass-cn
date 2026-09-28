@@ -1,4 +1,4 @@
-{
+﻿{
     "domain":  "fordpass_cn",
     "name":  "FordPass China 福特派互联",
     "codeowners":  [
@@ -12,5 +12,7 @@
                          "unicorn==2.1.4",
                          "pyelftools"
                      ],
-    "version":  "2.6.5"
+    "version":  "2.6.7"
 }
+
+

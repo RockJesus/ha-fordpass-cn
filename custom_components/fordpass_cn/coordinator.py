@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 from datetime import timedelta
 import logging
 from typing import Any
@@ -44,6 +45,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.track_location = track_location
         self.vehicle_image_url = vehicle_image_url
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
+        # UTC timestamp of the most recent *successful* fetch — manual refresh
+        # feedback for the "最后刷新时间" sensor (v2.6.7).
+        self._last_success_ts: str | None = None
+
+    @property
+    def last_success_ts(self) -> str | None:
+        """Local time string of the last successful data fetch."""
+        return self._last_success_ts
 
     @property
     def vehicle_model(self) -> str:
@@ -72,6 +81,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"FordPass update failed: {err}") from err
         except asyncio.TimeoutError as err:
             raise UpdateFailed("FordPass update timed out") from err
+
+        # Successful fetch — remember the time for manual-refresh feedback.
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+            self._last_success_ts = now.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:  # noqa: BLE001
+            pass
 
         # Best-effort location (only when the user enabled tracking; the LBS
         # gateway is a separate APIM endpoint and costs a remote round trip).
