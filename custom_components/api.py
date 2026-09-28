@@ -28,6 +28,13 @@ import aiohttp
 from .const import (
     APP_VERSION,
     APPLICATION_ID,
+    B2C_AUTHORITY,
+    B2C_CLIENT_ID,
+    B2C_PATH_AUTHORIZE,
+    B2C_PATH_CONFIRMED,
+    B2C_PATH_SELF_ASSERTED,
+    B2C_POLICY,
+    B2C_REDIRECT_URI,
     BASE_URL,
     CLIENT_TYPE,
     LBS_APP_ID,
@@ -37,6 +44,7 @@ from .const import (
     OS_TYPE,
     OS_VERSION,
     PATH_ACTIVE_ALERT,
+    PATH_B2C_TOKEN,
     PATH_COMMAND_STATUS,
     PATH_GENERATE_PASSCODE,
     PATH_PASSCODE_LOGIN,
@@ -216,6 +224,7 @@ class FordPassApi:
         query: dict[str, Any] | None = None,
         base: str = BASE_URL,
         raw: bool = False,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         url = base + path
         if body is not None:
@@ -230,7 +239,7 @@ class FordPassApi:
             kwargs = {"params": params}
         self._log.debug("FordPass %s %s payload=%s", method, url, kwargs)
         async with self._session.request(
-            method, url, headers=self._headers(), **kwargs
+            method, url, headers=self._headers(headers), **kwargs
         ) as resp:
             text = await resp.text()
             self._log.debug("FordPass %s -> %s %s", path, resp.status, text[:2000])
@@ -242,7 +251,7 @@ class FordPassApi:
                     self._access_token = new["access_token"]
                     if self.on_token_refresh is not None:
                         self.on_token_refresh(new["access_token"])
-                    return await self._request(method, path, body, query, base, raw)
+                    return await self._request(method, path, body, query, base, raw, headers)
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
@@ -279,7 +288,7 @@ class FordPassApi:
                     self._access_token = new["access_token"]
                     if self.on_token_refresh is not None:
                         self.on_token_refresh(new["access_token"])
-                    return await self._request(method, path, body, query, base, raw)
+                    return await self._request(method, path, body, query, base, raw, headers)
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
@@ -500,9 +509,12 @@ class FordPassApi:
     async def get_active_alerts(self, vin: str) -> list[dict[str, Any]]:
         """GET /api/cnxapi-cds/v1/vha/activealert (明文中文告警).
 
-        Verified from the official app capture: this endpoint takes the normal
-        white-box encrypted VIN + random xjw, reuses the main auth-token header
-        and needs NO sign.  Response ``data.VehicleAlertResponseList[].ActiveAlerts[]``
+        Verified from the official app capture (2026-09-29): this endpoint
+        takes the normal white-box encrypted VIN + random xjw, reuses the
+        main auth-token header, and — like every other gateway call — carries
+        ``timestamp`` + ``sign`` (a bare GET without them is 404'd by the
+        server since 2026-09-29, fixed in v2.7.4).  The vha service uses its
+        own appversion (1.0.0).  Response ``data.VehicleAlertResponseList[].ActiveAlerts[]``
         carries plaintext Chinese headlines like 胎压监测系统警告.
         """
         enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
@@ -513,29 +525,12 @@ class FordPassApi:
             "encryptedVin": enc_vin,
             "xjw": xjw,
         }
-        headers = {
-            "user-agent": "Dart (dart:io)",
-            "appversion": "1.0.0",  # the vha service uses its own appversion
-            "ostype": OS_TYPE,
-            "clienttype": CLIENT_TYPE,
-            "application-id": APPLICATION_ID,
-            "content-type": "application/json; charset=utf-8",
-            "x-dynatrace": "",
-        }
-        if self._access_token:
-            headers["auth-token"] = self._access_token
-        self._log.debug("FordPass GET %s params=%s", PATH_ACTIVE_ALERT, params)
-        async with self._session.get(
-            BASE_URL + PATH_ACTIVE_ALERT, headers=headers, params=params
-        ) as resp:
-            text = await resp.text()
-            self._log.debug("FordPass activealert -> %s %s", resp.status, text[:400])
-            if resp.status >= 400:
-                raise FordPassApiError(resp.status, text[:300])
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            raise FordPassApiError(resp.status, f"non-JSON activealert: {text[:200]}")
+        data = await self._request(
+            "GET",
+            PATH_ACTIVE_ALERT,
+            query=params,
+            headers={"appversion": "1.0.0"},  # the vha service's own appversion
+        )
         alerts: list[dict[str, Any]] = []
         for entry in data.get("data", {}).get("VehicleAlertResponseList", []) or []:
             for item in entry.get("ActiveAlerts", []) or []:
@@ -550,6 +545,166 @@ class FordPassApi:
                         }
                     )
         return alerts
+
+    # --------------------------------------------------------- b2c login
+    async def password_login(
+        self, username: str, password: str
+    ) -> dict[str, str]:
+        """Username/password login via the Azure AD B2C flow (v2.7.4).
+
+        Fully recovered from the official app capture (2026-09-29,
+        ``api-connect.ford.com.cn_2026_09_29_02_03_29.har``): the app signs
+        in through the B2C ``B2C_1A_SignInSignUp_zh-CN`` policy and exchanges
+        the resulting authorization code for the SAME DLT JWTs as the SMS
+        login, so the rest of the integration (refresh / commands) is
+        unchanged.
+
+        Steps (a dedicated browser-like client session keeps the B2C cookies
+        isolated from the main API session):
+          1. GET  authorize   -> form page; save ``x-ms-cpim-csrf`` cookie and
+                                 ``x-request-id`` (== B2C TID, verified live);
+          2. POST SelfAsserted -> credentials; {"status":"200"} on success;
+          3. GET  confirmed   -> 302; Location carries ``?code=<JWT>``;
+          4. POST dlt-token-by-b2c-auth-code (standard signed request) with
+             the white-box encrypted authorization code -> access/refresh JWT.
+
+        Returns {"access_token", "refresh_token"} like passcode_login.
+        """
+        ua = (
+            "Mozilla/5.0 (Linux; Android 12; BVL-AN16 Build/V417IR; wv) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+            "Chrome/110.0.5481.154 Mobile Safari/537.36 channel/app"
+        )
+        authorize_query: dict[str, Any] = {
+            "client_id": B2C_CLIENT_ID,
+            "nonce": "defaultNonce",
+            "redirect_uri": B2C_REDIRECT_URI,
+            "scope": "openid",
+            "response_type": "code",
+            "prompt": "login",
+            "country_code": "CHN",
+            "ford_application_id": APPLICATION_ID,
+            "language_code": "zh-CN",
+            "tnc_accepted": "true",
+            "tnc_consent1_accepted": "true",
+            "tnc_consent2_accepted": "false",
+        }
+        # the B2C form expects the E.164 number (+86...)
+        sign_in_name = username if username.startswith("+") else f"+86{username}"
+        form_headers = {
+            "user-agent": ua,
+            "x-requested-with": "XMLHttpRequest",
+            "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "accept": "application/json, text/javascript, */*; q=0.01",
+            "origin": B2C_AUTHORITY,
+        }
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as b2c:
+            # 1) authorize
+            async with b2c.get(
+                B2C_AUTHORITY + B2C_PATH_AUTHORIZE,
+                params=authorize_query,
+                headers={"user-agent": ua, "x-requested-with": "com.ford.fordpasscn"},
+            ) as resp:
+                html = await resp.text()
+                if resp.status != 200:
+                    raise FordPassApiError(
+                        resp.status, f"B2C authorize failed: {html[:200]}"
+                    )
+                req_id = resp.headers.get("x-request-id") or ""
+                csrf = ""
+                cookies = b2c.cookie_jar.filter_cookies(B2C_AUTHORITY)
+                c = cookies.get("x-ms-cpim-csrf")
+                if c is not None:
+                    csrf = c.value
+                if not csrf:
+                    raise FordPassApiError(
+                        None, "B2C authorize returned no x-ms-cpim-csrf cookie"
+                    )
+                if not req_id:
+                    raise FordPassApiError(
+                        None, "B2C authorize returned no x-request-id"
+                    )
+            # StateProperties tx == base64({"TID": <x-request-id>}), no padding
+            tx_raw = json.dumps({"TID": req_id}, separators=(",", ":")).encode()
+            tx = base64.b64encode(tx_raw).decode("ascii").rstrip("=")
+            tx_qs = f"StateProperties={tx}"
+            self._log.debug("FordPass B2C authorize ok: tx=%s csrf_len=%d", tx_qs[:60], len(csrf))
+
+            # 2) SelfAsserted — submit credentials
+            form = (
+                "request_type=RESPONSE"
+                f"&signInName={urllib.parse.quote(sign_in_name, safe='')}"
+                f"&password={urllib.parse.quote(password, safe='')}"
+            )
+            referer = (
+                B2C_AUTHORITY + B2C_PATH_AUTHORIZE + "?" +
+                urllib.parse.urlencode(authorize_query)
+            )
+            headers = dict(form_headers)
+            headers["x-csrf-token"] = csrf
+            headers["referer"] = referer
+            async with b2c.post(
+                B2C_AUTHORITY + B2C_PATH_SELF_ASSERTED,
+                params={"tx": tx_qs, "p": B2C_POLICY},
+                data=form,
+                headers=headers,
+            ) as resp:
+                text = await resp.text()
+                self._log.debug("FordPass B2C SelfAsserted -> %s %s", resp.status, text[:200])
+                if resp.status != 200:
+                    raise FordPassApiError(resp.status, f"B2C SelfAsserted failed: {text[:200]}")
+                if '"status":"200"' not in text.replace(" ", ""):
+                    raise FordPassApiError(None, f"B2C credentials rejected: {text[:200]}")
+
+            # 3) confirmed -> 302 Location carries ?code=
+            async with b2c.get(
+                B2C_AUTHORITY + B2C_PATH_CONFIRMED,
+                params={
+                    "rememberMe": "false",
+                    "csrf_token": csrf,
+                    "tx": tx_qs,
+                    "p": B2C_POLICY,
+                },
+                headers={"user-agent": ua, "x-requested-with": "com.ford.fordpasscn"},
+                allow_redirects=False,
+            ) as resp:
+                text = await resp.text()
+                if resp.status != 302:
+                    raise FordPassApiError(
+                        resp.status, f"B2C confirmed expected 302, got {resp.status}: {text[:200]}"
+                    )
+                location = resp.headers.get("location", "")
+            code = urllib.parse.parse_qs(
+                urllib.parse.urlparse(location).query
+            ).get("code", [""])[0]
+            if not code:
+                raise FordPassApiError(None, f"B2C confirmed 302 without code: {location[:200]}")
+            self._log.debug("FordPass B2C authorization code acquired (len=%d)", len(code))
+
+        # 4) exchange the code for DLT tokens (standard signed request)
+        enc_code, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(code))
+        data = await self._request(
+            "POST",
+            PATH_B2C_TOKEN,
+            {
+                "encryptedAuthCode": enc_code,
+                "xjw": xjw,
+                "brand": "FORD",
+                "osType": "ANDROID",
+                "policyType": "SIGNINSIGNUP",
+            },
+        )
+        inner = data.get("data", {})
+        xjw2 = inner.get("xjw", xjw)
+        return {
+            "access_token": await asyncio.to_thread(lambda: self.crypto.decrypt_field(
+                inner["encryptedAccessToken"], xjw2
+            )),
+            "refresh_token": await asyncio.to_thread(lambda: self.crypto.decrypt_field(
+                inner["encryptedRefreshToken"], xjw2
+            )),
+        }
 
     # ------------------------------------------------------------ location
     async def get_lbs_token(self, vin: str) -> str:

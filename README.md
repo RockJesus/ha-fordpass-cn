@@ -2,13 +2,14 @@
 
 ![FordPass China](custom_components/fordpass_cn/brand/logo.png)
 
-Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务，支持短信验证码登录、远程控车与车辆定位追踪。
+Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务，支持短信验证码 / 用户名密码两种登录方式、远程控车与车辆定位追踪。
 
 > ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
 
 ## 功能特性
 
-- **手机号短信验证码登录**：无需密码，验证码直登
+- **双登录方式（v2.7.4）**：手机号短信验证码登录（无需密码）或用户名密码登录（Azure B2C 官方流程），配置时可自由选择
+- **车辆异常警示**：接入福特 vha/activealert 真实告警接口（v2.7.4 修复签名校验，恢复明文中文告警显示）
 - **远程控车**：上锁 / 解锁 / 远程启动 / 远程熄火 / 鸣笛 / 报警 / 刷新车辆状态
 - **车辆状态**：门锁、报警、燃油量、胎压、里程等实时状态
 - **车辆异常警示**：接入福特 vha/activealert 真实告警接口，明文中文显示（如「胎压监测系统警告」）
@@ -27,15 +28,15 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_2.7.3.zip`）
+1. 下载最新版 Release（`fordpass_cn_2.7.4.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
 ## 配置
 
 1. 设置 → 设备与服务 → 添加集成 → 搜索「福特派互联」
-2. 输入注册福特派的手机号
-3. 获取短信验证码并输入，完成登录
+2. 选择登录方式：**手机号验证码登录**（输入手机号 → 获取短信验证码 → 输入完成）或 **用户名密码登录**（输入福特派账号手机号与密码，密码仅用于本次登录换令牌、不会保存）
+3. 按所选方式完成登录
 4. 在集成选项（Options）中可开启「启用车辆定位追踪」
 
 > 依赖 `unicorn`（ARM64 白盒 AES 仿真）与 `pyelftools`，HA 首次加载时会自动安装。
@@ -54,6 +55,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v2.7.4**：新增用户名密码登录（配置流程可选两种登录方式：短信验证码 / 用户名密码；用户名密码走官方 Azure AD B2C 流程——authorize → SelfAsserted → confirmed 取授权码 → dlt-token-by-b2c-auth-code 换令牌，密码仅用于本次登录换取令牌、不持久化保存）；修复「车辆异常警示」activealert 接口持续 404——官方 App 该请求携带标准 `timestamp`+`sign` 签名，v2.7.4 起改用带签名的统一请求（并保留 vha 服务专用 appversion=1.0.0），接口恢复返回明文中文告警（如「胎压监测系统警告」）
 - **v2.7.3**：修复福特网关 `600 Cat2 token expired`（`Swap token failed`）业务级 token 过期不刷新问题——`_request` 现在把 HTTP 200 但业务码 600 且含 token 错误的响应等同于 HTTP 401 处理：自动刷新一次 access token 并重试（实测刷新按钮流程完成后出现该错误，不加此修复后续轮询会持续拿到空数据）
 - **v2.7.2**：所有车辆状态传感器新增福特原始数据属性——`timestamp`（该字段福特上报时间）、`source_status`（CURRENT/LAST_KNOWN）、`vehicle_data_time`（整份快照的 lastModifiedDate）；车辆定位传感器新增 `latitude`/`longitude`/`upload_time`/`address` 属性；车辆异常警示新增 `event_time`/`alerts`/`source` 属性；`send-command` 增加响应解密日志便于排查「刷新无 commandId」
 - **v2.7.1**：刷新按钮改为与官方 App 一致的流程（经抓包验证）——`send-command` 返回 `commandId` 后，轮询 `command-execution-status`（每 2 秒，最长 60 秒）直到解密数据从占位（`LAST_KNOWN`/`01-01-0001`/`vin=null`）变为 `CURRENT` 真实快照，命令完成响应本身已含完整最新数据，直接推送实体；不再轮询 vehicle-status 时间戳（官方并不以此判断刷新完成）
