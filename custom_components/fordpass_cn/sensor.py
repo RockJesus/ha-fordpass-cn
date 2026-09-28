@@ -46,32 +46,15 @@ async def async_setup_entry(
         FordPassSensor(coordinator, "lr_tire", "左后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "outerLeftRearTirePressure"], round_value=True),
         FordPassSensor(coordinator, "rr_tire", "右后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "outerRightRearTirePressure"], round_value=True),
         FordPassSensor(coordinator, "lock_status", "门锁状态", None, None, "mdi:lock", ["lockStatus"], enum_map={"LOCKED": "已锁定", "UNLOCKED": "已解锁", 1: "已锁定", 0: "已解锁", "1": "已锁定", "0": "已解锁", True: "已锁定", False: "已解锁"}),
-        FordPassSensor(coordinator, "alarm_status", "报警状态", None, None, "mdi:alarm", ["alarm"], enum_map={"NOT_IN_ALARM": "解除报警", "ALARM": "车辆被盗", "ARMED": "车辆被盗", "NOT_IN_ALARMS": "解除报警", 0: "解除报警", 1: "车辆被盗", "0": "解除报警", "1": "车辆被盗", False: "解除报警", True: "车辆被盗"}),
+        FordPassSensor(coordinator, "alarm_status", "报警状态", None, None, "mdi:alarm", ["alarm"], enum_map={"NOT_IN_ALARM": "解除报警", "NOT_IN_ALARMS": "解除报警", "DISARMED": "解除报警", "ALARM": "车辆被盗", "ARMED": "车辆被盗", "SET": "车辆被盗", 0: "解除报警", 1: "车辆被盗", "0": "解除报警", "1": "车辆被盗", False: "解除报警", True: "车辆被盗"}),
         FordPassSensor(coordinator, "remote_start", "远程启动状态", None, None, "mdi:engine", ["remoteStartStatus"], enum_map={1: "已远程启动", 0: "未远程启动", "1": "已远程启动", "0": "未远程启动", True: "已远程启动", False: "未远程启动", "true": "已远程启动", "false": "未远程启动"}),
-        # 空调滤芯状态（候选路径，部署后以 debug 日志校准）
-        FordPassSensor(
-            coordinator, "air_filter", "空调滤芯状态", None, None, "mdi:air-filter",
-            [["airFilter", "status"], ["airFilter", "value"], ["airFilter", "remainingLife"],
-             ["cabinFilter", "status"], ["cabinFilter", "value"], ["cabinFilter"],
-             ["filter", "airFilterStatus"], ["airFilterStatus"], ["filterStatus"],
-             ["acFilter", "status"], ["acFilter"]],
-        ),
-        # 车辆异常警示（候选路径）
+        # 车辆异常警示（真实字段 PrmtAlarmEvent，值 Null = 无异常）
         FordPassSensor(
             coordinator, "vehicle_warning", "车辆异常警示", None, None, "mdi:alert",
-            [["warning"], ["warnings"], ["alerts"], ["vehicleAbnormal"], ["abnormal"],
-             ["abnormalWarning"], ["abnormalStatus"], ["warningStatus"], ["faults"],
-             ["diagnostics"], ["warningInfo"], ["vehicleWarning"]],
-        ),
-        # 流量管理-影音娱乐-剩余流量（候选路径）
-        FordPassSensor(
-            coordinator, "media_data_remaining", "剩余流量", None, None, "mdi:chart-donut",
-            [["dataPlan", "remainingData"], ["dataPlan", "remainData"],
-             ["dataPlan", "remainingTraffic"], ["dataPlan", "dataRemaining"],
-             ["mediaPlan", "remainingData"], ["mediaPlan", "dataRemaining"],
-             ["entertainment", "remainingData"], ["entertainment", "dataRemaining"],
-             ["remainingData"], ["dataRemaining"], ["traffic", "remaining"],
-             ["connectivity", "dataRemaining"]],
+            [["PrmtAlarmEvent"], ["warning"], ["warnings"], ["alerts"], ["vehicleAbnormal"],
+             ["abnormal"], ["abnormalWarning"], ["abnormalStatus"], ["warningStatus"],
+             ["faults"], ["diagnostics"], ["warningInfo"], ["vehicleWarning"]],
+            enum_map={"Null": "无异常", "null": "无异常", "NONE": "无异常"},
         ),
     ]
     sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
