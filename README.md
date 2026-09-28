@@ -25,7 +25,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_2.5.9.zip`）
+1. 下载最新版 Release（`fordpass_cn_2.6.0.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -50,6 +50,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v2.6.0**：校准车辆异常警示（真实字段 `PrmtAlarmEvent`，无异常时显示「无异常」）；修复报警状态 `SET` 映射（设防 = 车辆被盗）；移除空调滤芯、剩余流量传感器（`vehicle-status` 接口无对应数据源，避免长期 `unknown`）
 - **v2.5.9**：新增传感器——车辆昵称、车辆识别码（VIN）
 - **v2.5.8**：新增传感器——空调滤芯状态、车辆异常警示、剩余流量（影音娱乐）
 - **v2.5.7**：修复「车辆定位追踪」开关无法即时生效——设备追踪实体始终创建，开关状态通过实体可用性即时反映（无需重启）
