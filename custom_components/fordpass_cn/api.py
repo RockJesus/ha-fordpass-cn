@@ -259,6 +259,32 @@ class FordPassApi:
                     return text
                 raise FordPassApiError(resp.status, f"non-JSON response: {text[:200]}")
         if isinstance(data, dict):
+            # Business-layer token expiry: the gateway answers HTTP 200 with
+            # {"status":600,"error":"Swap token failed {…Cat2 token expired…}",
+            #  "errorCode":"100502"} once the internal Cat2 token lapses
+            # (observed 2026-09-29 after the ForceRefresh flow succeeded).
+            # Treat it exactly like an HTTP 401: refresh once and retry.
+            status = data.get("status")
+            error = str(data.get("error") or "")
+            if (
+                status == 600
+                and "token" in error.lower()
+                and self._refresh_token
+                and not self._retrying
+            ):
+                self._retrying = True
+                try:
+                    self._log.info("FordPass Cat2 token expired, refreshing once")
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    return await self._request(method, path, body, query, base, raw)
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
             code = data.get("code")
             if code not in (None, 0, "0", 200, "200", "0000"):
                 raise FordPassApiError(
