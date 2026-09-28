@@ -57,20 +57,10 @@ async def async_setup_entry(
                                  False: "解除报警", True: "被盗声光报警中"}),
         FordPassSensor(coordinator, "remote_start", "远程启动状态", None, None, "mdi:engine", ["remoteStartStatus"], enum_map={1: "已远程启动", 0: "未远程启动", "1": "已远程启动", "0": "未远程启动", True: "已远程启动", False: "未远程启动", "true": "已远程启动", "false": "未远程启动"}),
     ]
-    # 车辆异常警示：优先读 vha/activealert 真实告警（明文中文标题）；
-    # 拉取失败时回退 PrmtAlarmEvent 字段（Null = 无异常）。
+    # 车辆异常警示：v2.6.5 起合并为单一实体 —— 优先读 vha/activealert
+    # 真实告警（明文中文标题）；接口不可用/无数据时回退 PrmtAlarmEvent
+    # 等历史字段（Null = 无异常）。原 vehicle_warning_fallback 实体已移除。
     sensors.append(FordPassAlertSensor(coordinator))
-    sensors.append(
-        FordPassSensor(
-            coordinator, "vehicle_warning_fallback", "车辆异常警示", None, None,
-            "mdi:alert",
-            [["PrmtAlarmEvent"], ["warning"], ["warnings"], ["alerts"],
-             ["vehicleAbnormal"], ["abnormal"], ["abnormalWarning"],
-             ["abnormalStatus"], ["warningStatus"], ["faults"],
-             ["diagnostics"], ["warningInfo"], ["vehicleWarning"]],
-            enum_map={"Null": "无异常", "null": "无异常", "NONE": "无异常"},
-        )
-    )
     sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
@@ -233,11 +223,19 @@ class FordPassSensor(SensorEntity):
 
 
 class FordPassAlertSensor(SensorEntity):
-    """Vehicle health alerts from /vha/activealert (plaintext Chinese).
+    """Vehicle health alerts, single merged entity (v2.6.5).
 
-    Shows a joined list of active alert headlines; falls back to "无异常"
-    when the list is empty or the endpoint is unavailable.
+    Primary source: /vha/activealert plaintext Chinese headlines (joined with
+    "、").  When the endpoint returns nothing or is unavailable, fall back to
+    the vehicle-status PrmtAlarmEvent / warning fields (Null => 无异常).
     """
+
+    _FALLBACK_PATHS = [
+        ["PrmtAlarmEvent"], ["warning"], ["warnings"], ["alerts"],
+        ["vehicleAbnormal"], ["abnormal"], ["abnormalWarning"],
+        ["abnormalStatus"], ["warningStatus"], ["faults"],
+        ["diagnostics"], ["warningInfo"], ["vehicleWarning"],
+    ]
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
@@ -251,13 +249,42 @@ class FordPassAlertSensor(SensorEntity):
     def available(self) -> bool:
         return self.coordinator.last_update_success
 
-    @property
-    def native_value(self):
+    def _active_titles(self) -> str | None:
         data = self.coordinator.data or {}
         alerts = data.get("active_alerts")
-        if not alerts:
+        if alerts:
+            if isinstance(alerts, list):
+                titles = [
+                    a.get("headline")
+                    for a in alerts
+                    if isinstance(a, dict) and a.get("headline")
+                ]
+                if titles:
+                    return "、".join(titles)
+            elif isinstance(alerts, str) and alerts.strip():
+                return alerts
+        return None
+
+    def _fallback_value(self):
+        status = self.coordinator.data.get("vehiclestatus", {})
+        for path in self._FALLBACK_PATHS:
+            value = _leaf(status, *path)
+            if value is not None:
+                return value
+        return None
+
+    @property
+    def native_value(self):
+        titles = self._active_titles()
+        if titles:
+            return titles
+        value = self._fallback_value()
+        if value is None:
             return "无异常"
-        if isinstance(alerts, list):
-            titles = [a.get("headline") for a in alerts if isinstance(a, dict) and a.get("headline")]
-            return "、".join(titles) if titles else "无异常"
-        return str(alerts)
+        if isinstance(value, str) and value.strip().lower() in ("null", "none", "n/a", ""):
+            return "无异常"
+        if isinstance(value, (list, dict)):
+            return "无异常"
+        if isinstance(value, bool):
+            return "车辆异常" if value else "无异常"
+        return str(value)

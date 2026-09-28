@@ -46,6 +46,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
 
     @property
+    def vehicle_model(self) -> str:
+        """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
+        return self._vehicle_name
+
+    @property
     def device_info(self) -> dict[str, Any]:
         """One shared device for every entity of this vehicle."""
         return dr.DeviceInfo(
