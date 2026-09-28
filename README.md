@@ -27,7 +27,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_2.6.7.zip`）
+1. 下载最新版 Release（`fordpass_cn_2.6.8.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -54,6 +54,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v2.6.8**：符合 HA 集成开发规范——manifest 补全 `integration_type: hub`、`requirements` 版本钉住（`pyelftools==0.29`）；hacs.json 补全 HACS 必填字段（`domains`、`iot_class`）；确认 `brand/`（logo/icon）、`data/`（白盒密钥库）、`translations/` 均在 `custom_components/fordpass_cn/` 规范目录下
 - **v2.6.7**：修复「刷新车辆状态」按钮——`ForceRefresh` 只通知福特服务器从车机拉取最新数据，车机唤醒+数据回传需要数秒；此前点击后立即拉取拿到的是旧缓存，导致所有实体看起来"没刷新"。现在点击后自动轮询等待福特数据时间戳（`lastModifiedDate`）变化（最多 30 秒）再更新实体；命令失败不再阻断刷新；新增「最后刷新时间」传感器（显示最近一次成功获取车辆数据的时间，点刷新后有明确反馈）
 - **v2.6.6**：车辆定位坐标从 WGS-84 转换为 GCJ-02（国测局加密坐标）——福特派 LBS 返回 GPS 原始坐标，直接画在国内高德/腾讯等地图底图上会偏移约 600 米；现在在集成源头转换，所有地图卡片（ha-map-card / 官方地图 / 高德卡片）均能精确定位车辆，无需在卡片层再做转换（卡片坐标体系请选 `gaode`）
 - **v2.6.5**：「车辆异常警示」合并为单一实体（真实告警接口优先，接口不可用时回退 `PrmtAlarmEvent` 字段，无异常显示「无异常」）；「车辆图片」实体状态值显示车型名（如「锐际 Escape」），图片下载后持久保存到 `/config/www/fordpass_cn/` 不删除，重启无需重新下载
