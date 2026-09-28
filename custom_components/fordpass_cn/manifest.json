@@ -7,12 +7,13 @@
     "config_flow":  true,
     "documentation":  "https://github.com/RockJesus/ha-fordpass-cn",
     "issue_tracker":  "https://github.com/RockJesus/ha-fordpass-cn/issues",
+    "integration_type":  "hub",
     "iot_class":  "cloud_polling",
     "requirements":  [
                          "unicorn==2.1.4",
-                         "pyelftools"
+                         "pyelftools==0.29"
                      ],
-    "version":  "2.6.7"
+    "version":  "2.6.8"
 }
 
 
