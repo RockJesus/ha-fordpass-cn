@@ -22,9 +22,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    if not entry.options.get("track_location", True):
-        _LOGGER.debug("device tracker disabled (track_location off)")
-        return
+    # Always create the tracker entity. The option toggle only controls
+    # availability + whether the coordinator fetches LBS data, so flipping
+    # "track_location" in the options flow takes effect immediately without
+    # restarting HA (see async_update_options in __init__.py).
     async_add_entities([FordPassDeviceTracker(coordinator)])
 
 
@@ -36,6 +37,11 @@ class FordPassDeviceTracker(TrackerEntity):
         self._attr_has_entity_name = False
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
+
+    @property
+    def available(self) -> bool:
+        """Unavailable while the user disables location tracking."""
+        return self.coordinator.track_location and super().available
 
     @property
     def source_type(self) -> str:

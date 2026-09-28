@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfLength, UnitOfPressure
+from homeassistant.const import UnitOfLength, UnitOfPressure
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -22,11 +22,19 @@ def _leaf(status, *keys, default=None):
     return cur
 
 
+def _first_leaf(status, paths, default=None):
+    """Try several candidate paths and return the first non-None value."""
+    for p in paths:
+        val = _leaf(status, *p)
+        if val is not None:
+            return val
+    return default
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    vin = coordinator.vin
     sensors = [
         FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),
         FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
@@ -40,8 +48,35 @@ async def async_setup_entry(
         FordPassSensor(coordinator, "lock_status", "门锁状态", None, None, "mdi:lock", ["lockStatus"], enum_map={"LOCKED": "已锁定", "UNLOCKED": "已解锁", 1: "已锁定", 0: "已解锁", "1": "已锁定", "0": "已解锁", True: "已锁定", False: "已解锁"}),
         FordPassSensor(coordinator, "alarm_status", "报警状态", None, None, "mdi:alarm", ["alarm"], enum_map={"NOT_IN_ALARM": "解除报警", "ALARM": "车辆被盗", "ARMED": "车辆被盗", "NOT_IN_ALARMS": "解除报警", 0: "解除报警", 1: "车辆被盗", "0": "解除报警", "1": "车辆被盗", False: "解除报警", True: "车辆被盗"}),
         FordPassSensor(coordinator, "remote_start", "远程启动状态", None, None, "mdi:engine", ["remoteStartStatus"], enum_map={1: "已远程启动", 0: "未远程启动", "1": "已远程启动", "0": "未远程启动", True: "已远程启动", False: "未远程启动", "true": "已远程启动", "false": "未远程启动"}),
+        # 空调滤芯状态（候选路径，部署后以 debug 日志校准）
+        FordPassSensor(
+            coordinator, "air_filter", "空调滤芯状态", None, None, "mdi:air-filter",
+            [["airFilter", "status"], ["airFilter", "value"], ["airFilter", "remainingLife"],
+             ["cabinFilter", "status"], ["cabinFilter", "value"], ["cabinFilter"],
+             ["filter", "airFilterStatus"], ["airFilterStatus"], ["filterStatus"],
+             ["acFilter", "status"], ["acFilter"]],
+        ),
+        # 车辆异常警示（候选路径）
+        FordPassSensor(
+            coordinator, "vehicle_warning", "车辆异常警示", None, None, "mdi:alert",
+            [["warning"], ["warnings"], ["alerts"], ["vehicleAbnormal"], ["abnormal"],
+             ["abnormalWarning"], ["abnormalStatus"], ["warningStatus"], ["faults"],
+             ["diagnostics"], ["warningInfo"], ["vehicleWarning"]],
+        ),
+        # 流量管理-影音娱乐-剩余流量（候选路径）
+        FordPassSensor(
+            coordinator, "media_data_remaining", "剩余流量", None, None, "mdi:chart-donut",
+            [["dataPlan", "remainingData"], ["dataPlan", "remainData"],
+             ["dataPlan", "remainingTraffic"], ["dataPlan", "dataRemaining"],
+             ["mediaPlan", "remainingData"], ["mediaPlan", "dataRemaining"],
+             ["entertainment", "remainingData"], ["entertainment", "dataRemaining"],
+             ["remainingData"], ["dataRemaining"], ["traffic", "remaining"],
+             ["connectivity", "dataRemaining"]],
+        ),
     ]
     sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
+    sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
+    sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
     sensors.append(FordPassLocationSensor(coordinator))
     async_add_entities(sensors)
 
@@ -103,7 +138,12 @@ class FordPassSensor(SensorEntity):
                  round_value: bool = False, enum_map: dict | None = None) -> None:
         self.coordinator = coordinator
         self._key = key
-        self._path = path
+        # Normalise `path`: a single path (["a","b"]) or a list of candidate
+        # paths ([["a","b"],["c"]]); the first hit wins.
+        if path and isinstance(path[0], str):
+            self._paths = [path]
+        else:
+            self._paths = [p for p in (path or []) if p]
         self._round_value = round_value
         self._enum_map = enum_map
         self._attr_unique_id = f"{coordinator.vin}-{key}"
@@ -123,7 +163,12 @@ class FordPassSensor(SensorEntity):
     @property
     def native_value(self):
         status = self.coordinator.data.get("vehiclestatus", {})
-        value = _leaf(status, *self._path)
+        value = _first_leaf(status, self._paths)
+        if isinstance(value, (list, dict)):
+            if isinstance(value, list) and value and all(isinstance(x, str) for x in value):
+                value = "、".join(value)
+            else:
+                return None
         if self._round_value and isinstance(value, (int, float)) and not isinstance(value, bool):
             return int(round(value))
         if self._enum_map is not None:

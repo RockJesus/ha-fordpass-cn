@@ -331,7 +331,9 @@ class FordPassApi:
         inner = data.get("data", {})
         if inner.get("encryptedResponseBody"):
             plain = await asyncio.to_thread(lambda: self.crypto.decrypt_field(inner["encryptedResponseBody"], inner["xjw"]))
-            return json.loads(plain)
+            result = json.loads(plain)
+            self._log.debug("FordPass vehicle-status raw: %s", json.dumps(result, ensure_ascii=False)[:6000])
+            return result
         return inner
 
     # ------------------------------------------------------------- commands
