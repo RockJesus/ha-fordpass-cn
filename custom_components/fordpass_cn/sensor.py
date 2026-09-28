@@ -61,6 +61,56 @@ async def async_setup_entry(
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
     sensors.append(FordPassLocationSensor(coordinator))
+
+    # ===== A 组：车辆状态（车门 / 点火 / 车窗） =====
+    _door_map = {"Closed": "已关闭", "Open": "已打开", "Ajar": "未关紧", "Unknown": "未知"}
+    _win_map = {"Fully_Closed": "已关闭", "Fully_Open": "完全开启", "Partially_Open": "部分开启",
+                "Partial_Open": "部分开启", "Unknown": "未知"}
+    sensors += [
+        FordPassSensor(coordinator, "driver_door", "主驾车门", None, None, "mdi:car-door", ["doorStatus", "driverDoor"], enum_map=_door_map),
+        FordPassSensor(coordinator, "passenger_door", "副驾车门", None, None, "mdi:car-door", ["doorStatus", "passengerDoor"], enum_map=_door_map),
+        FordPassSensor(coordinator, "left_rear_door", "左后车门", None, None, "mdi:car-door", ["doorStatus", "leftRearDoor"], enum_map=_door_map),
+        FordPassSensor(coordinator, "right_rear_door", "右后车门", None, None, "mdi:car-door", ["doorStatus", "rightRearDoor"], enum_map=_door_map),
+        FordPassSensor(coordinator, "tailgate", "尾门", None, None, "mdi:car-back", ["doorStatus", "tailgateDoor"], enum_map=_door_map),
+        FordPassSensor(coordinator, "hood", "引擎盖", None, None, "mdi:car", ["doorStatus", "hoodDoor"], enum_map=_door_map),
+        FordPassSensor(coordinator, "ignition", "点火状态", None, None, "mdi:engine", ["ignitionStatus"], enum_map={"Off": "已熄火", "On": "已启动", "Run": "已启动", "Unknown": "未知"}),
+        FordPassSensor(coordinator, "driver_window", "主驾车窗", None, None, "mdi:window-closed", ["windowPosition", "driverWindowPosition"], enum_map=_win_map),
+        FordPassSensor(coordinator, "passenger_window", "副驾车窗", None, None, "mdi:window-closed", ["windowPosition", "passWindowPosition"], enum_map=_win_map),
+        FordPassSensor(coordinator, "left_rear_window", "左后车窗", None, None, "mdi:window-closed", ["windowPosition", "rearDriverWindowPos"], enum_map=_win_map),
+        FordPassSensor(coordinator, "right_rear_window", "右后车窗", None, None, "mdi:window-closed", ["windowPosition", "rearPassWindowPos"], enum_map=_win_map),
+    ]
+
+    # ===== B 组：健康诊断（机油 / 电池 / 胎压） =====
+    _health_map = {"STATUS_GOOD": "良好", "STATUS_NEEDS_SERVICE": "需要保养", "STATUS_WARNING": "警告", "STATUS_CRITICAL": "严重"}
+    _tire_status_map = {"Fault": "故障", "OK": "正常", "Normal": "正常", "Not_Supported": "不支持"}
+    sensors += [
+        FordPassSensor(coordinator, "oil_health", "机油健康状态", None, None, "mdi:oil", ["oil", "oilLife"], enum_map=_health_map),
+        FordPassSensor(coordinator, "battery_health", "蓄电池健康状态", None, None, "mdi:car-battery", ["battery", "batteryHealth"], enum_map=_health_map),
+        FordPassSensor(coordinator, "tpms_system_status", "胎压系统状态", None, None, "mdi:car-tire-alert", ["TPMS", "tirePressureSystemStatus"],
+                       enum_map={"Systm_Fault_Composite_Stat": "系统故障", "Systm_Normal_Stat": "正常", "Systm_Warning_Stat": "系统警告", "Normal": "正常"}),
+        FordPassSensor(coordinator, "lf_tire_status", "左前胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "leftFrontTireStatus"], enum_map=_tire_status_map),
+        FordPassSensor(coordinator, "rf_tire_status", "右前胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "rightFrontTireStatus"], enum_map=_tire_status_map),
+        FordPassSensor(coordinator, "lr_tire_status", "左后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "outerLeftRearTireStatus"], enum_map=_tire_status_map),
+        FordPassSensor(coordinator, "rr_tire_status", "右后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "outerRightRearTireStatus"], enum_map=_tire_status_map),
+        # 推荐胎压：原始值单位 psi，换算为 kPa（1 psi ≈ 6.89476 kPa）与实车胎压单位一致
+        FordPassSensor(coordinator, "recommended_front_pressure", "推荐前轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge",
+                       ["TPMS", "recommendedFrontTirePressure"], round_value=True, multiplier=6.89476),
+        FordPassSensor(coordinator, "recommended_rear_pressure", "推荐后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge",
+                       ["TPMS", "recommendedRearTirePressure"], round_value=True, multiplier=6.89476),
+    ]
+
+    # ===== C 组：其他状态 =====
+    sensors += [
+        FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", "分钟", None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"]),
+        FordPassSensor(coordinator, "authorization", "授权状态", None, None, "mdi:shield-check", ["authorization"],
+                       enum_map={"AUTHORIZED": "已授权", "UNAUTHORIZED": "未授权", "EXPIRED": "已过期"}),
+        FordPassSensor(coordinator, "crcc_flag", "远程控车功能", None, None, "mdi:remote", ["crccFlag"],
+                       enum_map={"ON": "已开启", "OFF": "已关闭"}),
+        FordPassSensor(coordinator, "life_cycle_mode", "电池生命周期模式", None, None, "mdi:car-battery", ["lifeCycMode"],
+                       enum_map={"Normal": "标准模式", "Life_Cycle_Mode": "长寿命模式", "Deep_Discharge": "深度放电"}),
+        FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
+                       transform=lambda v: "不可用" if isinstance(v, str) and "NotAvailable" in v else v),
+    ]
     async_add_entities(sensors)
 
 
@@ -118,7 +168,8 @@ class FordPassLocationSensor(SensorEntity):
 
 class FordPassSensor(SensorEntity):
     def __init__(self, coordinator, key, label, unit, device_class, icon, path,
-                 round_value: bool = False, enum_map: dict | None = None) -> None:
+                 round_value: bool = False, enum_map: dict | None = None,
+                 multiplier: float | None = None, transform=None) -> None:
         self.coordinator = coordinator
         self._key = key
         # Normalise `path`: a single path (["a","b"]) or a list of candidate
@@ -129,6 +180,8 @@ class FordPassSensor(SensorEntity):
             self._paths = [p for p in (path or []) if p]
         self._round_value = round_value
         self._enum_map = enum_map
+        self._multiplier = multiplier
+        self._transform = transform
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = label
         self._attr_has_entity_name = False
@@ -152,10 +205,14 @@ class FordPassSensor(SensorEntity):
                 value = "、".join(value)
             else:
                 return None
+        if self._multiplier is not None and isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = value * self._multiplier
         if self._round_value and isinstance(value, (int, float)) and not isinstance(value, bool):
             return int(round(value))
         if self._enum_map is not None:
-            return self._enum_map.get(value, value)
+            value = self._enum_map.get(value, value)
+        if self._transform is not None:
+            value = self._transform(value)
         if isinstance(value, float) and value.is_integer():
             return int(value)
         return value
