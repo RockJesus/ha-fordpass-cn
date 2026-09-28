@@ -403,7 +403,7 @@ class FordPassApi:
         return inner
 
     async def wait_status_refresh(
-        self, vin: str, timeout: float = 30.0, poll: float = 4.0
+        self, vin: str, timeout: float = 60.0, poll: float = 2.0, baseline: str | None = None
     ) -> tuple[bool, str | None]:
         """After a ForceRefresh command, wait for Ford's backend to propagate.
 
@@ -411,13 +411,15 @@ class FordPassApi:
         (the vehicle may be asleep and takes seconds to wake up and report).
         Fetching the status immediately just returns the old cached snapshot,
         so entities never visibly change.  Poll vehicle-status until its data
-        timestamp (lastModifiedDate / lastRefresh) moves.
+        timestamp (lastModifiedDate / lastRefresh) moves past ``baseline``.
+
+        ``baseline`` must be the stamp captured BEFORE sending the command, so
+        a fast backend update right after the command is still detected.
 
         Returns ``(changed, latest_stamp)``.
         """
-        base: str | None = None
-        last: str | None = None
         start = time.monotonic()
+        last = baseline
         while time.monotonic() - start < timeout:
             try:
                 status = await self.get_vehicle_status(vin)
@@ -425,10 +427,8 @@ class FordPassApi:
                 stamp = str(vs.get("lastModifiedDate") or vs.get("lastRefresh") or "")
                 if not stamp:
                     return False, last
-                if base is None:
-                    base = stamp
                 last = stamp
-                if stamp != base:
+                if baseline is None or stamp != baseline:
                     return True, stamp
             except Exception as exc:  # noqa: BLE001 - keep polling on transient errors
                 self._log.debug("wait_status_refresh poll failed: %s", exc)

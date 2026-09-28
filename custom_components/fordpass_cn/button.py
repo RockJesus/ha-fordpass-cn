@@ -37,26 +37,57 @@ class FordPassButton(ButtonEntity):
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
 
-    async def async_press(self) -> None:
-        """Send the command, wait for Ford to propagate, then refresh entities.
+    async def _current_stamp(self) -> str | None:
+        """Data timestamp BEFORE sending the refresh command."""
+        try:
+            status = await self.coordinator.api.get_vehicle_status(self.coordinator.vin)
+            vs = status.get("vehiclestatus", status)
+            return str(vs.get("lastModifiedDate") or vs.get("lastRefresh") or "")
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass baseline fetch failed: %s", exc)
+            return None
 
-        A failed command must never block the refresh, otherwise a manual
-        refresh would silently stop updating all entities (v2.6.7).
+    async def async_press(self) -> None:
+        """Send the command, then refresh entities so the UI always moves.
+
+        ForceRefresh only tells Ford's backend to pull fresh data from the car
+        (the vehicle may be asleep and takes tens of seconds to report).  The
+        refresh is done in three steps (v2.7.0):
+          1. record the pre-command data timestamp,
+          2. send the command,
+          3. force-refresh right away (fast UI feedback, bypasses HA's
+             update_interval throttle), poll until Ford's timestamp moves,
+             then force-refresh once more with the fresh snapshot.
+        A failed command must never block the refresh.
         """
+        baseline: str | None = None
+        if self._command == CMD_REFRESH_STATUS:
+            baseline = await self._current_stamp()
+            _LOGGER.info("FordPass ForceRefresh baseline=%s", baseline)
+
         try:
             await self.coordinator.api.send_command(self.coordinator.vin, self._command)
         except Exception as exc:  # noqa: BLE001 - keep going so entities still refresh
             _LOGGER.warning("FordPass command %s failed: %s", self._command, exc)
 
         if self._command == CMD_REFRESH_STATUS:
-            # ForceRefresh only tells Ford's backend to pull fresh data from the
-            # car; the backend takes seconds to propagate.  Poll until its data
-            # timestamp moves so the entities actually show new values.
+            try:
+                await self.coordinator.force_refresh()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("FordPass immediate refresh failed: %s", exc)
+            # Wait for Ford's backend to propagate the fresh snapshot.
             changed, stamp = await self.coordinator.api.wait_status_refresh(
-                self.coordinator.vin
+                self.coordinator.vin, baseline=baseline
             )
             _LOGGER.info(
                 "FordPass ForceRefresh done: changed=%s stamp=%s", changed, stamp
             )
-
-        await self.coordinator.async_request_refresh()
+            try:
+                await self.coordinator.force_refresh()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("FordPass final refresh failed: %s", exc)
+        else:
+            try:
+                await self.coordinator.force_refresh()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("FordPass refresh after %s failed: %s", self._command, exc)

@@ -65,7 +65,6 @@ async def async_setup_entry(
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
     sensors.append(FordPassLocationSensor(coordinator))
-    sensors.append(FordPassRefreshTimeSensor(coordinator))
 
     # ===== A 组：车辆状态（车门 / 点火 / 车窗） =====
     _door_map = {"Closed": "已关闭", "Open": "已打开", "Ajar": "未关紧", "Unknown": "未知"}
@@ -169,32 +168,6 @@ class FordPassLocationSensor(SensorEntity):
         if lat and lon:
             return f"{lat}, {lon}"
         return "定位不可用"
-
-
-class FordPassRefreshTimeSensor(SensorEntity):
-    """Local time of the last successful data fetch (v2.6.7).
-
-    Gives instant manual-refresh feedback: clicking the refresh button always
-    triggers a fetch, so this value moves even when Ford's snapshot is
-    unchanged (which is why the other entity values stay the same).
-    """
-
-    def __init__(self, coordinator) -> None:
-        self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-refresh_time"
-        self._attr_name = "最后刷新时间"
-        self._attr_has_entity_name = False
-        self._attr_device_info = coordinator.device_info
-        self._attr_icon = "mdi:clock-outline"
-
-    @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success
-
-    @property
-    def native_value(self):
-        ts = self.coordinator.last_success_ts
-        return ts or "尚未刷新"
 
 
 class FordPassSensor(SensorEntity):
