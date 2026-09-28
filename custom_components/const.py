@@ -43,11 +43,37 @@ PATH_VEHICLE_STATUS = "/api/cnxapi-cvinfo/v1/vehicle-status"
 PATH_SEND_COMMAND = "/api/cnxapi-cvinfo/v1/vehicles/send-command"
 PATH_COMMAND_STATUS = "/api/cnxapi-cvinfo/v1/vehicles/command-execution-status"
 PATH_QUERY_LOCATION = "/lbs-map/v2/public/app/queryLocation"
-# Vehicle health alerts (明文中文告警, auth-token only, no sign) — verified
-# from the official app capture:
+# Vehicle health alerts (明文中文告警) — verified from the official app
+# capture (2026-09-29): this endpoint REQUIRES the standard request signature.
 #   GET /api/cnxapi-cds/v1/vha/activealert?hmiPreferredLanguage=zh-cn&
-#       preferredLanguage=zh-cn&source=TCU&encryptedVin={wb}&xjw={iv}
+#       preferredLanguage=zh-cn&source=TCU&encryptedVin={wb}&xjw={iv}&
+#       timestamp={ms}&sign={sha256}
+# (server 404s a bare GET without timestamp/sign — fixed in v2.7.4)
 PATH_ACTIVE_ALERT = "/api/cnxapi-cds/v1/vha/activealert"
+
+# Username/password (B2C) login — recovered from the official app capture
+# (2026-09-29). Azure AD B2C four-step flow:
+#   1. GET  authorize            -> HTML form + cookies (x-ms-cpim-csrf) + x-request-id
+#   2. POST SelfAsserted         -> {"status":"200"} on success
+#   3. GET  CombinedSigninAndSignup/confirmed -> 302, Location carries ?code=<JWT>
+#   4. POST dlt-token-by-b2c-auth-code       -> same access/refresh JWTs as SMS
+# The authorization code is exchanged for the same DLT tokens as passcode
+# login; the code itself is white-box encrypted (x_api scene).
+B2C_AUTHORITY = "https://login.ford.com.cn"
+B2C_PATH_AUTHORIZE = (
+    "/CNB2CFORD.partner.onmschina.cn/B2C_1A_SIGNINSIGNUP_ZH-CN/oauth2/v2.0/authorize"
+)
+B2C_PATH_SELF_ASSERTED = (
+    "/CNB2CFORD.partner.onmschina.cn/B2C_1A_SignInSignUp_zh-CN/SelfAsserted"
+)
+B2C_PATH_CONFIRMED = (
+    "/CNB2CFORD.partner.onmschina.cn/B2C_1A_SignInSignUp_zh-CN/"
+    "api/CombinedSigninAndSignup/confirmed"
+)
+B2C_POLICY = "B2C_1A_SignInSignUp_zh-CN"
+B2C_CLIENT_ID = "72af5fa7-d101-425d-ba47-c392e3970399"
+B2C_REDIRECT_URI = "https://www.ford.com.cn/support/category/fordpass"
+PATH_B2C_TOKEN = "/api/cnxapi-token-exchange/v1/app/dlt-token-by-b2c-auth-code"
 
 # Remote command values (camelCase style, consistent with Auto/ForceRefresh;
 # FORD_* enum lives in the app; verify against a live command before trusting)
@@ -70,6 +96,13 @@ CONF_ACCESS_TOKEN = "access_token"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_VEHICLE_INDEX = "vehicle_index"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_LOGIN_MODE = "login_mode"
+CONF_USERNAME = "username"
+CONF_PASSWORD = "password"
+
+# Login methods (v2.7.4 — both selectable in the config flow)
+LOGIN_MODE_SMS = "sms"
+LOGIN_MODE_PASSWORD = "password"
 
 # Defaults
 DEFAULT_SCAN_INTERVAL_SECONDS = 60
