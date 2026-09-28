@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -13,12 +13,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import FordPassApi, FordPassApiError
 from .const import (
     CONF_ACCESS_TOKEN,
-    CONF_PHONE,
     CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
-    PLATFORMS,
 )
 from .coordinator import FordPassCoordinator
 
@@ -47,6 +45,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     api.on_token_refresh = _persist_token
+
+    # Apply option changes (scan interval / location tracking) without restart
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     try:
         vehicles = await api.get_vehicles()
@@ -84,10 +85,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         or None
     )
 
+    nickname = (
+        vehicles[0].get("encryptedNickName")
+        or vehicles[0].get("nickName")
+        or None
+    )
+
     interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
     track_location = bool(entry.options.get("track_location", True))
     coordinator = FordPassCoordinator(
-        hass, api, vin, int(interval), vehicle_label, license_plate, track_location
+        hass, api, vin, int(interval), vehicle_label, license_plate, track_location, nickname
     )
     await coordinator.async_config_entry_first_refresh()
 
@@ -100,6 +107,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply option changes immediately without restarting HA.
+
+    Called by Home Assistant whenever the entry options change (e.g. the
+    user edits the scan interval or toggles location tracking in the
+    integration options flow). We update the live coordinator instead of
+    reloading the whole entry, so no entities flicker.
+    """
+    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS))
+    coordinator.update_interval = timedelta(seconds=interval)
+    coordinator.track_location = bool(entry.options.get("track_location", True))
+    _LOGGER.info(
+        "fordpass_cn options updated: scan_interval=%ss track_location=%s",
+        interval,
+        coordinator.track_location,
+    )
+    await coordinator.async_request_refresh()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

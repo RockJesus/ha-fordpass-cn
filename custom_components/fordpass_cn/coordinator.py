@@ -28,6 +28,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         vehicle_name: str | None = None,
         license_plate: str | None = None,
         track_location: bool = True,
+        nickname: str | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -38,6 +39,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = api
         self.vin = vin
         self.license_plate = license_plate
+        self.nickname = nickname
         self.track_location = track_location
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
 

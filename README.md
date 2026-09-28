@@ -1,5 +1,7 @@
 # FordPass China 福特派互联
 
+![FordPass China](custom_components/fordpass_cn/brand/logo.png)
+
 Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务，支持短信验证码登录、远程控车与车辆定位追踪。
 
 > ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
@@ -23,7 +25,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_2.5.5.zip`）
+1. 下载最新版 Release（`fordpass_cn_2.5.9.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -48,6 +50,10 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v2.5.9**：新增传感器——车辆昵称、车辆识别码（VIN）
+- **v2.5.8**：新增传感器——空调滤芯状态、车辆异常警示、剩余流量（影音娱乐）
+- **v2.5.7**：修复「车辆定位追踪」开关无法即时生效——设备追踪实体始终创建，开关状态通过实体可用性即时反映（无需重启）
+- **v2.5.6**：选项变更即时生效（无需重启 HA，扫描间隔 / 车辆定位开关实时应用）；README 添加 logo
 - **v2.5.5**：brand 目录规范（logo/icon 移至 brand/）；车辆定位追踪默认开启
 - **v2.5.4**：添加集成 logo / icon，更新仓库地址（github.com/RockJesus/ha-fordpass-cn），通过隐私信息检测
 - **v2.5.3**：LBS 白盒加密初始化移出事件循环（asyncio.to_thread），消除 unicorn/读文件导致的阻塞警告
