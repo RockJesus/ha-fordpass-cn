@@ -22,6 +22,16 @@ def _leaf(status, *keys, default=None):
     return cur
 
 
+def _leaf_node(status, *keys):
+    """Return the raw dict node (value/status/timestamp) if it is a dict."""
+    cur = status
+    for k in keys:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(k)
+    return cur if isinstance(cur, dict) else None
+
+
 def _first_leaf(status, paths, default=None):
     """Try several candidate paths and return the first non-None value."""
     for p in paths:
@@ -29,6 +39,15 @@ def _first_leaf(status, paths, default=None):
         if val is not None:
             return val
     return default
+
+
+def _first_leaf_node(status, paths):
+    """Try several candidate paths and return the first dict node."""
+    for p in paths:
+        node = _leaf_node(status, *p)
+        if node is not None:
+            return node
+    return None
 
 
 async def async_setup_entry(
@@ -156,6 +175,19 @@ class FordPassLocationSensor(SensorEntity):
         return self.coordinator.last_update_success
 
     @property
+    def extra_state_attributes(self) -> dict:
+        data = self.coordinator.data or {}
+        loc = data.get("location")
+        if isinstance(loc, dict):
+            return {
+                "latitude": loc.get("lat"),
+                "longitude": loc.get("lon"),
+                "upload_time": loc.get("uploadTime"),
+                "address": loc.get("address"),
+            }
+        return {}
+
+    @property
     def native_value(self):
         data = self.coordinator.data or {}
         loc = data.get("location")
@@ -199,6 +231,19 @@ class FordPassSensor(SensorEntity):
     @property
     def available(self) -> bool:
         return self.coordinator.last_update_success
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Expose Ford's own data timestamp/status for this reading (v2.7.2)."""
+        status = self.coordinator.data.get("vehiclestatus", {})
+        attrs: dict = {}
+        node = _first_leaf_node(status, self._paths)
+        if isinstance(node, dict):
+            attrs["timestamp"] = node.get("timestamp")
+            attrs["source_status"] = node.get("status")
+        if isinstance(status, dict):
+            attrs["vehicle_data_time"] = status.get("lastModifiedDate") or status.get("lastRefresh")
+        return attrs
 
     @property
     def native_value(self):
@@ -248,6 +293,36 @@ class FordPassAlertSensor(SensorEntity):
     @property
     def available(self) -> bool:
         return self.coordinator.last_update_success
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self.coordinator.data or {}
+        attrs: dict = {}
+        alerts = data.get("active_alerts")
+        if isinstance(alerts, list):
+            attrs["alerts"] = [
+                {
+                    "headline": a.get("headline"),
+                    "severity": a.get("severity"),
+                    "body": a.get("body"),
+                    "event_time": a.get("eventTime"),
+                }
+                for a in alerts if isinstance(a, dict)
+            ]
+            times = [a.get("eventTime") for a in alerts if isinstance(a, dict) and a.get("eventTime")]
+            if times:
+                attrs["event_time"] = times[0]
+            attrs["source"] = "vha"
+        elif isinstance(alerts, str):
+            attrs["source"] = "vha"
+        else:
+            status = self.coordinator.data.get("vehiclestatus", {})
+            node = _leaf_node(status, "PrmtAlarmEvent")
+            if isinstance(node, dict):
+                attrs["source"] = "vehicle_status"
+                attrs["timestamp"] = node.get("timestamp")
+                attrs["source_status"] = node.get("status")
+        return attrs
 
     def _active_titles(self) -> str | None:
         data = self.coordinator.data or {}

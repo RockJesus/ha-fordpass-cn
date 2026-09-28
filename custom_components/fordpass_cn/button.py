@@ -99,7 +99,10 @@ class FordPassButton(ButtonEntity):
                 except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning("FordPass fallback refresh failed: %s", exc)
             else:
-                _LOGGER.warning("FordPass ForceRefresh: no commandId in response")
+                _LOGGER.warning(
+                    "FordPass ForceRefresh: no commandId in response, resp=%s",
+                    (str(resp)[:300] if resp is not None else "None"),
+                )
                 try:
                     await self.coordinator.force_refresh()
                 except Exception as exc:  # noqa: BLE001
