@@ -246,7 +246,7 @@ class FordPassApi:
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
                 try:
-                    self._log.info("FordPass access token expired, refreshing once")
+                    self._log.debug("FordPass access token expired, refreshing once")
                     new = await self.refresh_token(self._refresh_token)
                     self._access_token = new["access_token"]
                     if self.on_token_refresh is not None:
@@ -283,7 +283,7 @@ class FordPassApi:
             ):
                 self._retrying = True
                 try:
-                    self._log.info("FordPass Cat2 token expired, refreshing once")
+                    self._log.debug("FordPass Cat2 token expired, refreshing once")
                     new = await self.refresh_token(self._refresh_token)
                     self._access_token = new["access_token"]
                     if self.on_token_refresh is not None:
