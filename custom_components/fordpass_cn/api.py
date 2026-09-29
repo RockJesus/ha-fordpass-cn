@@ -18,6 +18,7 @@ import datetime
 import hashlib
 import json
 import math
+import re
 import time
 import urllib.parse
 import uuid
@@ -552,135 +553,14 @@ class FordPassApi:
     ) -> dict[str, str]:
         """Username/password login via the Azure AD B2C flow (v2.7.4).
 
-        Fully recovered from the official app capture (2026-09-29,
-        ``api-connect.ford.com.cn_2026_09_29_02_03_29.har``): the app signs
-        in through the B2C ``B2C_1A_SignInSignUp_zh-CN`` policy and exchanges
-        the resulting authorization code for the SAME DLT JWTs as the SMS
-        login, so the rest of the integration (refresh / commands) is
-        unchanged.
-
-        Steps (a dedicated browser-like client session keeps the B2C cookies
-        isolated from the main API session):
-          1. GET  authorize   -> form page; save ``x-ms-cpim-csrf`` cookie and
-                                 ``x-request-id`` (== B2C TID, verified live);
-          2. POST SelfAsserted -> credentials; {"status":"200"} on success;
-          3. GET  confirmed   -> 302; Location carries ``?code=<JWT>``;
-          4. POST dlt-token-by-b2c-auth-code (standard signed request) with
-             the white-box encrypted authorization code -> access/refresh JWT.
-
-        Returns {"access_token", "refresh_token"} like passcode_login.
+        v2.7.6: B2C 的 SelfAsserted 请求改用同步 requests 客户端执行。
+        抓包实测（2026-09-29）：aiohttp 客户端会被 Azure AD B2C 反自动化风控
+        拦截（返回 GlobalException HTML 页），而 requests（urllib3 HTTP/1.1）
+        客户端携带同样的 Cookie/CSRF/参数可以正常通过（authorize -> SelfAsserted
+        -> confirmed -> code）。登录是一次性配置操作，在 executor 线程执行，
+        不阻塞事件循环；换取 DLT JWT 仍走标准签名请求。
         """
-        ua = (
-            "Mozilla/5.0 (Linux; Android 12; BVL-AN16 Build/V417IR; wv) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
-            "Chrome/110.0.5481.154 Mobile Safari/537.36 channel/app"
-        )
-        authorize_query: dict[str, Any] = {
-            "client_id": B2C_CLIENT_ID,
-            "nonce": "defaultNonce",
-            "redirect_uri": B2C_REDIRECT_URI,
-            "scope": "openid",
-            "response_type": "code",
-            "prompt": "login",
-            "country_code": "CHN",
-            "ford_application_id": APPLICATION_ID,
-            "language_code": "zh-CN",
-            "tnc_accepted": "true",
-            "tnc_consent1_accepted": "true",
-            "tnc_consent2_accepted": "false",
-        }
-        # the B2C form expects the E.164 number (+86...)
-        sign_in_name = username if username.startswith("+") else f"+86{username}"
-        form_headers = {
-            "user-agent": ua,
-            "x-requested-with": "XMLHttpRequest",
-            "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "accept": "application/json, text/javascript, */*; q=0.01",
-            "origin": B2C_AUTHORITY,
-        }
-        timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as b2c:
-            # 1) authorize
-            async with b2c.get(
-                B2C_AUTHORITY + B2C_PATH_AUTHORIZE,
-                params=authorize_query,
-                headers={"user-agent": ua, "x-requested-with": "com.ford.fordpasscn"},
-            ) as resp:
-                html = await resp.text()
-                if resp.status != 200:
-                    raise FordPassApiError(
-                        resp.status, f"B2C authorize failed: {html[:200]}"
-                    )
-                req_id = resp.headers.get("x-request-id") or ""
-                csrf = ""
-                cookies = b2c.cookie_jar.filter_cookies(B2C_AUTHORITY)
-                c = cookies.get("x-ms-cpim-csrf")
-                if c is not None:
-                    csrf = c.value
-                if not csrf:
-                    raise FordPassApiError(
-                        None, "B2C authorize returned no x-ms-cpim-csrf cookie"
-                    )
-                if not req_id:
-                    raise FordPassApiError(
-                        None, "B2C authorize returned no x-request-id"
-                    )
-            # StateProperties tx == base64({"TID": <x-request-id>}), no padding
-            tx_raw = json.dumps({"TID": req_id}, separators=(",", ":")).encode()
-            tx = base64.b64encode(tx_raw).decode("ascii").rstrip("=")
-            tx_qs = f"StateProperties={tx}"
-            self._log.debug("FordPass B2C authorize ok: tx=%s csrf_len=%d", tx_qs[:60], len(csrf))
-
-            # 2) SelfAsserted — submit credentials
-            form = (
-                "request_type=RESPONSE"
-                f"&signInName={urllib.parse.quote(sign_in_name, safe='')}"
-                f"&password={urllib.parse.quote(password, safe='')}"
-            )
-            referer = (
-                B2C_AUTHORITY + B2C_PATH_AUTHORIZE + "?" +
-                urllib.parse.urlencode(authorize_query)
-            )
-            headers = dict(form_headers)
-            headers["x-csrf-token"] = csrf
-            headers["referer"] = referer
-            async with b2c.post(
-                B2C_AUTHORITY + B2C_PATH_SELF_ASSERTED,
-                params={"tx": tx_qs, "p": B2C_POLICY},
-                data=form,
-                headers=headers,
-            ) as resp:
-                text = await resp.text()
-                self._log.debug("FordPass B2C SelfAsserted -> %s %s", resp.status, text[:200])
-                if resp.status != 200:
-                    raise FordPassApiError(resp.status, f"B2C SelfAsserted failed: {text[:200]}")
-                if '"status":"200"' not in text.replace(" ", ""):
-                    raise FordPassApiError(None, f"B2C credentials rejected: {text[:200]}")
-
-            # 3) confirmed -> 302 Location carries ?code=
-            async with b2c.get(
-                B2C_AUTHORITY + B2C_PATH_CONFIRMED,
-                params={
-                    "rememberMe": "false",
-                    "csrf_token": csrf,
-                    "tx": tx_qs,
-                    "p": B2C_POLICY,
-                },
-                headers={"user-agent": ua, "x-requested-with": "com.ford.fordpasscn"},
-                allow_redirects=False,
-            ) as resp:
-                text = await resp.text()
-                if resp.status != 302:
-                    raise FordPassApiError(
-                        resp.status, f"B2C confirmed expected 302, got {resp.status}: {text[:200]}"
-                    )
-                location = resp.headers.get("location", "")
-            code = urllib.parse.parse_qs(
-                urllib.parse.urlparse(location).query
-            ).get("code", [""])[0]
-            if not code:
-                raise FordPassApiError(None, f"B2C confirmed 302 without code: {location[:200]}")
-            self._log.debug("FordPass B2C authorization code acquired (len=%d)", len(code))
+        code = await asyncio.to_thread(self._b2c_login_sync, username, password)
 
         # 4) exchange the code for DLT tokens (standard signed request)
         enc_code, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(code))
@@ -705,6 +585,132 @@ class FordPassApi:
                 inner["encryptedRefreshToken"], xjw2
             )),
         }
+
+    def _b2c_login_sync(self, username: str, password: str) -> str:
+        """同步 B2C 登录（requests），返回 authorization code。"""
+        import requests  # noqa: F401  (Home Assistant 运行时自带)
+
+        ua = (
+            "Mozilla/5.0 (Linux; Android 15; V2284A Build/V417IR; wv) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+            "Chrome/110.0.5481.154 Mobile Safari/537.36 channel/app"
+        )
+        authorize_query: dict[str, Any] = {
+            "client_id": B2C_CLIENT_ID,
+            "nonce": "defaultNonce",
+            "redirect_uri": B2C_REDIRECT_URI,
+            "scope": "openid",
+            "response_type": "code",
+            "prompt": "login",
+            "country_code": "CHN",
+            "ford_application_id": APPLICATION_ID,
+            "language_code": "zh-CN",
+            "tnc_accepted": "true",
+            # 注意：不带 tnc_consent1/2_accepted——实测纯 HTTP 客户端携带
+            # consent 参数会触发 B2C 风控 567 拦截；不带（仅 tnc_accepted=true）
+            # 与官方 WebView 登录成功路径等效（2026-09-29 抓包验证）
+        }
+        s = requests.Session()
+        s.headers.update({
+            "User-Agent": ua,
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+        })
+        # 1) authorize
+        r = s.get(
+            B2C_AUTHORITY + B2C_PATH_AUTHORIZE,
+            params=authorize_query,
+            timeout=30,
+        )
+        html = r.text
+        if r.status_code != 200:
+            raise FordPassApiError(r.status_code, f"B2C authorize failed: {html[:200]}")
+        m_csrf = re.search(r'"csrf":\s*"([^"]+)"', html)
+        csrf = m_csrf.group(1) if m_csrf else ""
+        if not csrf:
+            csrf = s.cookies.get("x-ms-cpim-csrf") or ""
+        if not csrf:
+            raise FordPassApiError(
+                None, "B2C authorize returned no csrf (login page blocked?)"
+            )
+        m_tx = re.search(r'"transId":\s*"([^"]+)"', html)
+        if m_tx:
+            tx_qs = m_tx.group(1)
+        else:
+            req_id = r.headers.get("x-request-id") or ""
+            tx_raw = json.dumps({"TID": req_id}, separators=(",", ":")).encode()
+            tx_qs = f"StateProperties={base64.b64encode(tx_raw).decode('ascii').rstrip('=')}"
+        self._log.debug("FordPass B2C authorize ok: tx=%s csrf_len=%d", tx_qs[:60], len(csrf))
+
+        # 2) SelfAsserted
+        sign_in_name = username if username.startswith("+") else f"+86{username}"
+        form = (
+            "request_type=RESPONSE"
+            f"&signInName={urllib.parse.quote(sign_in_name, safe='')}"
+            f"&password={urllib.parse.quote(password, safe='')}"
+        )
+        referer = (
+            B2C_AUTHORITY + B2C_PATH_AUTHORIZE + "?" +
+            urllib.parse.urlencode(authorize_query)
+        )
+        headers = {
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-CSRF-Token": csrf,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin": B2C_AUTHORITY,
+            "Referer": referer,
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+        }
+        r2 = s.post(
+            B2C_AUTHORITY + B2C_PATH_SELF_ASSERTED,
+            params={"tx": tx_qs, "p": B2C_POLICY},
+            data=form,
+            headers=headers,
+            timeout=30,
+        )
+        text = r2.text
+        self._log.debug("FordPass B2C SelfAsserted -> %s %s", r2.status_code, text[:200])
+        if r2.status_code != 200:
+            raise FordPassApiError(r2.status_code, f"B2C SelfAsserted failed: {text[:200]}")
+        if '"status":"200"' not in text.replace(" ", ""):
+            if text.lstrip().startswith("<"):
+                raise FordPassApiError(
+                    None,
+                    "B2C 登录被风控拦截（可能尝试过于频繁），请等待几分钟后再试或改用短信验证码登录",
+                )
+            raise FordPassApiError(None, f"B2C credentials rejected: {text[:200]}")
+
+        # 3) confirmed -> 302 Location carries ?code=
+        r3 = s.get(
+            B2C_AUTHORITY + B2C_PATH_CONFIRMED,
+            params={
+                "rememberMe": "false",
+                "csrf_token": csrf,
+                "tx": tx_qs,
+                "p": B2C_POLICY,
+            },
+            headers={"User-Agent": ua},
+            timeout=30,
+            allow_redirects=False,
+        )
+        location = r3.headers.get("Location", "")
+        if r3.status_code != 302:
+            raise FordPassApiError(
+                r3.status_code, f"B2C confirmed expected 302, got {r3.status_code}: {location[:200]}"
+            )
+        code = urllib.parse.parse_qs(
+            urllib.parse.urlparse(location).query
+        ).get("code", [""])[0]
+        if not code:
+            raise FordPassApiError(None, f"B2C confirmed 302 without code: {location[:200]}")
+        self._log.debug("FordPass B2C authorization code acquired (len=%d)", len(code))
+        return code
+
+
 
     # ------------------------------------------------------------ location
     async def get_lbs_token(self, vin: str) -> str:
