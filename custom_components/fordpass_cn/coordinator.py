@@ -81,6 +81,39 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"FordPass update failed: {exc}") from exc
         self.async_set_updated_data(data)
 
+    async def run_command(self, command_type: str, wait: bool = True) -> None:
+        """Send a remote command and reflect the result immediately (v2.7.7).
+
+        Used by lock/switch/button so a press is not silently lost behind HA's
+        refresh throttle: we send the command, poll command-execution-status
+        until the decrypted snapshot flips to CURRENT, then push it straight
+        to the entities.  A send failure raises so the UI reports it.
+
+        ``wait=False`` skips the polling loop and only force-refreshes.
+        """
+        resp = await self.api.send_command(self.vin, command_type)
+        command_id: str | None = None
+        if isinstance(resp, dict):
+            cid = resp.get("commandId")
+            if not cid and isinstance(resp.get("data"), dict):
+                cid = resp["data"].get("commandId")
+            command_id = str(cid) if cid else None
+        if command_id and wait:
+            done, result = await self.api.wait_command_complete(
+                self.vin, command_id, command_type
+            )
+            if done and isinstance(result, dict):
+                vs = result.get("vehiclestatus", result)
+                self.async_set_updated_data({"status": vs, "vehiclestatus": vs})
+                return
+        # Fallback: command sent but no fresh snapshot yet — force-refresh once.
+        try:
+            await self.force_refresh()
+        except Exception as exc:  # noqa: BLE001 - refresh must not mask the result
+            self.logger.warning(
+                "FordPass refresh after %s failed: %s", command_type, exc
+            )
+
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             status = await self.api.get_vehicle_status(self.vin)
