@@ -41,9 +41,7 @@ class FordPassEngineSwitch(SwitchEntity):
         return bool(value) if value is not None else None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.api.send_command(self.coordinator.vin, CMD_ENGINE_START)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.run_command(CMD_ENGINE_START)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.api.send_command(self.coordinator.vin, CMD_ENGINE_STOP)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.run_command(CMD_ENGINE_STOP)
