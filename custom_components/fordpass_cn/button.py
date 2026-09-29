@@ -1,4 +1,8 @@
-"""Button platform: one-shot remote actions (honk / panic / refresh)."""
+"""Button platform: one-shot remote actions (refresh vehicle status).
+
+v2.7.7: the 鸣笛寻车 / 报警 buttons were removed — the China gateway has no
+Honk/Panic commandType and always returns 400 errorCode 100502.
+"""
 from __future__ import annotations
 
 import logging
@@ -9,7 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CMD_HONK, CMD_PANIC, CMD_REFRESH_STATUS, DOMAIN
+from .const import CMD_REFRESH_STATUS, DOMAIN
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,8 +25,6 @@ async def async_setup_entry(
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     async_add_entities(
         [
-            FordPassButton(coordinator, "honk", "鸣笛寻车", "mdi:bullhorn", CMD_HONK),
-            FordPassButton(coordinator, "panic", "报警", "mdi:alarm-light", CMD_PANIC),
             FordPassButton(coordinator, "refresh", "刷新车辆状态", "mdi:refresh", CMD_REFRESH_STATUS),
         ]
     )
