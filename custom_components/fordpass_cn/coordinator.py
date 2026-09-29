@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -44,7 +45,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.track_location = track_location
         self.vehicle_image_url = vehicle_image_url
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
-
+        # active_alerts 失败降级：连续失败 2 次后 1 小时内不再请求，
+        # 避免接口 404 时每轮都发无效请求并刷日志噪音（v2.7.5）。
+        self._alerts_fail = 0
+        self._alerts_hold_until: float | None = None
     @property
     def vehicle_model(self) -> str:
         """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
@@ -103,10 +107,24 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data["location"] = None
 
         # Vehicle health alerts (plaintext Chinese headlines) — best effort.
-        try:
-            alerts = await self.api.get_active_alerts(self.vin)
-            data["active_alerts"] = alerts or []
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass active alerts fetch failed: %s", exc)
+        # 失败降级：连续失败 2 次 → 抑制 1 小时再试（v2.7.5）。
+        now = time.monotonic()
+        if self._alerts_hold_until is None or now >= self._alerts_hold_until:
+            try:
+                alerts = await self.api.get_active_alerts(self.vin)
+                data["active_alerts"] = alerts or []
+                self._alerts_fail = 0
+                self._alerts_hold_until = None
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass active alerts fetch failed: %s", exc)
+                data["active_alerts"] = []
+                self._alerts_fail += 1
+                if self._alerts_fail >= 2:
+                    self._alerts_hold_until = now + 3600
+                    self._alerts_fail = 0
+                    self.logger.info(
+                        "FordPass active alerts failing; suppressing retries for 1h"
+                    )
+        else:
             data["active_alerts"] = []
         return data
