@@ -75,17 +75,23 @@ B2C_CLIENT_ID = "72af5fa7-d101-425d-ba47-c392e3970399"
 B2C_REDIRECT_URI = "https://www.ford.com.cn/support/category/fordpass"
 PATH_B2C_TOKEN = "/api/cnxapi-token-exchange/v1/app/dlt-token-by-b2c-auth-code"
 
-# Remote command values (camelCase style, consistent with Auto/ForceRefresh;
-# FORD_* enum lives in the app; verify against a live command before trusting)
-CMD_LOCK = "Lock"
-CMD_UNLOCK = "Unlock"
-CMD_ENGINE_START = "EngineStart"
-CMD_ENGINE_STOP = "EngineStop"
-CMD_EXTEND_START = "ExtendStart"
-CMD_HONK = "Honk"
-CMD_HONK_CANCEL = "HonkCancel"
-CMD_PANIC = "Panic"
-CMD_PANIC_CANCEL = "PanicCancel"
+# Remote command values (v2.7.7 — aligned to the server whitelist).
+# The gateway rejects unknown commandType with HTTP 400
+# "commandType should be in (...)" (errorCode 100502).  The authoritative
+# whitelist returned by the server on 2026-09-29:
+#   ForceRefresh, TrailerLightCheckStart, TrailerLightCheckStop, TrunkUnlock,
+#   DoorLock, DoorUnlock, RemoteStart, RemoteStop, InitialVA, CancelVA,
+#   CentralZoneLightingON, ZoneLightingON, ZoneLightingOFF,
+#   OTAActivationSchedule, ASUSetting, AutoRefresh
+# v2.7.6 used "Lock/Unlock/EngineStart/EngineStop/Honk/Panic" which are NOT in
+# the whitelist, so lock/unlock/engine buttons always failed with 100502.
+CMD_LOCK = "DoorLock"
+CMD_UNLOCK = "DoorUnlock"
+CMD_ENGINE_START = "RemoteStart"
+CMD_ENGINE_STOP = "RemoteStop"
+# NOTE: the China gateway has no Honk/Panic command (removed in v2.7.7 — the
+# old 鸣笛寻车/报警 buttons always returned 400 errorCode 100502).
+CMD_EXTEND_START = "TrunkUnlock"  # 后备箱解锁 (whitelisted, reserved)
 CMD_REFRESH_STATUS = "ForceRefresh"
 CMD_AUTO_REFRESH = "AutoRefresh"
 
