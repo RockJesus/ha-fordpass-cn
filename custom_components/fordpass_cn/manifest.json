@@ -1,19 +1,17 @@
 {
-    "domain":  "fordpass_cn",
-    "name":  "FordPass China 福特派互联",
-    "codeowners":  [
-                       "@RockJesus"
-                   ],
-    "config_flow":  true,
-    "documentation":  "https://github.com/RockJesus/ha-fordpass-cn",
-    "issue_tracker":  "https://github.com/RockJesus/ha-fordpass-cn/issues",
-    "integration_type":  "hub",
-    "iot_class":  "cloud_polling",
-    "requirements":  [
-                         "unicorn==2.1.4",
-                         "pyelftools==0.29"
-                     ],
-    "version":  "2.7.5"
+  "domain": "fordpass_cn",
+  "name": "FordPass China 福特派互联",
+  "codeowners": [
+    "@RockJesus"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/RockJesus/ha-fordpass-cn",
+  "issue_tracker": "https://github.com/RockJesus/ha-fordpass-cn/issues",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "requirements": [
+    "unicorn==2.1.4",
+    "pyelftools==0.29"
+  ],
+  "version": "2.7.6"
 }
-
-
