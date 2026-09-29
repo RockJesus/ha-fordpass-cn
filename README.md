@@ -55,6 +55,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v2.7.6**：修复用户名密码登录被 Azure AD B2C 风控拦截——登录请求（authorize → SelfAsserted → confirmed）改用同步 requests 客户端执行（实测 aiohttp 客户端会被 B2C 反自动化风控以 GlobalException 拦截，requests 客户端携带同样的 Cookie/CSRF/参数可正常通过）；csrf 与事务号（tx）优先从登录页 HTML 提取（与官方 WebView 一致）；提交凭证时手机号 `+` 正确 URL 编码；登录失败时区分"风控拦截"（提示等待后再试）与"凭证错误"；登录为一次性配置操作，在线程执行不阻塞事件循环
 - **v2.7.5**：日志与稳定性优化——「车辆异常警示」接口连续失败（如 404）时自动降级：连续 2 次失败后 1 小时内不再请求该接口（避免每轮轮询发无效请求并刷日志噪音），接口恢复后自动重试；令牌自动刷新（HTTP 401 / Cat2 token expired）日志级别从 INFO 降为 DEBUG，减少轮询期噪音；「刷新车辆状态」按钮在命令发送失败时不再重复打印 `no commandId` 警告
 - **v2.7.4**：新增用户名密码登录（配置流程可选两种登录方式：短信验证码 / 用户名密码；用户名密码走官方 Azure AD B2C 流程——authorize → SelfAsserted → confirmed 取授权码 → dlt-token-by-b2c-auth-code 换令牌，密码仅用于本次登录换取令牌、不持久化保存）；修复「车辆异常警示」activealert 接口持续 404——官方 App 该请求携带标准 `timestamp`+`sign` 签名，v2.7.4 起改用带签名的统一请求（并保留 vha 服务专用 appversion=1.0.0），接口恢复返回明文中文告警（如「胎压监测系统警告」）
 - **v2.7.3**：修复福特网关 `600 Cat2 token expired`（`Swap token failed`）业务级 token 过期不刷新问题——`_request` 现在把 HTTP 200 但业务码 600 且含 token 错误的响应等同于 HTTP 401 处理：自动刷新一次 access token 并重试（实测刷新按钮流程完成后出现该错误，不加此修复后续轮询会持续拿到空数据）
