@@ -41,12 +41,10 @@ class FordPassLock(LockEntity):
         return value == "LOCKED" if value else None
 
     async def async_lock(self, **kwargs: Any) -> None:
-        await self.coordinator.api.send_command(self.coordinator.vin, CMD_LOCK)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.run_command(CMD_LOCK)
 
     async def async_unlock(self, **kwargs: Any) -> None:
-        await self.coordinator.api.send_command(self.coordinator.vin, CMD_UNLOCK)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.run_command(CMD_UNLOCK)
 
     async def async_update(self) -> None:
         await self.coordinator.async_request_refresh()
