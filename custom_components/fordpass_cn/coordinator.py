@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 import time
 from typing import Any
@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FordPassApi, FordPassApiError
-from .const import DOMAIN
+from .const import COORDINATE_WGS84, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,12 +31,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         track_location: bool = True,
         nickname: str | None = None,
         vehicle_image_url: str | None = None,
+        coordinate_system: str = COORDINATE_WGS84,
     ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}-{vin[-6:]}",
-            update_interval=timedelta(seconds=interval),
+            update_interval=timedelta(minutes=interval),
         )
         self.api = api
         self.vin = vin
@@ -44,6 +45,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.nickname = nickname
         self.track_location = track_location
         self.vehicle_image_url = vehicle_image_url
+        self.coordinate_system = coordinate_system
+        # 最近一次成功拉取的时间（v2.7.8），暴露为传感器 last_poll 属性
+        self.last_poll: datetime | None = None
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
         # active_alerts 失败降级：连续失败 2 次后 1 小时内不再请求，
         # 避免接口 404 时每轮都发无效请求并刷日志噪音（v2.7.5）。
@@ -130,7 +134,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # gateway is a separate APIM endpoint and costs a remote round trip).
         if self.track_location:
             try:
-                loc = await self.api.get_location(self.vin)
+                loc = await self.api.get_location(self.vin, self.coordinate_system)
                 if isinstance(loc, dict) and loc.get("lat"):
                     data["location"] = loc
                 else:
@@ -160,4 +164,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
         else:
             data["active_alerts"] = []
+        # v2.7.8: record the successful poll time for the sensor last_poll
+        # attribute (每轮自动刷新/手动刷新成功都会更新).
+        self.last_poll = datetime.now()
         return data
