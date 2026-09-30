@@ -107,8 +107,9 @@ CONF_LOGIN_MODE = "login_mode"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 
-# 坐标体系（v2.7.8）：福特 LBS 返回 WGS-84；HA 官方地图（OSM）用 WGS-84，
-# 高德/腾讯等国内卡片用 GCJ-02（火星坐标）。默认 WGS-84，官方地图不偏移。
+# 坐标体系（v2.7.9，实测修正）：福特 LBS 返回 GCJ-02（火星坐标，与官方 App
+# 高德地图标记一致）；"wgs84" 选项做 GCJ-02→WGS-84 逆转换供官方地图/OSM 精确
+# 显示；"gcj02" 选项原样输出供高德/腾讯地图。默认 WGS-84（官方地图精确）。
 COORDINATE_WGS84 = "wgs84"
 COORDINATE_GCJ02 = "gcj02"
 DEFAULT_COORDINATE_SYSTEM = COORDINATE_WGS84
