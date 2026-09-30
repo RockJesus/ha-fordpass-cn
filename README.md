@@ -34,7 +34,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_2.10.0.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.0.0.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -70,6 +70,8 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 > 按钮/开关与传感器一样按车型能力过滤：值为 null/Not_Supported/空 或车型不支持的实体不创建（如燃油车看不到充电状态、非拖车车型看不到拖车灯光检测）。
 
 ## 版本历史
+
+- **v3.0.0**：版本号策略调整——小数点内数字不超过 9（v2.10.0 → v3.0.0），代码功能与 v2.10.0 完全一致
 
 - **v2.10.0**：**白名单全部命令 + 合成开关 + 全车型兼容检测**——① 中国区网关 `send-command` 白名单内所有命令全部接入：自动刷新（`AutoRefresh`）、中央区灯光（`CentralZoneLightingON`）、语音助手初始化/取消（`InitialVA`/`CancelVA`）、OTA 激活排程（`OTAActivationSchedule`）、辅助设置（`ASUSetting`）、拖车灯光检测开始/停止（`TrailerLightCheckStart`/`Stop`）；② **灯光寻车开/关合成开关**（开=`ZoneLightingON`，关=`ZoneLightingOFF`）；③ **后备箱解锁/锁定合成开关**（开=`TrunkUnlock` 解锁后备箱，关=`DoorLock` 全车上锁——网关无独立后备箱锁命令）；④ **控制实体与传感器统一按车型能力过滤**——值为 null/Not_Supported/空 或车型不支持的按钮/开关不创建（如非拖车车型看不到拖车灯光检测、无远程控车字段的车型看不到灯光寻车/语音助手），集成启动时输出全车型能力检测日志；⑤ README 精简（功能特性不再标注版本号，移除鸣笛/报警按钮移除说明）
 
