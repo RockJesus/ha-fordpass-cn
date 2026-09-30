@@ -1,6 +1,9 @@
 """Sensor platform: vehicle status readings."""
 from __future__ import annotations
 
+import datetime
+import time
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength, UnitOfPressure
@@ -125,6 +128,10 @@ async def async_setup_entry(
     # ===== C 组：其他状态 =====
     sensors += [
         FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", "分钟", None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"]),
+        # v2.8.0: 远程启动时间（unix 秒 → 本地时间字符串）与动态"距离自动熄火时间"倒计时
+        FordPassSensor(coordinator, "remote_start_time", "远程启动时间", None, None, "mdi:clock-start",
+                       ["remoteStart", "remoteStartTime"], transform=_ts_to_local),
+        FordPassAutoOffSensor(coordinator),
         FordPassSensor(coordinator, "authorization", "授权状态", None, None, "mdi:shield-check", ["authorization"],
                        enum_map={"AUTHORIZED": "已授权", "UNAUTHORIZED": "未授权", "EXPIRED": "已过期"}),
         FordPassSensor(coordinator, "crcc_flag", "远程控车功能", None, None, "mdi:remote", ["crccFlag"],
@@ -387,3 +394,75 @@ class FordPassAlertSensor(SensorEntity):
         if isinstance(value, bool):
             return "车辆异常" if value else "无异常"
         return str(value)
+
+
+def _ts_to_local(v):
+    """Unix 秒时间戳 → 本地时间字符串（0/None → None）。"""
+    if not v:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(int(v)).strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+class FordPassAutoOffSensor(SensorEntity):
+    """距离自动熄火时间（动态倒计时，v2.8.0）。
+
+    远程启动进行中（remoteStartStatus=1）且福特返回了启动时长与启动时刻时，
+    按 剩余 = duration(分钟) - (now - startTime) 估算剩余分钟数；未启动或
+    数据缺失时返回 0（属性 running=False 可区分）。
+    说明：remoteStartDuration 按官方 App「自动熄火时间」语义视为分钟。
+    """
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-auto_off_remaining"
+        self._attr_name = "距离自动熄火时间"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:timer-sand"
+        self._attr_native_unit_of_measurement = "分钟"
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        status = self.coordinator.data.get("vehiclestatus", {})
+        rs = status.get("remoteStart") or {}
+        rss = status.get("remoteStartStatus") or {}
+        t0 = rs.get("remoteStartTime")
+        attrs: dict = {
+            "running": bool(rss.get("value")),
+            "duration_minutes": rs.get("remoteStartDuration"),
+            "start_time": _ts_to_local(t0),
+            "source_status": rss.get("status") or rs.get("status"),
+            "timestamp": rss.get("timestamp") or rs.get("timestamp"),
+        }
+        # v2.7.8: last_poll（最后拉取状态）
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+    @property
+    def native_value(self):
+        status = self.coordinator.data.get("vehiclestatus", {})
+        rs = status.get("remoteStart") or {}
+        rss = status.get("remoteStartStatus") or {}
+        running = rss.get("value")
+        dur = rs.get("remoteStartDuration")
+        t0 = rs.get("remoteStartTime")
+        if not running or not dur or not t0:
+            return 0
+        try:
+            remaining = float(dur) * 60 - (time.time() - float(t0))
+        except (TypeError, ValueError):
+            return 0
+        if remaining <= 0:
+            return 0
+        return round(remaining / 60, 1)
