@@ -201,6 +201,12 @@ async def async_setup_entry(
         FordPassSensor(coordinator, "cabin_temp", "车内温度", "°C", SensorDeviceClass.TEMPERATURE, "mdi:thermometer", ["CabnAmbTeActl"], round_value=True, skip_if_missing=True),
         FordPassSensor(coordinator, "deep_sleep", "深度睡眠模式", None, None, "mdi:sleep", ["deepSleepInProgress"], enum_map=_bool_map, skip_if_missing=True),
         FordPassSensor(coordinator, "firmware_upgrade", "固件升级中", None, None, "mdi:update", ["firmwareUpgInProgress"], enum_map=_bool_map, skip_if_missing=True),
+        # v3.0.1: 天窗（部分车型上报 sunroofPosition；无该字段的车型不创建）
+        FordPassSensor(coordinator, "sunroof", "天窗", None, None, "mdi:car-select",
+                       [["sunroofPosition"], ["windowPosition", "sunroofPosition"], ["sunroof"]],
+                       enum_map={"Closed": "已关闭", "Open": "已打开", "Open_Tilt": "倾斜开启",
+                                 "Tilt": "倾斜", "Partially_Open": "部分开启", "Vent": "通风",
+                                 "Unknown": "未知"}, skip_if_missing=True),
     ]
 
     # v2.9.0: 创建期过滤——数据无效（null/Not_Supported/...）的实体不创建，
