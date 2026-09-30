@@ -22,12 +22,16 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import FordPassApi, FordPassApiError
 from .const import (
+    CONF_COORDINATE_SYSTEM,
     CONF_LOGIN_MODE,
     CONF_PASSWORD,
     CONF_PHONE,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
-    DEFAULT_SCAN_INTERVAL_SECONDS,
+    COORDINATE_GCJ02,
+    COORDINATE_WGS84,
+    DEFAULT_COORDINATE_SYSTEM,
+    DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     LOGIN_MODE_PASSWORD,
     LOGIN_MODE_SMS,
@@ -174,8 +178,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "refresh_token": tokens["refresh_token"],
                     },
                     options={
-                        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_SECONDS,
+                        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
                         "track_location": True,
+                        CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
                     },
                 )
         return self.async_show_form(
@@ -223,8 +228,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "refresh_token": tokens["refresh_token"],
                         },
                         options={
-                            CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_SECONDS,
+                            CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
                             "track_location": True,
+                            CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
                         },
                     )
         return self.async_show_form(
@@ -249,19 +255,30 @@ class FordPassOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
         data = self._config_entry.options
+        coordinate_labels = {
+            COORDINATE_WGS84: "WGS-84（官方地图/OSM 精确）",
+            COORDINATE_GCJ02: "GCJ-02（高德/腾讯地图）",
+        }
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    # v2.7.8: scan interval is entered in MINUTES (default 30).
                     vol.Required(
                         CONF_SCAN_INTERVAL,
                         default=data.get(
-                            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
+                            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES
                         ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1440)),
                     vol.Optional(
                         "track_location", default=data.get("track_location", True)
                     ): bool,
+                    vol.Optional(
+                        CONF_COORDINATE_SYSTEM,
+                        default=data.get(
+                            CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
+                        ),
+                    ): vol.In(coordinate_labels),
                 }
             ),
         )
