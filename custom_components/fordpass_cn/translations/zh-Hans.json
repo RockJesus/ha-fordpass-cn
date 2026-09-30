@@ -51,7 +51,7 @@
         "data": {
           "scan_interval": "状态刷新间隔（分钟）",
           "track_location": "启用车辆定位追踪",
-          "coordinate_system": "坐标体系（WGS-84 用于官方地图/OSM，GCJ-02 用于高德/腾讯）"
+          "coordinate_system": "坐标体系（WGS-84：转为 GPS 原始坐标供官方地图/OSM；GCJ-02：火星坐标原样输出供高德/腾讯地图）"
         }
       }
     }
