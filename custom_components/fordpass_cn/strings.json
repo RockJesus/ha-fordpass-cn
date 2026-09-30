@@ -49,8 +49,9 @@
       "init": {
         "title": "福特派互联选项",
         "data": {
-          "scan_interval": "状态刷新间隔（秒）",
-          "track_location": "启用车辆定位追踪"
+          "scan_interval": "状态刷新间隔（分钟）",
+          "track_location": "启用车辆定位追踪",
+          "coordinate_system": "坐标体系（WGS-84 用于官方地图/OSM，GCJ-02 用于高德/腾讯）"
         }
       }
     }
