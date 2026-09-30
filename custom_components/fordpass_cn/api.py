@@ -760,7 +760,9 @@ class FordPassApi:
                         len(token), expiry_ms)
         return token
 
-    async def get_location(self, vin: str) -> dict[str, Any]:
+    async def get_location(
+        self, vin: str, coordinate_system: str = "wgs84"
+    ) -> dict[str, Any]:
         """POST https://api-connect.ford.com.cn/lbs-map/v2/public/app/queryLocation.
 
         Fully reversed and verified against a live session:
@@ -819,9 +821,13 @@ class FordPassApi:
             resp_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "lbs_p2c")
             lat = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lat"], iv))
             lon = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lon"], iv))
-            # FordPass CN returns WGS-84; convert to GCJ-02 so China map tiles
-            # (Gaode/Tencent) show the vehicle accurately (v2.6.6).
-            lat, lon = normalize_gcj02(lat, lon)
+            # FordPass CN LBS returns WGS-84. v2.7.8: keep WGS-84 by default so
+            # the HA built-in map (OpenStreetMap) shows the vehicle accurately;
+            # only convert to GCJ-02 when the user selects 高德/腾讯 in options
+            # (v2.6.6 used to force GCJ-02, which shifted the marker ~600 m on
+            # the built-in OSM map).
+            if coordinate_system == "gcj02":
+                lat, lon = normalize_gcj02(lat, lon)
             return {
                 "lat": lat,
                 "lon": lon,
