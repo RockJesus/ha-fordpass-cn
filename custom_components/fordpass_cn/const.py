@@ -91,7 +91,12 @@ CMD_ENGINE_START = "RemoteStart"
 CMD_ENGINE_STOP = "RemoteStop"
 # NOTE: the China gateway has no Honk/Panic command (removed in v2.7.7 — the
 # old 鸣笛寻车/报警 buttons always returned 400 errorCode 100502).
-CMD_EXTEND_START = "TrunkUnlock"  # 后备箱解锁 (whitelisted, reserved)
+# v2.9.0: 后备箱解锁 / 灯光寻车（均在中国区网关白名单内，效果视车型支持）
+CMD_TRUNK_UNLOCK = "TrunkUnlock"
+CMD_LIGHT_FIND_ON = "ZoneLightingON"
+CMD_LIGHT_FIND_OFF = "ZoneLightingOFF"
+CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"
+CMD_EXTEND_START = CMD_TRUNK_UNLOCK  # 兼容旧名（后备箱解锁）
 CMD_REFRESH_STATUS = "ForceRefresh"
 CMD_AUTO_REFRESH = "AutoRefresh"
 
