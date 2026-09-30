@@ -6,6 +6,15 @@ DOMAIN = "fordpass_cn"
 # Production gateways (verified from official app captures)
 BASE_URL = "https://cn.api.mps.ford.com.cn"
 LBS_BASE_URL = "https://api-connect.ford.com.cn"
+# v5 REST gateway — recovered from the app's Dart AOT code and verified live
+# (2026-10-01): DELETE /api/vehicles/v5/{vin}/honk returns HTTP 200 + commandId
+# with the standard DLT headers (no body / no sign / no timestamp).  The POST
+# honk (start) requires the app's proprietary RSA-OAEP + AES-CCM envelope
+# (HttpEncryptService / SensorWhiteBoxEncryptionService), which is not yet
+# re-implemented; the DELETE route is the only v5 command channel verified on
+# this VIN's model.
+V5_BASE_URL = "https://cnapi.cv.ford.com.cn"
+PATH_V5_HONK = "/api/vehicles/v5/{vin}/honk"
 
 # LBS (vehicle location) gateway — recovered from the app's Dart AOT code and
 # verified against 26 live captures (x-sign 26/26).
@@ -97,7 +106,9 @@ CMD_EXTEND_START = CMD_TRUNK_UNLOCK  # 兼容旧名（后备箱解锁）
 # v2.10.0: 白名单全部命令补全（此前未接入的项）
 CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"      # 中央区灯光开（无独立关闭命令）
 CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
-CMD_HONK = "Honk"                                   # 鸣笛寻车（v3.0.3；中国区网关白名单暂不含，App 走独立通道，待 HAR 校准）
+# 鸣笛寻车（v3.0.4）：中国区 send-command 网关白名单不含 Honk（HTTP 400 100502），
+# 已切换为 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，实测 200 + commandId）
+CMD_HONK = "Honk"
 CMD_TRAILER_CHECK_START = "TrailerLightCheckStart"  # 拖车灯光检测开始（皮卡/拖车）
 CMD_TRAILER_CHECK_STOP = "TrailerLightCheckStop"    # 拖车灯光检测停止
 CMD_VA_INIT = "InitialVA"                           # 语音助手初始化
