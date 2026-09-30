@@ -1,7 +1,8 @@
-"""Button platform: one-shot remote actions (refresh vehicle status).
+"""Button platform: one-shot remote actions.
 
-v2.7.7: the 鸣笛寻车 / 报警 buttons were removed — the China gateway has no
-Honk/Panic commandType and always returns 400 errorCode 100502.
+v2.10.0: 覆盖中国区网关 send-command 白名单内全部命令，并按车型能力
+（vehicle-status 字段）过滤创建——数据无效 / 车型不支持的按钮不创建。
+灯光寻车与后备箱解锁已合成 switch 实体（见 switch.py）。
 """
 from __future__ import annotations
 
@@ -13,11 +14,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import capability
 from .const import (
-    CMD_LIGHT_FIND_OFF,
-    CMD_LIGHT_FIND_ON,
+    CMD_ASU_SETTING,
+    CMD_AUTO_REFRESH,
+    CMD_CENTRAL_LIGHTING,
+    CMD_OTA_SCHEDULE,
     CMD_REFRESH_STATUS,
-    CMD_TRUNK_UNLOCK,
+    CMD_TRAILER_CHECK_START,
+    CMD_TRAILER_CHECK_STOP,
+    CMD_VA_CANCEL,
+    CMD_VA_INIT,
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
@@ -25,20 +32,53 @@ from .coordinator import FordPassCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+# (key, 名称, 图标, 命令, 能力检测路径, 检测方式)
+# 检测方式: None=总是创建 / "usable"=值有效 / "on"=值为开启态 / "node"=节点存在
+_BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None]] = [
+    # 通用命令——所有车型都有
+    ("refresh", "刷新车辆状态", "mdi:refresh", CMD_REFRESH_STATUS, None, None),
+    ("auto_refresh", "自动刷新状态", "mdi:refresh-auto", CMD_AUTO_REFRESH, None, None),
+    # 远程控车开启（crccFlag=ON）才有意义
+    ("central_lighting", "中央区灯光", "mdi:car-light-high", CMD_CENTRAL_LIGHTING,
+     [["crccFlag"]], "usable"),
+    ("va_init", "语音助手初始化", "mdi:assistant", CMD_VA_INIT, [["crccFlag"]], "on"),
+    ("va_cancel", "语音助手取消", "mdi:assistant", CMD_VA_CANCEL, [["crccFlag"]], "on"),
+    # 固件/OTA 相关（firmwareUpgInProgress 字段存在即认为支持）
+    ("ota_schedule", "OTA 激活排程", "mdi:update", CMD_OTA_SCHEDULE,
+     [["firmwareUpgInProgress"]], "usable"),
+    ("asu_setting", "辅助设置", "mdi:cog-outline", CMD_ASU_SETTING,
+     [["ccsSettings"]], "node"),
+    # 皮卡/拖车（双后轮启用才创建）
+    ("trailer_check_start", "拖车灯光检测开始", "mdi:truck-trailer", CMD_TRAILER_CHECK_START,
+     [["TPMS", "dualRearWheel"]], "on"),
+    ("trailer_check_stop", "拖车灯光检测停止", "mdi:truck-trailer", CMD_TRAILER_CHECK_STOP,
+     [["TPMS", "dualRearWheel"]], "on"),
+]
+
+
+def _capability_ok(status: dict, paths: list[list[str]] | None, check: str | None) -> bool:
+    if paths is None or check is None:
+        return True
+    if check == "usable":
+        return capability.usable(status, paths)
+    if check == "on":
+        return capability.is_on(status, paths)
+    if check == "node":
+        return capability.node_usable(status, paths)
+    return True
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    # v2.9.0: 后备箱解锁 / 灯光寻车（开·关）——命令值均在中国区网关白名单内，
-    # 具体车辆是否支持以网关响应为准（失败仅记录 warning，不影响其他按钮）。
-    async_add_entities(
-        [
-            FordPassButton(coordinator, "refresh", "刷新车辆状态", "mdi:refresh", CMD_REFRESH_STATUS),
-            FordPassButton(coordinator, "trunk_unlock", "后备箱解锁", "mdi:car-back", CMD_TRUNK_UNLOCK),
-            FordPassButton(coordinator, "light_find_on", "灯光寻车", "mdi:car-light-high", CMD_LIGHT_FIND_ON),
-            FordPassButton(coordinator, "light_find_off", "关闭灯光寻车", "mdi:car-light-dim", CMD_LIGHT_FIND_OFF),
-        ]
-    )
+    status = coordinator.data.get("vehiclestatus", {}) or {}
+    buttons = [
+        FordPassButton(coordinator, key, label, icon, command)
+        for key, label, icon, command, paths, check in _BUTTONS
+        if _capability_ok(status, paths, check)
+    ]
+    async_add_entities(buttons)
 
 
 class FordPassButton(ButtonEntity):
