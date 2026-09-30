@@ -13,9 +13,11 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import FordPassApi, FordPassApiError
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_COORDINATE_SYSTEM,
     CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
-    DEFAULT_SCAN_INTERVAL_SECONDS,
+    DEFAULT_COORDINATE_SYSTEM,
+    DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
@@ -92,16 +94,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         or None
     )
 
-    interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
+    # v2.7.8: scan_interval is stored/entered in MINUTES (default 30).
+    interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES))
     track_location = bool(entry.options.get("track_location", True))
+    coordinate_system = entry.options.get(
+        CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
+    )
     vehicle_image_url = (
         vehicles[0].get("vehicleImageUrl")
         or vehicles[0].get("imageUrl")
         or None
     )
     coordinator = FordPassCoordinator(
-        hass, api, vin, int(interval), vehicle_label, license_plate,
-        track_location, nickname, vehicle_image_url,
+        hass, api, vin, interval, vehicle_label, license_plate,
+        track_location, nickname, vehicle_image_url, coordinate_system,
     )
     await coordinator.async_config_entry_first_refresh()
 
@@ -125,13 +131,17 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     reloading the whole entry, so no entities flicker.
     """
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS))
-    coordinator.update_interval = timedelta(seconds=interval)
+    interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES))
+    coordinator.update_interval = timedelta(minutes=interval)
     coordinator.track_location = bool(entry.options.get("track_location", True))
+    coordinator.coordinate_system = entry.options.get(
+        CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
+    )
     _LOGGER.info(
-        "fordpass_cn options updated: scan_interval=%ss track_location=%s",
+        "fordpass_cn options updated: scan_interval=%smin track_location=%s coordinate_system=%s",
         interval,
         coordinator.track_location,
+        coordinator.coordinate_system,
     )
     await coordinator.async_request_refresh()
 
