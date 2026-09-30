@@ -102,16 +102,23 @@ CONF_ACCESS_TOKEN = "access_token"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_VEHICLE_INDEX = "vehicle_index"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_COORDINATE_SYSTEM = "coordinate_system"
 CONF_LOGIN_MODE = "login_mode"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
+
+# 坐标体系（v2.7.8）：福特 LBS 返回 WGS-84；HA 官方地图（OSM）用 WGS-84，
+# 高德/腾讯等国内卡片用 GCJ-02（火星坐标）。默认 WGS-84，官方地图不偏移。
+COORDINATE_WGS84 = "wgs84"
+COORDINATE_GCJ02 = "gcj02"
+DEFAULT_COORDINATE_SYSTEM = COORDINATE_WGS84
 
 # Login methods (v2.7.4 — both selectable in the config flow)
 LOGIN_MODE_SMS = "sms"
 LOGIN_MODE_PASSWORD = "password"
 
-# Defaults
-DEFAULT_SCAN_INTERVAL_SECONDS = 60
+# Defaults（v2.7.8：刷新间隔以分钟为单位，默认 30 分钟）
+DEFAULT_SCAN_INTERVAL_MINUTES = 30
 DEFAULT_CONF_FLOW_TITLE = "福特派互联"
 
 # Platforms
