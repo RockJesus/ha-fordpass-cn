@@ -35,7 +35,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.0.1.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.0.2.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -71,6 +71,8 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 > 按钮/开关与传感器一样按车型能力过滤：值为 null/Not_Supported/空 或车型不支持的实体不创建（如燃油车看不到充电状态、非拖车车型看不到拖车灯光检测）。
 
 ## 版本历史
+
+- **v3.0.2**：**细节优化**——①「远程启动时间」未启动时显示「未启动」而非 unknown（`remoteStartTime=0` 不再映射为空）；②「车辆异常警示」告警去重（保序），同一条告警不再重复拼接，属性 `alerts` 同步去重
 
 - **v3.0.1**：**后备箱锁由开关改为锁实体**（lock 语义更直观：锁定=全车上锁 `DoorLock`、解锁=后备箱弹开 `TrunkUnlock`，初始状态从门锁状态推断）；**新增「天窗」传感器**（车辆上报 `sunroofPosition` 才显示，映射 关闭/打开/倾斜/通风，无天窗字段的车型不创建）；灯光寻车保持开关实体
 
