@@ -158,6 +158,17 @@ class FordPassVehicleAttrSensor(SensorEntity):
     def native_value(self):
         return getattr(self.coordinator, self._attr_key, None)
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        """v2.7.8: last_poll（最后拉取状态）"""
+        return {
+            "last_poll": (
+                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+                if self.coordinator.last_poll
+                else None
+            )
+        }
+
 
 class FordPassLocationSensor(SensorEntity):
     """Vehicle location (address / coordinates), best effort."""
@@ -178,14 +189,21 @@ class FordPassLocationSensor(SensorEntity):
     def extra_state_attributes(self) -> dict:
         data = self.coordinator.data or {}
         loc = data.get("location")
+        attrs: dict = {}
         if isinstance(loc, dict):
-            return {
+            attrs = {
                 "latitude": loc.get("lat"),
                 "longitude": loc.get("lon"),
                 "upload_time": loc.get("uploadTime"),
                 "address": loc.get("address"),
             }
-        return {}
+        # v2.7.8: last_poll（最后拉取状态）
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
 
     @property
     def native_value(self):
@@ -243,6 +261,12 @@ class FordPassSensor(SensorEntity):
             attrs["source_status"] = node.get("status")
         if isinstance(status, dict):
             attrs["vehicle_data_time"] = status.get("lastModifiedDate") or status.get("lastRefresh")
+        # v2.7.8: last_poll（最后拉取状态）——最近一次成功拉取（自动/手动）的本地时间
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
         return attrs
 
     @property
