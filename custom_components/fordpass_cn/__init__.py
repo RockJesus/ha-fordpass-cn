@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import FordPassApi, FordPassApiError
+from . import capability
 from .const import (
     CONF_ACCESS_TOKEN,
     CONF_COORDINATE_SYSTEM,
@@ -110,6 +111,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         track_location, nickname, vehicle_image_url, coordinate_system,
     )
     await coordinator.async_config_entry_first_refresh()
+
+    # v2.10.0: 全车型兼容检测日志——基于 vehicle-status 数据判定车型能力，
+    # 与实体创建保持一致（无效字段/不支持功能不创建实体）。
+    try:
+        _vs = coordinator.data.get("vehiclestatus", {}) or {}
+        _caps = {
+            "remote_ctrl": capability.usable(_vs, [["crccFlag"]]),
+            "tailgate": capability.usable(
+                _vs, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
+            ),
+            "ev_charge": capability.usable(_vs, [["chargingStatus"], ["plugStatus"]]),
+            "ev_battery": capability.usable(_vs, [["batteryFillLevel"]]),
+            "diesel": capability.usable(_vs, [["dieselSystemStatus", "exhaustFluidLevel"]]),
+            "trailer": capability.is_on(_vs, [["TPMS", "dualRearWheel"]]),
+            "cabin_temp": capability.usable(_vs, [["CabnAmbTeActl"]]),
+            "deep_sleep": capability.usable(_vs, [["deepSleepInProgress"]]),
+        }
+        _LOGGER.info(
+            "fordpass_cn 全车型能力检测: %s",
+            json.dumps(_caps, ensure_ascii=False),
+        )
+    except Exception:  # noqa: BLE001 - 检测失败不影响集成运行
+        _LOGGER.debug("fordpass_cn capability detection failed", exc_info=True)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "api": api,
