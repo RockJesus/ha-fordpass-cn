@@ -13,7 +13,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CMD_REFRESH_STATUS, DOMAIN
+from .const import (
+    CMD_LIGHT_FIND_OFF,
+    CMD_LIGHT_FIND_ON,
+    CMD_REFRESH_STATUS,
+    CMD_TRUNK_UNLOCK,
+    DOMAIN,
+)
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,9 +29,14 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    # v2.9.0: 后备箱解锁 / 灯光寻车（开·关）——命令值均在中国区网关白名单内，
+    # 具体车辆是否支持以网关响应为准（失败仅记录 warning，不影响其他按钮）。
     async_add_entities(
         [
             FordPassButton(coordinator, "refresh", "刷新车辆状态", "mdi:refresh", CMD_REFRESH_STATUS),
+            FordPassButton(coordinator, "trunk_unlock", "后备箱解锁", "mdi:car-back", CMD_TRUNK_UNLOCK),
+            FordPassButton(coordinator, "light_find_on", "灯光寻车", "mdi:car-light-high", CMD_LIGHT_FIND_ON),
+            FordPassButton(coordinator, "light_find_off", "关闭灯光寻车", "mdi:car-light-dim", CMD_LIGHT_FIND_OFF),
         ]
     )
 
