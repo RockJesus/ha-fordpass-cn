@@ -66,9 +66,8 @@ from .wbsk import FordPassCrypto
 def wgs84_to_gcj02(lat: float, lng: float) -> tuple[float, float]:
     """Convert WGS-84 (GPS raw) coordinates to GCJ-02 (国测局加密坐标).
 
-    FordPass CN LBS returns WGS-84 coordinates; China map tiles (Gaode,
-    Tencent, ...) use GCJ-02, so the raw point lands ~600 m off on the map.
-    Converting at the source makes every map card show the vehicle accurately.
+    China map tiles (Gaode, Tencent, ...) use GCJ-02, so a raw WGS-84 point
+    lands ~600 m off on those maps.
     """
     if lng < 72.004 or lng > 137.8347 or lat < 0.8293 or lat > 55.8271:
         # outside China: no offset applies
@@ -110,6 +109,30 @@ def normalize_gcj02(lat, lng):
     if isinstance(lat, str):
         return f"{lat_g:.6f}", f"{lng_g:.6f}"
     return lat_g, lng_g
+
+
+def gcj02_to_wgs84(lng: float, lat: float) -> tuple[float, float]:
+    """Convert GCJ-02 (国测局加密坐标) back to WGS-84 (GPS raw).
+
+    Single-iteration inverse of wgs84_to_gcj02: g(x) = x + d(x), so the
+    inverse is x - d(g(x)) applied once (accuracy < ~1 m inside China).
+    """
+    if lng < 72.004 or lng > 137.8347 or lat < 0.8293 or lat > 55.8271:
+        # outside China: no offset applies
+        return lat, lng
+
+    lat_g, lng_g = wgs84_to_gcj02(lat, lng)
+    return lat - (lat_g - lat), lng - (lng_g - lng)
+
+
+def normalize_wgs84(lat, lng):
+    """Apply GCJ02->WGS84 inverse and preserve the original value type (str/float)."""
+    lat_f = float(lat)
+    lng_f = float(lng)
+    lat_w, lng_w = gcj02_to_wgs84(lng_f, lat_f)
+    if isinstance(lat, str):
+        return f"{lat_w:.6f}", f"{lng_w:.6f}"
+    return lat_w, lng_w
 
 
 def _canonical(params: dict[str, Any]) -> str:
@@ -821,13 +844,15 @@ class FordPassApi:
             resp_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "lbs_p2c")
             lat = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lat"], iv))
             lon = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lon"], iv))
-            # FordPass CN LBS returns WGS-84. v2.7.8: keep WGS-84 by default so
-            # the HA built-in map (OpenStreetMap) shows the vehicle accurately;
-            # only convert to GCJ-02 when the user selects 高德/腾讯 in options
-            # (v2.6.6 used to force GCJ-02, which shifted the marker ~600 m on
-            # the built-in OSM map).
-            if coordinate_system == "gcj02":
-                lat, lon = normalize_gcj02(lat, lon)
+            # FordPass CN LBS returns GCJ-02 (火星坐标), verified live 2026-09-30:
+            # the raw point (111.719153, 40.828175) matches the official app's
+            # map marker exactly, while re-converting it WGS-84->GCJ-02 shifted
+            # the marker ~600 m. v2.7.9:
+            #   * "wgs84" (HA official map / OSM): convert GCJ-02 -> WGS-84 so
+            #     the built-in map shows the vehicle accurately;
+            #   * "gcj02" (高德/腾讯地图): keep as-is (already GCJ-02).
+            if coordinate_system == "wgs84":
+                lat, lon = normalize_wgs84(lat, lon)
             return {
                 "lat": lat,
                 "lon": lon,
