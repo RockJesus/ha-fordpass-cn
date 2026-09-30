@@ -4,8 +4,9 @@ v2.10.0: 覆盖中国区网关 send-command 白名单内全部命令，并按车
 （vehicle-status 字段）过滤创建——数据无效 / 车型不支持的按钮不创建。
 灯光寻车与后备箱解锁已合成 switch 实体（见 switch.py）。
 v3.0.3: 「刷新车辆状态」→「手动拉取最新状态」、「自动刷新状态」→
-「请求车机刷新状态」；新增「鸣笛寻车」按钮（CMD_HONK，中国区网关白名单
-暂不含 Honk——App 鸣笛走独立通道，待用户提供抓包 HAR 后校准真实接口）。
+「请求车机刷新状态」；新增「鸣笛寻车」按钮。
+v3.0.4: 「鸣笛寻车」切换为 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，
+实测 200 + commandId）——中国区 send-command 白名单不含 Honk。
 """
 from __future__ import annotations
 
@@ -123,6 +124,24 @@ class FordPassButton(ButtonEntity):
         block the refresh.
         """
         resp: Any = None
+        if self._command == CMD_HONK:
+            # v3.0.4: 中国区 send-command 网关白名单不含 Honk（HTTP 400 100502），
+            # 鸣笛寻车切换为 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，
+            # 实测 200 + commandId）。按下即调用 v5 通道；成功后照常刷新实体。
+            try:
+                resp = await self.coordinator.api.honk_command(
+                    self.coordinator.vin
+                )
+                if isinstance(resp, dict) and resp.get("commandId"):
+                    _LOGGER.info("FordPass 鸣笛寻车已下发（v5 通道）commandId=%s", resp["commandId"])
+            except Exception as exc:  # noqa: BLE001 - keep going so entities still refresh
+                _LOGGER.warning("FordPass 鸣笛寻车（v5 通道）失败: %s", exc)
+            try:
+                await self.coordinator.force_refresh()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("FordPass refresh after honk failed: %s", exc)
+            return
+
         try:
             resp = await self.coordinator.api.send_command(
                 self.coordinator.vin, self._command
@@ -174,12 +193,6 @@ class FordPassButton(ButtonEntity):
                 except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning("FordPass refresh failed: %s", exc)
         else:
-            if self._command == CMD_HONK and resp is None:
-                # v3.0.3: 中国区网关 send-command 白名单不含 Honk——App 鸣笛走独立通道，
-                # 待用户提供抓包 HAR 后校准真实接口（届时替换 CMD_HONK 请求）。
-                _LOGGER.warning(
-                    "FordPass 鸣笛寻车发送失败（中国区网关白名单不含 Honk，等待抓包 HAR 校准独立通道）"
-                )
             try:
                 await self.coordinator.force_refresh()
             except Exception as exc:  # noqa: BLE001
