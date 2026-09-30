@@ -89,16 +89,21 @@ CMD_LOCK = "DoorLock"
 CMD_UNLOCK = "DoorUnlock"
 CMD_ENGINE_START = "RemoteStart"
 CMD_ENGINE_STOP = "RemoteStop"
-# NOTE: the China gateway has no Honk/Panic command (removed in v2.7.7 — the
-# old 鸣笛寻车/报警 buttons always returned 400 errorCode 100502).
 # v2.9.0: 后备箱解锁 / 灯光寻车（均在中国区网关白名单内，效果视车型支持）
 CMD_TRUNK_UNLOCK = "TrunkUnlock"
 CMD_LIGHT_FIND_ON = "ZoneLightingON"
 CMD_LIGHT_FIND_OFF = "ZoneLightingOFF"
-CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"
 CMD_EXTEND_START = CMD_TRUNK_UNLOCK  # 兼容旧名（后备箱解锁）
+# v2.10.0: 白名单全部命令补全（此前未接入的项）
+CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"      # 中央区灯光开（无独立关闭命令）
+CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
+CMD_TRAILER_CHECK_START = "TrailerLightCheckStart"  # 拖车灯光检测开始（皮卡/拖车）
+CMD_TRAILER_CHECK_STOP = "TrailerLightCheckStop"    # 拖车灯光检测停止
+CMD_VA_INIT = "InitialVA"                           # 语音助手初始化
+CMD_VA_CANCEL = "CancelVA"                          # 语音助手取消
+CMD_OTA_SCHEDULE = "OTAActivationSchedule"          # OTA 激活排程
+CMD_ASU_SETTING = "ASUSetting"                      # 辅助设置
 CMD_REFRESH_STATUS = "ForceRefresh"
-CMD_AUTO_REFRESH = "AutoRefresh"
 
 # Config / storage keys
 CONF_PHONE = "phone"
