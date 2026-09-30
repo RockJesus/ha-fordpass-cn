@@ -97,6 +97,7 @@ CMD_EXTEND_START = CMD_TRUNK_UNLOCK  # 兼容旧名（后备箱解锁）
 # v2.10.0: 白名单全部命令补全（此前未接入的项）
 CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"      # 中央区灯光开（无独立关闭命令）
 CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
+CMD_HONK = "Honk"                                   # 鸣笛寻车（v3.0.3；中国区网关白名单暂不含，App 走独立通道，待 HAR 校准）
 CMD_TRAILER_CHECK_START = "TrailerLightCheckStart"  # 拖车灯光检测开始（皮卡/拖车）
 CMD_TRAILER_CHECK_STOP = "TrailerLightCheckStop"    # 拖车灯光检测停止
 CMD_VA_INIT = "InitialVA"                           # 语音助手初始化
