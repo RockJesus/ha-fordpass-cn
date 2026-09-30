@@ -147,8 +147,9 @@ async def async_setup_entry(
     sensors += [
         FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", "分钟", None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"]),
         # v2.8.0: 远程启动时间（unix 秒 → 本地时间字符串）与动态"距离自动熄火时间"倒计时
+        # v3.0.2: 未启动（值为 0）时显示「未启动」，不再显示 unknown
         FordPassSensor(coordinator, "remote_start_time", "远程启动时间", None, None, "mdi:clock-start",
-                       ["remoteStart", "remoteStartTime"], transform=_ts_to_local),
+                       ["remoteStart", "remoteStartTime"], transform=_remote_start_time),
         FordPassAutoOffSensor(coordinator),
         FordPassSensor(coordinator, "authorization", "授权状态", None, None, "mdi:shield-check", ["authorization"],
                        enum_map={"AUTHORIZED": "已授权", "UNAUTHORIZED": "未授权", "EXPIRED": "已过期"}),
@@ -414,16 +415,21 @@ class FordPassAlertSensor(SensorEntity):
         attrs: dict = {}
         alerts = data.get("active_alerts")
         if isinstance(alerts, list):
-            attrs["alerts"] = [
-                {
-                    "headline": a.get("headline"),
-                    "severity": a.get("severity"),
-                    "body": a.get("body"),
-                    "event_time": a.get("eventTime"),
-                }
-                for a in alerts if isinstance(a, dict)
-            ]
-            times = [a.get("eventTime") for a in alerts if isinstance(a, dict) and a.get("eventTime")]
+            # v3.0.2: 同 headline 告警去重（保序）
+            seen: dict[str, dict] = {}
+            for a in alerts:
+                if not isinstance(a, dict):
+                    continue
+                key = a.get("headline")
+                if key not in seen:
+                    seen[key] = {
+                        "headline": a.get("headline"),
+                        "severity": a.get("severity"),
+                        "body": a.get("body"),
+                        "event_time": a.get("eventTime"),
+                    }
+            attrs["alerts"] = list(seen.values())
+            times = [a.get("eventTime") for a in seen.values() if a.get("eventTime")]
             if times:
                 attrs["event_time"] = times[0]
             attrs["source"] = "vha"
@@ -449,7 +455,8 @@ class FordPassAlertSensor(SensorEntity):
                     if isinstance(a, dict) and a.get("headline")
                 ]
                 if titles:
-                    return "、".join(titles)
+                    # v3.0.2: 去重（保序）后拼接，避免同一条告警重复出现
+                    return "、".join(dict.fromkeys(titles))
             elif isinstance(alerts, str) and alerts.strip():
                 return alerts
         return None
@@ -487,6 +494,16 @@ def _ts_to_local(v):
         return datetime.datetime.fromtimestamp(int(v)).strftime("%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError, OSError):
         return None
+
+
+def _remote_start_time(v):
+    """远程启动时间（v3.0.2）：unix 秒 → 本地时间；0/空（未启动）→「未启动」。"""
+    if not v:
+        return "未启动"
+    try:
+        return datetime.datetime.fromtimestamp(int(v)).strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError, OSError):
+        return "未启动"
 
 
 def _ts_or_str(v):
