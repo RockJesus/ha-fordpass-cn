@@ -53,6 +53,24 @@ def _first_leaf_node(status, paths):
     return None
 
 
+# 无实际数据的值（v2.9.0）：这些字段值为 None / "Null" / "Not_Supported" /
+# "NotAvailable" / 空串时视为无效——实体不创建，避免其他车型用户看到一屏 unknown。
+_INVALID_VALUES = {"", "null", "none", "n/a", "not_supported", "notsupported",
+                   "not available", "notavailable", "unknown"}
+
+
+def _is_usable(status, paths) -> bool:
+    """值是否有效（非 None / 无效占位串）——决定实体是否创建。"""
+    val = _first_leaf(status, paths)
+    if val is None:
+        return False
+    if isinstance(val, str):
+        return val.strip().lower() not in _INVALID_VALUES
+    if isinstance(val, (list, dict)):
+        return False
+    return True
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -141,6 +159,53 @@ async def async_setup_entry(
         FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
                        transform=lambda v: "不可用" if isinstance(v, str) and "NotAvailable" in v else v),
     ]
+
+    # ===== D 组：各车型可选字段（纯电/混动/柴油/拖车/车内环境等，v2.9.0） =====
+    # 全部 skip_if_missing=True：值无效（null/Not_Supported/...）的实体不创建，
+    # 保证任何车型登录后只看到自己有真实数据的实体（如锐际看不到充电状态）。
+    _charge_map = {"Charging": "充电中", "NotCharging": "未充电", "FullyCharged": "已充满",
+                   "Complete": "已完成", "Charged": "已充满", "Discharging": "放电中"}
+    _plug_map = {"Connected": "已连接", "Disconnected": "未连接", "Unplugged": "未插枪"}
+    _bool_map = {True: "是", False: "否", "true": "是", "false": "否", 1: "是", 0: "否", "1": "是", "0": "否"}
+    _hybrid_map = {"EV": "纯电模式", "HEV": "混动模式", "ER": "增程模式", "Off": "关闭"}
+    _precond_map = {"ON": "开启", "OFF": "关闭", "Running": "运行中", "PENDING": "等待中", "ERROR": "异常"}
+    _diesel_metric_map = {"Active": "激活", "Inactive": "未激活", "Regeneration": "再生中"}
+    sensors += [
+        # 纯电 / 插混（电马 Mustang Mach-E、锐界 L 混动等）
+        FordPassSensor(coordinator, "battery_fill_level", "动力电池电量", "%", SensorDeviceClass.BATTERY, "mdi:battery-high", ["batteryFillLevel"], round_value=True, skip_if_missing=True),
+        FordPassSensor(coordinator, "ev_dte", "纯电续航", UnitOfLength.KILOMETERS, None, "mdi:lightning-bolt", ["elVehDTE"], skip_if_missing=True),
+        FordPassSensor(coordinator, "charging_status", "充电状态", None, None, "mdi:power-plug", ["chargingStatus"], enum_map=_charge_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "plug_status", "充电插枪状态", None, None, "mdi:power-plug", ["plugStatus"], enum_map=_plug_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "charge_start_time", "充电开始时间", None, None, "mdi:clock-start", ["chargeStartTime"], transform=_ts_or_str, skip_if_missing=True),
+        FordPassSensor(coordinator, "charge_end_time", "充电结束时间", None, None, "mdi:clock-end", ["chargeEndTime"], transform=_ts_or_str, skip_if_missing=True),
+        FordPassSensor(coordinator, "battery_charge_status", "动力电池状态", None, None, "mdi:battery-charging", ["batteryChargeStatus"], enum_map=_charge_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "batt_trac_low_soc", "纯电低电量阈值", "%", None, "mdi:battery-low", ["battTracLoSocDDsply"], skip_if_missing=True),
+        FordPassSensor(coordinator, "battery_perf_status", "动力电池性能", None, None, "mdi:battery-outline", ["batteryPerfStatus"], enum_map=_bool_map, skip_if_missing=True),
+        # 远程空调 / 混动模式
+        FordPassSensor(coordinator, "pre_cond_status", "远程空调状态", None, None, "mdi:air-conditioner", ["preCondStatusDsply"], enum_map=_precond_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "hybrid_mode", "驱动模式", None, None, "mdi:car-electric", ["hybridModeStatus"], enum_map=_hybrid_map, skip_if_missing=True),
+        # 柴油（领裕/撼路者柴油版等）
+        FordPassSensor(coordinator, "diesel_urea", "尿素液位", "%", None, "mdi:water-percent", ["dieselSystemStatus", "exhaustFluidLevel"], skip_if_missing=True),
+        FordPassSensor(coordinator, "diesel_urea_range", "尿素续航", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["dieselSystemStatus", "ureaRange"], skip_if_missing=True),
+        FordPassSensor(coordinator, "diesel_metric", "柴油系统状态", None, None, "mdi:engine", ["dieselSystemStatus", "metricType"], enum_map=_diesel_metric_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "diesel_filter_soot", "颗粒滤清器积碳", None, None, "mdi:filter", ["dieselSystemStatus", "filterSoot"], skip_if_missing=True),
+        FordPassSensor(coordinator, "diesel_filter_regeneration", "滤清器再生状态", None, None, "mdi:autorenew", ["dieselSystemStatus", "filterRegenerationStatus"], enum_map=_diesel_metric_map, skip_if_missing=True),
+        # 六胎车型（皮卡/拖车）内胎与双后轮
+        FordPassSensor(coordinator, "inner_lr_tire", "内左后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "innerLeftRearTirePressure"], round_value=True, skip_if_missing=True),
+        FordPassSensor(coordinator, "inner_rr_tire", "内右后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "innerRightRearTirePressure"], round_value=True, skip_if_missing=True),
+        FordPassSensor(coordinator, "inner_lr_tire_status", "内左后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "innerLeftRearTireStatus"], enum_map=_tire_status_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "inner_rr_tire_status", "内右后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "innerRightRearTireStatus"], enum_map=_tire_status_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "dual_rear_wheel", "双后轮", None, None, "mdi:car", ["TPMS", "dualRearWheel"], enum_map={1: "启用", 0: "停用", "1": "启用", "0": "停用", True: "启用", False: "停用"}, skip_if_missing=True),
+        # 车门 / 车内环境 / 状态标志
+        FordPassSensor(coordinator, "inner_tailgate", "内尾门", None, None, "mdi:car-back", ["doorStatus", "innerTailgateDoor"], enum_map=_door_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "cabin_temp", "车内温度", "°C", SensorDeviceClass.TEMPERATURE, "mdi:thermometer", ["CabnAmbTeActl"], round_value=True, skip_if_missing=True),
+        FordPassSensor(coordinator, "deep_sleep", "深度睡眠模式", None, None, "mdi:sleep", ["deepSleepInProgress"], enum_map=_bool_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "firmware_upgrade", "固件升级中", None, None, "mdi:update", ["firmwareUpgInProgress"], enum_map=_bool_map, skip_if_missing=True),
+    ]
+
+    # v2.9.0: 创建期过滤——数据无效（null/Not_Supported/...）的实体不创建，
+    # 任何车型登录后只出现有真实数据的实体，不再显示一屏 unknown。
+    sensors = [s for s in sensors if getattr(s, "data_usable", True)]
     async_add_entities(sensors)
 
 
@@ -230,7 +295,8 @@ class FordPassLocationSensor(SensorEntity):
 class FordPassSensor(SensorEntity):
     def __init__(self, coordinator, key, label, unit, device_class, icon, path,
                  round_value: bool = False, enum_map: dict | None = None,
-                 multiplier: float | None = None, transform=None) -> None:
+                 multiplier: float | None = None, transform=None,
+                 skip_if_missing: bool = False) -> None:
         self.coordinator = coordinator
         self._key = key
         # Normalise `path`: a single path (["a","b"]) or a list of candidate
@@ -243,6 +309,9 @@ class FordPassSensor(SensorEntity):
         self._enum_map = enum_map
         self._multiplier = multiplier
         self._transform = transform
+        # v2.9.0: 数据无效（null/Not_Supported/...）时不创建该实体，其他车型
+        # 用户不会看到 unknown 实体；字段恢复有效后重载集成即可出现。
+        self._skip_if_missing = skip_if_missing
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = label
         self._attr_has_entity_name = False
@@ -252,6 +321,14 @@ class FordPassSensor(SensorEntity):
             self._attr_native_unit_of_measurement = unit
         if device_class:
             self._attr_device_class = device_class
+
+    @property
+    def data_usable(self) -> bool:
+        """创建期过滤：skip_if_missing 的实体仅当字段当前有有效值时创建。"""
+        if not self._skip_if_missing:
+            return True
+        status = self.coordinator.data.get("vehiclestatus", {})
+        return _is_usable(status, self._paths)
 
     @property
     def available(self) -> bool:
@@ -404,6 +481,16 @@ def _ts_to_local(v):
         return datetime.datetime.fromtimestamp(int(v)).strftime("%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError, OSError):
         return None
+
+
+def _ts_or_str(v):
+    """充电开始/结束时间：unix 秒/毫秒时间戳 → 本地时间，字符串原样（v2.9.0）。"""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        ts = float(v) / 1000 if float(v) > 1e12 else float(v)  # 毫秒/秒自适应
+        return _ts_to_local(int(ts))
+    return str(v)
 
 
 class FordPassAutoOffSensor(SensorEntity):
