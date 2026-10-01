@@ -213,6 +213,10 @@ async def async_setup_entry(
     # v2.9.0: 创建期过滤——数据无效（null/Not_Supported/...）的实体不创建，
     # 任何车型登录后只出现有真实数据的实体，不再显示一屏 unknown。
     sensors = [s for s in sensors if getattr(s, "data_usable", True)]
+    # v3.1.3: OTA 设置状态（GET /api/alert/v1/ota/setting-info，实测 200；
+    # 端点失败或车辆无 OTA 能力时不创建）
+    if coordinator.data.get("ota_setting"):
+        sensors.append(FordPassOtaSettingSensor(coordinator))
     async_add_entities(sensors)
 
 
@@ -576,3 +580,53 @@ class FordPassAutoOffSensor(SensorEntity):
         if remaining <= 0:
             return 0
         return round(remaining / 60, 1)
+
+
+class FordPassOtaSettingSensor(SensorEntity):
+    """OTA 设置状态（v3.1.3）——来自 GET /api/alert/v1/ota/setting-info。
+
+    实测（2026-10-02）：该端点走标准 R3 签名返回 HTTP 200，展示车辆的
+    OTA 配置（远程 OTA 开关、激活排程、当前/目标版本、状态描述）。
+    """
+
+    _OTA_FLAG_MAP = {0: "未开通远程OTA", 1: "已开通", 2: "未知", None: "未知"}
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-ota_setting"
+        self._attr_name = "OTA 设置状态"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:update"
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        ota = (self.coordinator.data or {}).get("ota_setting") or {}
+        attrs = {
+            "remote_ota": ota.get("remoteOTAFlag"),
+            "asu_state": ota.get("asuState") or "",
+            "activation_day": ota.get("activationDayOfWeek") or "",
+            "activation_time": ota.get("activationScheduleTime") or "",
+            "to_be_version": ota.get("toBeVersion") or "",
+            "to_be_release_note": ota.get("toBeReleaseNote") or "",
+            "as_is_version": ota.get("asIsVersion") or "",
+            "as_is_release_note": ota.get("asIsReleaseNote") or "",
+            "status_name": ota.get("statusName") or "",
+            "status_description": ota.get("statusDescription") or "",
+        }
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+    @property
+    def native_value(self):
+        ota = (self.coordinator.data or {}).get("ota_setting") or {}
+        flag = ota.get("remoteOTAFlag")
+        return self._OTA_FLAG_MAP.get(flag, "未知")
