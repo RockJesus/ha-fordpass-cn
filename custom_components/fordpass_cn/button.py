@@ -212,7 +212,7 @@ class FordPassSaveHonkSettingsButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     def _settings(self) -> tuple[int, int]:
         # v3.0.10: entry_id 优先从 coordinator 取（coordinator 构造时已保存）；
