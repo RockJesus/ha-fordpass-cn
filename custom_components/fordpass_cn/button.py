@@ -5,8 +5,8 @@ v2.10.0: 覆盖中国区网关 send-command 白名单内全部命令，并按车
 灯光寻车与后备箱解锁已合成 switch 实体（见 switch.py）。
 v3.0.3: 「刷新车辆状态」→「手动拉取最新状态」、「自动刷新状态」→
 「请求车机刷新状态」；新增「鸣笛寻车」按钮。
-v3.0.4: 「鸣笛寻车」切换为 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，
-实测 200 + commandId）——中国区 send-command 白名单不含 Honk。
+v3.0.5: 「鸣笛寻车」按钮迁移为开关实体（见 switch.py）——开 = v5 网关
+DELETE /api/vehicles/v5/{vin}/honk 真实通道，鸣笛 30 秒自动复位。
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from .const import (
     CMD_ASU_SETTING,
     CMD_AUTO_REFRESH,
     CMD_CENTRAL_LIGHTING,
-    CMD_HONK,
     CMD_OTA_SCHEDULE,
     CMD_REFRESH_STATUS,
     CMD_TRAILER_CHECK_START,
@@ -48,8 +47,6 @@ _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None]] = 
      [["crccFlag"]], "usable"),
     ("va_init", "语音助手初始化", "mdi:assistant", CMD_VA_INIT, [["crccFlag"]], "on"),
     ("va_cancel", "语音助手取消", "mdi:assistant", CMD_VA_CANCEL, [["crccFlag"]], "on"),
-    # 鸣笛寻车（v3.0.3）
-    ("honk", "鸣笛寻车", "mdi:bullhorn", CMD_HONK, [["crccFlag"]], "usable"),
     # 固件/OTA 相关（firmwareUpgInProgress 字段存在即认为支持）
     ("ota_schedule", "OTA 激活排程", "mdi:update", CMD_OTA_SCHEDULE,
      [["firmwareUpgInProgress"]], "usable"),
@@ -124,24 +121,6 @@ class FordPassButton(ButtonEntity):
         block the refresh.
         """
         resp: Any = None
-        if self._command == CMD_HONK:
-            # v3.0.4: 中国区 send-command 网关白名单不含 Honk（HTTP 400 100502），
-            # 鸣笛寻车切换为 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，
-            # 实测 200 + commandId）。按下即调用 v5 通道；成功后照常刷新实体。
-            try:
-                resp = await self.coordinator.api.honk_command(
-                    self.coordinator.vin
-                )
-                if isinstance(resp, dict) and resp.get("commandId"):
-                    _LOGGER.info("FordPass 鸣笛寻车已下发（v5 通道）commandId=%s", resp["commandId"])
-            except Exception as exc:  # noqa: BLE001 - keep going so entities still refresh
-                _LOGGER.warning("FordPass 鸣笛寻车（v5 通道）失败: %s", exc)
-            try:
-                await self.coordinator.force_refresh()
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.warning("FordPass refresh after honk failed: %s", exc)
-            return
-
         try:
             resp = await self.coordinator.api.send_command(
                 self.coordinator.vin, self._command
