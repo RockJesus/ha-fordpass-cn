@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.0.8.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.0.9.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -57,6 +57,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v3.0.9**：网络异常加固——修复网关偶发返回非文本响应（二进制/损坏 body）时的 `'utf-8' codec can't decode` 解码崩溃（v2.7.8 曾触发；v3.0.6 已保护主请求通道）；本次将鸣笛开/关（`v5 honk`）、LBS 令牌交换、位置查询共 4 处直连通道与主请求通道对齐，统一捕获解码异常 → 读取原始字节诊断 → 转为明确的 `FordPassApiError`（由上层重试策略处理），不再让裸解码错误冒泡到日志
 - **v3.0.8**：新增「鸣笛寻车设置」——持续时长（5/10/15/20 秒）与鸣笛类型（雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞）两个 `select` 实体，选择即保存到集成配置（重启不丢失）；鸣笛寻车开关开启时按设置把 `ChirpOrHonkDuration`/`ChirpType` 参数传给车机（等效上传车机）；新增「保存鸣笛设置」按钮——调用官方 App 同款 RCC Profile 端点 `POST /api/cnxapi-cds/crcc/v1/profile-by-vin`（`{userPreferences:[{preferenceType,preferenceValue}]}`，字段结构已通过服务端校验）尝试账户云端持久化，云端签名体系（App signatureR2）尚未还原时回退为本地保存（下次鸣笛仍按新设置执行）
 - **v3.0.7**：鸣笛寻车升级为真实「开/关」双通道——静态逆向还原福特派 App 官方协议（`libapp.so`）：开 = `POST /api/vehicles/v5/{vin}/honk`（明文 JSON body：`ChirpOrHonkDuration` / `IntervalBetweenRequests` / `ChirpType`，即 App 的 `FordHonkCommand` 通道），关 = `DELETE /api/vehicles/v5/{vin}/honk`（App 的 `FordHonkCancelCommand` 通道）；「关」由原来的本地复位升级为真实停止通道
 - **v3.0.6**：修复「手动拉取最新状态」偶发报错——福特网关在 ForceRefresh 后立即拉取 vehicle-status 时偶发返回非文本响应（原日志 `'utf-8' codec can't decode byte 0xfb`）；现在对非文本响应明确报错并自动重试一次（间隔 2 秒），不再让解码错误打断刷新流程
