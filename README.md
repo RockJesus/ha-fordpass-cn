@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.0.7.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.0.8.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -49,13 +49,15 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 | device_tracker | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
 | image | 车辆图片 | 车型渲染图（如「锐际 Escape」） |
 | lock | 车门锁 / 后备箱锁 | 上锁 / 解锁 |
-| button | 远程启动 / 熄火 / 刷新状态 | 远程启动引擎、手动拉取最新状态、请求车机刷新状态 |
-| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 | 已远程启动/未远程启动；灯光寻车开/关；鸣笛寻车（真实双通道：开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径，30 秒自动复位） |
+| button | 远程启动 / 熄火 / 刷新状态 / 保存鸣笛设置 | 远程启动引擎、手动拉取最新状态、请求车机刷新状态、保存鸣笛设置（上传 RCC Profile + 本地持久化） |
+| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 | 已远程启动/未远程启动；灯光寻车开/关；鸣笛寻车（真实双通道：开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径；鸣笛时长与类型按设置生效） |
+| select | 鸣笛持续时长 / 鸣笛类型 | 鸣笛寻车设置：持续时长 5/10/15/20 秒；鸣笛类型 雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞（选择即保存，鸣笛时参数直达车机） |
 | sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌、自动熄火倒计时等 |
 | sensor | 车辆异常警示 | 真实告警接口（胎压监测系统警告等），无异常显示「无异常」 |
 
 ## 版本历史
 
+- **v3.0.8**：新增「鸣笛寻车设置」——持续时长（5/10/15/20 秒）与鸣笛类型（雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞）两个 `select` 实体，选择即保存到集成配置（重启不丢失）；鸣笛寻车开关开启时按设置把 `ChirpOrHonkDuration`/`ChirpType` 参数传给车机（等效上传车机）；新增「保存鸣笛设置」按钮——调用官方 App 同款 RCC Profile 端点 `POST /api/cnxapi-cds/crcc/v1/profile-by-vin`（`{userPreferences:[{preferenceType,preferenceValue}]}`，字段结构已通过服务端校验）尝试账户云端持久化，云端签名体系（App signatureR2）尚未还原时回退为本地保存（下次鸣笛仍按新设置执行）
 - **v3.0.7**：鸣笛寻车升级为真实「开/关」双通道——静态逆向还原福特派 App 官方协议（`libapp.so`）：开 = `POST /api/vehicles/v5/{vin}/honk`（明文 JSON body：`ChirpOrHonkDuration` / `IntervalBetweenRequests` / `ChirpType`，即 App 的 `FordHonkCommand` 通道），关 = `DELETE /api/vehicles/v5/{vin}/honk`（App 的 `FordHonkCancelCommand` 通道）；「关」由原来的本地复位升级为真实停止通道
 - **v3.0.6**：修复「手动拉取最新状态」偶发报错——福特网关在 ForceRefresh 后立即拉取 vehicle-status 时偶发返回非文本响应（原日志 `'utf-8' codec can't decode byte 0xfb`）；现在对非文本响应明确报错并自动重试一次（间隔 2 秒），不再让解码错误打断刷新流程
 - **v3.0.5**：鸣笛寻车由按钮迁移为开关实体（开 = v5 网关 `DELETE /api/vehicles/v5/{vin}/honk` 真实通道触发鸣笛，鸣笛约 30 秒自动停止、开关自动复位；关闭为本地复位——官方 App 停止鸣笛的 POST 加密信封尚未还原）；修复「灯光寻车」开关初始状态显示 `unknown`（默认关闭）；README 折叠历史版本
