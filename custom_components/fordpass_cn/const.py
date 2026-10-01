@@ -78,6 +78,11 @@ PATH_QUERY_LOCATION = "/lbs-map/v2/public/app/queryLocation"
 #       timestamp={ms}&sign={sha256}
 # (server 404s a bare GET without timestamp/sign — fixed in v2.7.4)
 PATH_ACTIVE_ALERT = "/api/cnxapi-cds/v1/vha/activealert"
+# OTA 设置状态（v3.1.3，实测 2026-10-02）：GET /api/alert/v1/ota/setting-info
+# 走标准 R3 签名（timestamp+sign+encryptedVin/xjw）返回 HTTP 200；同族的
+# ota/detail、ota/versions 在锐际上被服务端拒绝（errorCode 206004
+# "capabilityMmota is false"），故仅 setting-info 接入。
+PATH_OTA_SETTING = "/api/alert/v1/ota/setting-info"
 
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
