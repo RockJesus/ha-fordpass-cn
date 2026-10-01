@@ -168,6 +168,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
         else:
             data["active_alerts"] = []
+        # v3.1.3: OTA 设置状态（尽力而为，与 alerts 同模式——失败不阻塞刷新）
+        try:
+            ota = await self.api.get_ota_setting(self.vin)
+            data["ota_setting"] = ota or None
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass OTA setting fetch failed: %s", exc)
+            data["ota_setting"] = None
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
