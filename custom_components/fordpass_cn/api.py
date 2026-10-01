@@ -38,6 +38,7 @@ from .const import (
     B2C_REDIRECT_URI,
     BASE_URL,
     CLIENT_TYPE,
+    DEFAULT_HONK_DURATION,
     LBS_APP_ID,
     LBS_APP_KEY,
     LBS_BASE_URL,
@@ -47,6 +48,7 @@ from .const import (
     PATH_ACTIVE_ALERT,
     PATH_B2C_TOKEN,
     PATH_COMMAND_STATUS,
+    PATH_CRCC_PROFILE,
     PATH_GENERATE_PASSCODE,
     PATH_PASSCODE_LOGIN,
     PATH_QUERY_LOCATION,
@@ -614,6 +616,56 @@ class FordPassApi:
                 return json.loads(text)
             except json.JSONDecodeError:
                 return {"raw": text}
+
+    async def save_honk_settings(
+        self,
+        vin: str,
+        duration: int = DEFAULT_HONK_DURATION,
+        chirp_type: int = 3,
+    ) -> dict[str, Any]:
+        """保存鸣笛寻车设置（RCC Profile 账户云端持久化，尽力通道）。
+
+        2026-10-01 从福特派 App（libapp.so, blutter）还原：
+        POST /api/cnxapi-cds/crcc/v1/profile-by-vin
+        body: {userPreferences: [{preferenceType: "CHIRP_TYPE",
+               preferenceValue: "<chirp_type>"},
+              {preferenceType: "CHIRP_OR_HONK_DURATION",
+               preferenceValue: "<duration>"}],
+              encryptedVin, xjw} + timestamp/sign（_request 自动附加）。
+        字段结构已通过服务端 JSON 校验（100502 未知字段类错误不再出现）；
+        但该端点的签名体系为 App 的 signatureR2（独立 secretKey/payLoadKey，
+        尚未还原），当前以 R3 compute_sign 尝试——若服务端返回
+        "sign is error"（100400），设置仍已本地保存（见 switch.py），
+        下次鸣笛 POST honk 时会把设置参数传给车机，效果等同上传车机。
+        """
+        enc_vin, xjw = await asyncio.to_thread(
+            lambda: self.crypto.encrypt_field(vin)
+        )
+        prefs = [
+            {"preferenceType": "CHIRP_TYPE", "preferenceValue": str(chirp_type)},
+            {
+                "preferenceType": "CHIRP_OR_HONK_DURATION",
+                "preferenceValue": str(duration),
+            },
+        ]
+        body = {
+            "userPreferences": prefs,
+            "encryptedVin": enc_vin,
+            "xjw": xjw,
+        }
+        try:
+            data = await self._request("POST", PATH_CRCC_PROFILE, body=body)
+            return data if isinstance(data, dict) else {"raw": data}
+        except FordPassApiError as exc:
+            if "sign is error" in str(exc) or "100400" in str(exc):
+                # R2 签名未还原——云端持久化失败，但本地设置仍生效
+                self._log.info(
+                    "FordPass 鸣笛设置：RCC 云端持久化被签名拦截（status=%s），"
+                    "已本地保存，下次鸣笛按新设置执行",
+                    exc.status,
+                )
+                return {"cloud": False, "error": str(exc)}
+            raise
 
     async def wait_command_complete(
         self, vin: str, command_id: str, command_type: str,
