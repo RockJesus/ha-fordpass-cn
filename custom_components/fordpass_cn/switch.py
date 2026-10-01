@@ -6,6 +6,8 @@ v3.0.5: 修复灯光寻车初始状态 unknown（默认关闭）；鸣笛寻车�
 v3.0.7: 鸣笛寻车真实双通道（静态逆向还原 App 协议）——开 = POST /api/vehicles/v5/{vin}/honk
 （body: ChirpOrHonkDuration/IntervalBetweenRequests/ChirpType），关 = DELETE 同路径（App 的
 FordHonkCancelCommand 通道）；触发后 30 秒自动复位。
+v3.0.8: 鸣笛开关开启时读取「鸣笛持续时长 / 鸣笛类型」设置（select 实体，存于
+config entry options），POST 参数直达车机——设置即生效（等效上传车机）。
 """
 from __future__ import annotations
 
@@ -151,14 +153,45 @@ class FordPassHonkSwitch(SwitchEntity):
         self._state = False
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    def _settings(self) -> tuple[int, int]:
+        """读取当前鸣笛设置（select 实体保存于 hass.data / entry options）。
+
+        v3.0.8: 返回 (持续时长秒, ChirpType)。找不到设置时回退默认
+        （时长 10 秒 / 汽笛长鸣 ChirpType=3），与 App 默认一致。
+        """
+        settings = (
+            self.coordinator.hass.data.get(DOMAIN, {})
+            .get(self.coordinator.entry_id, {})
+            .get("honk_settings", {})
+        )
         try:
-            resp = await self.coordinator.api.honk_command(self.coordinator.vin)
+            duration = int(settings.get("honk_duration", 10) or 10)
+        except (TypeError, ValueError):
+            duration = 10
+        try:
+            chirp_type = int(settings.get("chirp_type", 3) or 3)
+        except (TypeError, ValueError):
+            chirp_type = 3
+        return duration, chirp_type
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        # v3.0.8: 鸣笛参数来自设置实体——持续时长/鸣笛类型直达车机
+        duration, chirp_type = self._settings()
+        try:
+            resp = await self.coordinator.api.honk_command(
+                self.coordinator.vin,
+                duration=duration,
+                interval=1,
+                chirp_type=chirp_type,
+            )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 鸣笛寻车（POST 开）失败: %s", exc)
             raise
         if isinstance(resp, dict) and resp.get("commandId"):
-            _LOGGER.info("FordPass 鸣笛寻车已触发 commandId=%s", resp["commandId"])
+            _LOGGER.info(
+                "FordPass 鸣笛寻车已触发 commandId=%s（时长=%ss 类型=%s）",
+                resp["commandId"], duration, chirp_type,
+            )
         self._state = True
         self.async_write_ha_state()
         # 鸣笛 30 秒自动结束，开关同步复位
