@@ -231,7 +231,7 @@ class FordPassVehicleAttrSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def native_value(self):
@@ -262,7 +262,7 @@ class FordPassLocationSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -339,7 +339,7 @@ class FordPassSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -407,7 +407,7 @@ class FordPassAlertSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -536,7 +536,7 @@ class FordPassAutoOffSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def extra_state_attributes(self) -> dict:
