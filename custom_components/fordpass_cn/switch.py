@@ -61,7 +61,7 @@ class FordPassEngineSwitch(SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def is_on(self) -> bool:
@@ -96,7 +96,7 @@ class FordPassLightSwitch(SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def is_on(self) -> bool:
@@ -142,7 +142,7 @@ class FordPassHonkSwitch(SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     @property
     def is_on(self) -> bool:
