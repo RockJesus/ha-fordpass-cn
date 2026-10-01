@@ -7,6 +7,11 @@ v3.0.3: 「刷新车辆状态」→「手动拉取最新状态」、「自动刷
 「请求车机刷新状态」；新增「鸣笛寻车」按钮。
 v3.0.5: 「鸣笛寻车」按钮迁移为开关实体（见 switch.py）——开 = v5 网关
 DELETE /api/vehicles/v5/{vin}/honk 真实通道，鸣笛 30 秒自动复位。
+v3.0.8: 新增「保存鸣笛设置」按钮——把持续时长/鸣笛类型保存并上传：
+先本地保存（select 已实时写入 config entry options），再调用 RCC Profile
+端点（POST /api/cnxapi-cds/crcc/v1/profile-by-vin）尝试账户云端持久化；
+云端持久化的 signatureR2 签名未还原时回退为本地保存（下次鸣笛仍按
+新设置把参数传给车机，等效上传车机）。
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
 from .const import (
+    CHIRP_TYPE_OPTIONS,
     CMD_ASU_SETTING,
     CMD_AUTO_REFRESH,
     CMD_CENTRAL_LIGHTING,
@@ -29,6 +35,8 @@ from .const import (
     CMD_TRAILER_CHECK_STOP,
     CMD_VA_CANCEL,
     CMD_VA_INIT,
+    CONF_CHIRP_TYPE,
+    CONF_HONK_DURATION,
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
@@ -82,6 +90,9 @@ async def async_setup_entry(
         for key, label, icon, command, paths, check in _BUTTONS
         if _capability_ok(status, paths, check)
     ]
+    # v3.0.8: 保存鸣笛设置（与鸣笛开关同为远程控车能力 crccFlag）
+    if capability.usable(status, [["crccFlag"]]):
+        buttons.append(FordPassSaveHonkSettingsButton(coordinator))
     async_add_entities(buttons)
 
 
@@ -176,3 +187,67 @@ class FordPassButton(ButtonEntity):
                 await self.coordinator.force_refresh()
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.warning("FordPass refresh after %s failed: %s", self._command, exc)
+
+
+class FordPassSaveHonkSettingsButton(ButtonEntity):
+    """保存鸣笛设置（v3.0.8）。
+
+    按下即把 select 实体的「持续时长 / 鸣笛类型」保存：
+    1) 本地持久化：config entry options（select 变化时已实时写入，
+       此处再次确认，保证按钮点击时使用最新值）；
+    2) 上传车机：调用 RCC Profile 端点
+       POST /api/cnxapi-cds/crcc/v1/profile-by-vin（App 同款通道）——
+       字段结构已通过服务端校验；若 signatureR2 云端签名校验失败，
+       回退为「下次鸣笛按新设置把参数传给车机」（等效上传）。
+    """
+
+    _attr_icon = "mdi:content-save"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-save_honk_settings"
+        self._attr_name = "保存鸣笛设置"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    def _settings(self) -> tuple[int, int]:
+        settings = (
+            self.coordinator.hass.data.get(DOMAIN, {})
+            .get(self.coordinator.entry_id, {})
+            .get("honk_settings", {})
+        )
+        duration = int(settings.get(CONF_HONK_DURATION, 10) or 10)
+        chirp_name = settings.get(CONF_CHIRP_TYPE) or CHIRP_TYPE_OPTIONS[2]
+        if chirp_name in CHIRP_TYPE_OPTIONS:
+            chirp_type = CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
+        else:
+            chirp_type = 3
+        return duration, chirp_type
+
+    async def async_press(self) -> None:
+        duration, chirp_type = self._settings()
+        _LOGGER.info(
+            "FordPass 保存鸣笛设置：时长=%ss 类型=%s(ChirpType=%s)",
+            duration, CHIRP_TYPE_OPTIONS[chirp_type - 1], chirp_type,
+        )
+        try:
+            resp = await self.coordinator.api.save_honk_settings(
+                self.coordinator.vin,
+                duration=duration,
+                chirp_type=chirp_type,
+            )
+            if isinstance(resp, dict) and resp.get("cloud") is False:
+                _LOGGER.warning(
+                    "FordPass 鸣笛设置已本地保存；账户云端持久化被签名拦截：%s",
+                    resp.get("error"),
+                )
+            else:
+                _LOGGER.info("FordPass 鸣笛设置已保存上传（%s）",
+                             resp if not isinstance(resp, dict) else "OK")
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 保存鸣笛设置失败（本地设置仍生效）: %s", exc)
+            raise
