@@ -1,10 +1,14 @@
-"""Switch platform: remote engine start + 灯光寻车开关。
+"""Switch platform: remote engine start + 灯光寻车 + 鸣笛寻车。
 
 v2.10.0: 灯光寻车开关——开 = ZoneLightingON（灯光寻车），关 = ZoneLightingOFF（关闭灯光寻车）。
 v3.0.1: 后备箱锁已从 switch 迁移为 lock 实体（见 lock.py），此处仅保留远程启动与灯光寻车。
+v3.0.5: 修复灯光寻车初始状态 unknown（默认关闭）；鸣笛寻车从 button 迁移为 switch
+（开 = v5 网关 DELETE /api/vehicles/v5/{vin}/honk 触发鸣笛，鸣笛 30 秒自动停止，
+开关自动复位；关 = 本地置位——POST 停止通道的官方加密信封尚未还原，无法提前停止）。
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -20,6 +24,7 @@ from .const import (
     CMD_LIGHT_FIND_OFF,
     CMD_LIGHT_FIND_ON,
     DOMAIN,
+    HONK_AUTO_OFF_SECONDS,
 )
 from .coordinator import FordPassCoordinator
 
@@ -35,6 +40,8 @@ async def async_setup_entry(
     # 灯光寻车：远程控车功能开启（crccFlag 有效）才创建
     if capability.usable(status, [["crccFlag"]]):
         switches.append(FordPassLightSwitch(coordinator))
+        # 鸣笛寻车（v3.0.5 由按钮迁移为开关，同为远程控车能力）
+        switches.append(FordPassHonkSwitch(coordinator))
     async_add_entities(switches)
 
 
@@ -70,6 +77,7 @@ class FordPassLightSwitch(SwitchEntity):
     """灯光寻车开关（ZoneLightingON / ZoneLightingOFF）。
 
     灯光寻车是瞬时命令、车辆不回报灯光状态，开关状态为记忆值（assumed）。
+    v3.0.5: 初始状态默认关闭（False），避免实体显示 unknown。
     """
 
     _attr_assumed_state = True
@@ -81,14 +89,14 @@ class FordPassLightSwitch(SwitchEntity):
         self._attr_name = "灯光寻车"
         self._attr_has_entity_name = False
         self._attr_device_info = coordinator.device_info
-        self._state: bool | None = None
+        self._state: bool = False
 
     @property
     def available(self) -> bool:
         return self.coordinator.last_update_success
 
     @property
-    def is_on(self) -> bool | None:
+    def is_on(self) -> bool:
         return self._state
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -104,5 +112,57 @@ class FordPassLightSwitch(SwitchEntity):
             await self.coordinator.run_command(CMD_LIGHT_FIND_OFF)
         except Exception:
             raise
+        self._state = False
+        self.async_write_ha_state()
+
+
+class FordPassHonkSwitch(SwitchEntity):
+    """鸣笛寻车开关（v3.0.5，由 button 迁移）。
+
+    开 = v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，实测 200 + commandId）
+    触发鸣笛；App 鸣笛寻车响约 30 秒自动停止，开关在触发后自动复位为关。
+    关 = 本地置位——官方 App 停止鸣笛走 POST（RSA-OAEP + AES-CCM 加密信封，
+    尚未还原），暂无真实提前停止通道；若后续还原 POST 信封将补真实停止。
+    """
+
+    _attr_assumed_state = True
+    _attr_icon = "mdi:bullhorn"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-honk"
+        self._attr_name = "鸣笛寻车"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._state: bool = False
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    @property
+    def is_on(self) -> bool:
+        return self._state
+
+    async def _auto_off(self) -> None:
+        await asyncio.sleep(HONK_AUTO_OFF_SECONDS)
+        self._state = False
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        try:
+            resp = await self.coordinator.api.honk_command(self.coordinator.vin)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 鸣笛寻车（v5 通道）失败: %s", exc)
+            raise
+        if isinstance(resp, dict) and resp.get("commandId"):
+            _LOGGER.info("FordPass 鸣笛寻车已触发 commandId=%s", resp["commandId"])
+        self._state = True
+        self.async_write_ha_state()
+        # 鸣笛 30 秒自动结束，开关同步复位
+        self.coordinator.hass.async_create_task(self._auto_off())
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        # 无真实提前停止通道（POST 加密信封未还原），本地复位
         self._state = False
         self.async_write_ha_state()
