@@ -10,7 +10,7 @@ from homeassistant.const import UnitOfLength, UnitOfPressure
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CHIRP_TO_ANNOUNCE, DOMAIN
 from .coordinator import FordPassCoordinator
 
 
@@ -217,6 +217,20 @@ async def async_setup_entry(
     # 端点失败或车辆无 OTA 能力时不创建）
     if coordinator.data.get("ota_setting"):
         sensors.append(FordPassOtaSettingSensor(coordinator))
+    # v3.1.4: 服务信息（保养计划/召回/SIM/WiFi）——拉取成功才创建
+    for key, cls, label in (
+        ("maintenance_plan", FordPassMaintenancePlanSensor, "保养计划"),
+        ("recall", FordPassRecallSensor, "召回信息"),
+        ("sim_info", FordPassSimSensor, "SIM 卡"),
+        ("wifi_status", FordPassWifiSensor, "WiFi 热点"),
+    ):
+        payload = coordinator.data.get(key)
+        if payload:
+            sensors.append(cls(coordinator))
+    # v3.1.4: 鸣笛设置云端状态（查询成功且能读出类型或时长才创建）
+    chirp_cloud = coordinator.data.get("chirp_cloud")
+    if isinstance(chirp_cloud, dict) and chirp_cloud:
+        sensors.append(FordPassChirpCloudSensor(coordinator))
     async_add_entities(sensors)
 
 
@@ -630,3 +644,151 @@ class FordPassOtaSettingSensor(SensorEntity):
         ota = (self.coordinator.data or {}).get("ota_setting") or {}
         flag = ota.get("remoteOTAFlag")
         return self._OTA_FLAG_MAP.get(flag, "未知")
+
+
+class _ServiceInfoSensor(SensorEntity):
+    """服务信息实体基类（v3.1.4）：从 coordinator.data[key] 读已拉取数据。
+
+    端点 2026-10-02 实测 200（R3 compute_sign + 修正 headers + 无 appKey）。
+    """
+
+    _attr_has_entity_name = False
+
+    def __init__(self, coordinator, key: str, label: str, icon: str) -> None:
+        self.coordinator = coordinator
+        self._data_key = key
+        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_name = label
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = icon
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def native_value(self):
+        data = (self.coordinator.data or {}).get(self._data_key) or {}
+        return self._format(data)
+
+    def _format(self, data: dict) -> str | None:  # pragma: no cover - override
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = (self.coordinator.data or {}).get(self._data_key) or {}
+        attrs = dict(data) if isinstance(data, dict) else {"raw": data}
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+
+class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
+    """保养计划（v3.1.4）：GET /api/cnxapi-cds/v1/maintenance-plan。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "maintenance_plan", "保养计划", "mdi:calendar-check")
+
+    def _format(self, data: dict) -> str | None:
+        items = data.get("data") if isinstance(data, dict) else None
+        if isinstance(items, list) and items:
+            first = items[0]
+            if isinstance(first, dict):
+                return str(first.get("taskName") or first.get("name") or "保养计划")
+            return str(items)
+        return None
+
+
+class FordPassRecallSensor(_ServiceInfoSensor):
+    """召回信息（v3.1.4）：GET /api/cnxapi-vds/v1/vehicles/recall。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "recall", "召回信息", "mdi:alert-box-outline")
+
+    def _format(self, data: dict) -> str | None:
+        items = data.get("data") if isinstance(data, dict) else None
+        if isinstance(items, list) and items:
+            return f"{len(items)} 条召回"
+        if isinstance(data, dict) and data.get("data") == []:
+            return "无召回"
+        return None
+
+
+class FordPassSimSensor(_ServiceInfoSensor):
+    """SIM 卡信息（v3.1.4）：GET /api/cnxapi-cds/v1/vehicle/sim/info。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "sim_info", "SIM 卡", "mdi:sim")
+
+    def _format(self, data: dict) -> str | None:
+        info = (data.get("data") if isinstance(data, dict) else None) or {}
+        if not isinstance(info, dict):
+            return None
+        iccid = info.get("iccid") or info.get("simICCID")
+        return iccid or ("已开通" if info.get("simStatus") else None)
+
+
+class FordPassWifiSensor(_ServiceInfoSensor):
+    """WiFi 热点状态（v3.1.4）：GET /api/cnxapi-cds/v1/vehicle/wifi/status。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "wifi_status", "WiFi 热点", "mdi:wifi")
+
+    def _format(self, data: dict) -> str | None:
+        status = (data.get("data") if isinstance(data, dict) else None) or {}
+        if not isinstance(status, dict):
+            return None
+        state = status.get("wifiStatus")
+        if state is None or state == "" or state == "Null":
+            return None
+        return "开启" if str(state).lower() == "on" else str(state)
+
+
+class FordPassChirpCloudSensor(SensorEntity):
+    """鸣笛设置云端状态（v3.1.4）：福特账户云端 VehicleAnnouncementSetting。
+
+    从 GET preference-list 回读（coordinator.data["chirp_cloud"]），显示
+    「类型 + 时长」；与本地 select 不同步时提示（App/其他设备改过）。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:cloud-check"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-chirp_cloud"
+        self._attr_name = "鸣笛设置云端状态"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def native_value(self) -> str | None:
+        pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
+        if not isinstance(pref, dict):
+            return None
+        sound = pref.get("vehicleAnnouncementSoundType") or pref.get("AnnouncementType")
+        duration = pref.get("vehicleAnnouncementDuration") or pref.get("Duration")
+        if sound is None and duration is None:
+            return None
+        type_cn = next(
+            (cn for cn, en in CHIRP_TO_ANNOUNCE.items() if en == str(sound)),
+            str(sound),
+        )
+        return f"{type_cn} / {duration} 秒"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
+        attrs = dict(pref) if isinstance(pref, dict) else {}
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
