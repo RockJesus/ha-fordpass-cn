@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import time
+from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -676,14 +677,31 @@ class _ServiceInfoSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
+        """精简属性（v3.1.5）：只保留摘要级字段，避免 recorder 16384 字节
+        上限告警（保养计划原始响应可超 16KB，会整段拒绝存储）。"""
         data = (self.coordinator.data or {}).get(self._data_key) or {}
-        attrs = dict(data) if isinstance(data, dict) else {"raw": data}
-        attrs["last_poll"] = (
+        attrs: dict[str, Any] = {"last_poll": (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
             else None
-        )
+        )}
+        if not isinstance(data, dict):
+            return attrs
+        # 服务端业务状态（returnSuccess/returnErrCode 在 data.data 内，实测层级）
+        payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+        if payload.get("returnSuccess") is not None:
+            attrs["service_ok"] = bool(payload.get("returnSuccess"))
+            if payload.get("returnErrMsg"):
+                attrs["service_error"] = str(payload["returnErrMsg"])
+        # 业务数据：由各传感器提供摘要
+        summary = self._summary(data)
+        if summary:
+            attrs.update(summary)
         return attrs
+
+    def _summary(self, data: dict) -> dict:  # pragma: no cover - override
+        """返回需要展示在 attributes 的摘要级字段（防超限）。"""
+        return {}
 
 
 class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
@@ -693,13 +711,40 @@ class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
         super().__init__(coordinator, "maintenance_plan", "保养计划", "mdi:calendar-check")
 
     def _format(self, data: dict) -> str | None:
-        items = data.get("data") if isinstance(data, dict) else None
-        if isinstance(items, list) and items:
-            first = items[0]
-            if isinstance(first, dict):
-                return str(first.get("taskName") or first.get("name") or "保养计划")
+        # 实测响应 data.data.values[].{mileage, operations[]}（v3.1.5 修正：
+        # 此前读 data.data / data.values 两层都错位，state 恒为 unknown）
+        payload = data.get("data") if isinstance(data, dict) else None
+        items = payload.get("values") if isinstance(payload, dict) else None
+        if not isinstance(items, list) or not items:
+            return None
+        first = items[0]
+        if not isinstance(first, dict):
             return str(items)
-        return None
+        mileage = first.get("mileage")
+        ops = first.get("operations") or []
+        label = "保养计划"
+        if ops and isinstance(ops[0], dict):
+            label = str(ops[0].get("description") or label)
+        if mileage is not None:
+            return f"{label}（{mileage} 公里）"
+        return label
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        items = payload.get("values") if isinstance(payload, dict) else None
+        if not isinstance(items, list) or not items:
+            return {}
+        plans = []
+        for it in items[:6]:  # 只保留前 6 个保养节点，防 attributes 超限
+            if not isinstance(it, dict):
+                continue
+            ops = it.get("operations") or []
+            ops_desc = [str(o.get("description")) for o in ops if isinstance(o, dict) and o.get("description")]
+            plans.append({
+                "mileage": it.get("mileage"),
+                "items": ops_desc,
+            })
+        return {"plans": plans}
 
 
 class FordPassRecallSensor(_ServiceInfoSensor):
@@ -716,6 +761,20 @@ class FordPassRecallSensor(_ServiceInfoSensor):
             return "无召回"
         return None
 
+    def _summary(self, data: dict) -> dict:
+        items = data.get("data") if isinstance(data, dict) else None
+        if isinstance(items, list) and items:
+            rows = []
+            for it in items[:5]:
+                if isinstance(it, dict):
+                    rows.append({
+                        "title": it.get("title") or it.get("name") or it.get("campaignName"),
+                        "date": it.get("date") or it.get("startDate") or it.get("issueDate"),
+                        "status": it.get("status") or it.get("repairStatus"),
+                    })
+            return {"recalls": rows}
+        return {}
+
 
 class FordPassSimSensor(_ServiceInfoSensor):
     """SIM 卡信息（v3.1.4）：GET /api/cnxapi-cds/v1/vehicle/sim/info。"""
@@ -724,11 +783,27 @@ class FordPassSimSensor(_ServiceInfoSensor):
         super().__init__(coordinator, "sim_info", "SIM 卡", "mdi:sim")
 
     def _format(self, data: dict) -> str | None:
-        info = (data.get("data") if isinstance(data, dict) else None) or {}
-        if not isinstance(info, dict):
+        if not isinstance(data, dict):
             return None
+        payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+        # 服务端业务失败（实测 payload.returnSuccess false / CONS.SYS.0002）：如实显示
+        if payload.get("returnSuccess") is False:
+            return f"查询失败（{payload.get('returnErrMsg') or payload.get('returnErrCode') or '未知'}）"
+        info = payload
         iccid = info.get("iccid") or info.get("simICCID")
-        return iccid or ("已开通" if info.get("simStatus") else None)
+        if iccid:
+            return str(iccid)
+        if info.get("simStatus") is not None:
+            return "已开通" if str(info["simStatus"]).lower() in ("on", "active", "1", "true") else str(info["simStatus"])
+        return None
+
+    def _summary(self, data: dict) -> dict:
+        info = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), dict) else {}
+        keep = {}
+        for k in ("iccid", "simICCID", "simStatus", "phoneNumber", "carrier", "operator", "status"):
+            if info.get(k) is not None:
+                keep[k] = info[k]
+        return keep
 
 
 class FordPassWifiSensor(_ServiceInfoSensor):
@@ -738,13 +813,23 @@ class FordPassWifiSensor(_ServiceInfoSensor):
         super().__init__(coordinator, "wifi_status", "WiFi 热点", "mdi:wifi")
 
     def _format(self, data: dict) -> str | None:
-        status = (data.get("data") if isinstance(data, dict) else None) or {}
-        if not isinstance(status, dict):
+        if not isinstance(data, dict):
             return None
-        state = status.get("wifiStatus")
+        payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+        if payload.get("returnSuccess") is False:
+            return f"查询失败（{payload.get('returnErrMsg') or payload.get('returnErrCode') or '未知'}）"
+        state = payload.get("wifiStatus")
         if state is None or state == "" or state == "Null":
             return None
         return "开启" if str(state).lower() == "on" else str(state)
+
+    def _summary(self, data: dict) -> dict:
+        status = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), dict) else {}
+        keep = {}
+        for k in ("ssid", "wifiStatus", "encryptedVin"):
+            if status.get(k) not in (None, "", "Null"):
+                keep[k] = status[k]
+        return keep
 
 
 class FordPassChirpCloudSensor(SensorEntity):
