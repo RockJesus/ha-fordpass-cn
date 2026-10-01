@@ -168,8 +168,23 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     user edits the scan interval or toggles location tracking in the
     integration options flow). We update the live coordinator instead of
     reloading the whole entry, so no entities flicker.
+
+    v3.1.1: 选项可能在集成尚未加载完成时被保存（重启中 / 加载失败 /
+    已卸载后再次打开选项页）——此时 hass.data[DOMAIN] 还不存在，直接
+    索引会抛 KeyError。防御：未加载时安全跳过，新选项会由下次
+    async_setup_entry 从 entry.options 读取生效（无状态丢失）。
     """
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    payload = (hass.data.get(DOMAIN) or {}).get(entry.entry_id)
+    coordinator: FordPassCoordinator | None = (
+        payload.get("coordinator") if isinstance(payload, dict) else None
+    )
+    if coordinator is None:
+        _LOGGER.info(
+            "fordpass_cn options saved before entry loaded (entry_id=%s); "
+            "will take effect on next entry setup",
+            entry.entry_id,
+        )
+        return
     interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES))
     coordinator.update_interval = timedelta(minutes=interval)
     coordinator.track_location = bool(entry.options.get("track_location", True))
