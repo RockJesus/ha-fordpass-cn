@@ -32,6 +32,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         nickname: str | None = None,
         vehicle_image_url: str | None = None,
         coordinate_system: str = COORDINATE_WGS84,
+        entry_id: str | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -53,6 +54,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 避免接口 404 时每轮都发无效请求并刷日志噪音（v2.7.5）。
         self._alerts_fail = 0
         self._alerts_hold_until: float | None = None
+        # v3.0.10: 保存鸣笛设置按钮经由此定位 hass.data[DOMAIN][entry_id] 的
+        # honk_settings（按钮 _settings 依赖 entry_id 取配置实时值）。
+        self.entry_id = entry_id
     @property
     def vehicle_model(self) -> str:
         """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
