@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.3.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.4.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -49,15 +49,18 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 | device_tracker | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
 | image | 车辆图片 | 车型渲染图（如「锐际 Escape」） |
 | lock | 车门锁 / 后备箱锁 | 上锁 / 解锁 |
-| button | 远程启动 / 熄火 / 刷新状态 / 保存鸣笛设置 | 远程启动引擎、手动拉取最新状态、请求车机刷新状态、保存鸣笛设置（上传 RCC Profile + 本地持久化） |
+| button | 远程启动 / 熄火 / 刷新状态 / 保存鸣笛设置 | 远程启动引擎、手动拉取最新状态、请求车机刷新状态、保存鸣笛设置（上传福特账户云端 UserPreferenceV2 + 本地持久化） |
 | switch | 远程启动 / 灯光寻车 / 鸣笛寻车 | 已远程启动/未远程启动；灯光寻车开/关；鸣笛寻车（真实双通道：开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径；鸣笛时长与类型按设置生效） |
 | select | 鸣笛持续时长 / 鸣笛类型 | 鸣笛寻车设置：持续时长 5/10/15/20 秒；鸣笛类型 雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞（选择即保存，鸣笛时参数直达车机） |
 | sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌、自动熄火倒计时等 |
 | sensor | 车辆异常警示 | 真实告警接口（胎压监测系统警告等），无异常显示「无异常」 |
+| sensor | 保养计划 / 召回信息 / SIM 卡 / WiFi 热点 | 服务信息（v3.1.4，`GET maintenance-plan / recall / sim/info / wifi/status`，实测 200；数据无效时不创建） |
+| sensor | 鸣笛设置云端状态 | 福特账户云端 VehicleAnnouncementSetting 回读（类型 + 时长），App/其他设备改动可同步感知 |
 
 ## 版本历史
 
-- **v3.1.3**：新增「OTA 设置状态」传感器（`GET /api/alert/v1/ota/setting-info`，实测 200）——展示远程 OTA 开关、激活排程、当前/目标版本、状态描述；车辆无 OTA 能力或端点失败时不创建实体。同时完成对逆向清单中其余候选端点的实机验证：警报寻车（v5 `/panic/{duration}` 404）、单门独立解锁（v5 `/door/{doortype}/lock` 404，send-command 拒绝 `doorType` 字段）、保养/质保/召回/SIM/WIFI（`sign is error` 100400，signatureR2 签名未还原）、OTA 详情/版本（`capabilityMmota is false` 206004）——以上端点在本车型/网关不可用，均不接入，避免制造失败实体
+- **v3.1.4**：鸣笛寻车设置云端保存真正打通——逆向还原福特派 App 的 UserPreferenceV2 通道（`POST /api/cnxapi-pds/v1/user/preference-by-groups`，`VehicleAnnouncementSetting` 组：`vehicleAnnouncementSoundType` 5 种类型 + `vehicleAnnouncementDuration` 5-20 秒），`保存鸣笛设置`按钮现在把设置**真实写入福特账户云端**（旧 RCC profile-by-vin 通道 100400 根因 = signatureR2 独立密钥体系，实为误入）；签名层修正：headers 用 App 真实无连字符名（`appversion/ostype/osversion/clienttype`）、嵌套参数按 App 序列化（list→`[a&b]`、dict→`{k=v}`）；新增「鸣笛设置云端状态」传感器（`GET preference-list` 回读，App/其他设备改动可同步感知）。同时打通此前 100400 的保养计划/召回/SIM/WiFi 四个端点（实测 200），新增对应服务信息传感器（数据无效时不创建）；质保端点已过验签但服务端参数校验 100502（待 App 抓包），暂不接入
+- **v3.1.3**：新增「OTA 设置状态」传感器（`GET /api/alert/v1/ota/setting-info`，实测 200）——展示远程 OTA 开关、激活排程、当前/目标版本、状态描述；车辆无 OTA 能力或端点失败时不创建实体。同时完成对逆向清单中其余候选端点的实机验证：警报寻车（v5 `/panic/{duration}` 404）、单门独立解锁（v5 `/door/{doortype}/lock` 404，send-command 拒绝 `doorType` 字段）、OTA 详情/版本（`capabilityMmota is false` 206004）——以上端点在本车型/网关不可用，均不接入，避免制造失败实体
 - **v3.1.2**：所有实体不再因福特云刷新失败而显示「不可用」——`available` 统一固定为可用（开关/锁/按钮/选择器/传感器/定位/图片共 15 处），刷新失败时保留最后已知状态，不再整体变灰；操作类实体在云异常时调用仍会返回明确错误提示，但实体本身始终可用
 - **v3.1.1**：修复保存集成选项时的崩溃——`async_update_options` 在集成尚未加载完成时被调用（重启中 / 加载失败 / 已卸载后再改选项）会抛 `KeyError: 'fordpass_cn'`；本次改为防御性读取：未加载时安全跳过，新选项在下次加载时从 `entry.options` 自动生效（无状态丢失）
 - **v3.1.0**：修复「保存鸣笛设置」按钮崩溃——点击报 `'FordPassCoordinator' object has no attribute 'entry_id'`（v3.0.8 引入：按钮读取配置时依赖 coordinator 上的 entry_id，但 coordinator 未保存该属性）；本次给 coordinator 增加 `entry_id` 属性（构造时由配置条目传入），按钮读取改为「entry_id 直取 + 遍历兜底」，任何构造路径下点击均不再报错
