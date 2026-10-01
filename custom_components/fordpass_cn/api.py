@@ -50,6 +50,7 @@ from .const import (
     PATH_COMMAND_STATUS,
     PATH_CRCC_PROFILE,
     PATH_GENERATE_PASSCODE,
+    PATH_OTA_SETTING,
     PATH_PASSCODE_LOGIN,
     PATH_QUERY_LOCATION,
     PATH_REFRESH_TOKEN,
@@ -792,6 +793,26 @@ class FordPassApi:
                         }
                     )
         return alerts
+
+    # ------------------------------------------------------------ ota setting
+    async def get_ota_setting(self, vin: str) -> dict[str, Any] | None:
+        """GET /api/alert/v1/ota/setting-info — OTA 设置状态（v3.1.3）。
+
+        实测（2026-10-02）：标准 R3 签名（timestamp+sign+encryptedVin/xjw）
+        返回 HTTP 200；同族的 ota/detail、ota/versions 在锐际上被服务端拒绝
+        （errorCode 206004 "capabilityMmota is false"），故仅此端点接入。
+        响应 data 字段：remoteOTAFlag / asuState / activationDayOfWeek /
+        activationScheduleTime / toBeVersion / toBeReleaseNote / asIsVersion /
+        asIsReleaseNote / statusName / statusDescription。
+        """
+        enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        data = await self._request(
+            "GET",
+            PATH_OTA_SETTING,
+            query={"encryptedVin": enc_vin, "xjw": xjw},
+        )
+        inner = data.get("data") if isinstance(data, dict) else None
+        return inner if isinstance(inner, dict) else None
 
     # --------------------------------------------------------- b2c login
     async def password_login(
