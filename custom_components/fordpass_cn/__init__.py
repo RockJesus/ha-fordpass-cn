@@ -14,10 +14,14 @@ from .api import FordPassApi, FordPassApiError
 from . import capability
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_CHIRP_TYPE,
     CONF_COORDINATE_SYSTEM,
+    CONF_HONK_DURATION,
     CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
+    DEFAULT_CHIRP_TYPE,
     DEFAULT_COORDINATE_SYSTEM,
+    DEFAULT_HONK_DURATION,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
 )
@@ -32,6 +36,7 @@ PLATFORMS = [
     Platform.SENSOR,
     Platform.DEVICE_TRACKER,
     Platform.IMAGE,
+    Platform.SELECT,
 ]
 
 
@@ -135,11 +140,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception:  # noqa: BLE001 - 检测失败不影响集成运行
         _LOGGER.debug("fordpass_cn capability detection failed", exc_info=True)
 
+    # v3.0.8: 鸣笛寻车设置（持续时长/鸣笛类型）初始值——来自 entry.options
+    # （select 实体修改时实时写入），默认时长 10 秒、汽笛长鸣（ChirpType=3）
+    honk_settings = {
+        CONF_HONK_DURATION: int(
+            entry.options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
+        ),
+        CONF_CHIRP_TYPE: entry.options.get(CONF_CHIRP_TYPE, DEFAULT_CHIRP_TYPE),
+    }
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "api": api,
         "coordinator": coordinator,
         "vehicles": vehicles,
         "vin": vin,
+        "honk_settings": honk_settings,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
