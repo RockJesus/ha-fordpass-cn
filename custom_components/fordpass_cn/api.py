@@ -37,8 +37,12 @@ from .const import (
     B2C_POLICY,
     B2C_REDIRECT_URI,
     BASE_URL,
+    CHIRP_TO_ANNOUNCE,
+    CHIRP_TYPE_OPTIONS,
     CLIENT_TYPE,
+    DEFAULT_CHIRP_TYPE,
     DEFAULT_HONK_DURATION,
+    GROUP_VEHICLE_ANNOUNCEMENT,
     LBS_APP_ID,
     LBS_APP_KEY,
     LBS_BASE_URL,
@@ -50,17 +54,26 @@ from .const import (
     PATH_COMMAND_STATUS,
     PATH_CRCC_PROFILE,
     PATH_GENERATE_PASSCODE,
+    PATH_MAINTENANCE_PLAN,
     PATH_OTA_SETTING,
     PATH_PASSCODE_LOGIN,
     PATH_QUERY_LOCATION,
+    PATH_RECALL,
     PATH_REFRESH_TOKEN,
     PATH_REVOKE_TOKEN,
     PATH_SEND_COMMAND,
+    PATH_SIM_INFO,
     PATH_THIRD_PARTY_TOKEN,
+    PATH_USER_PREF_GROUPS,
+    PATH_USER_PREF_LIST,
     PATH_VEHICLES_LIST,
     PATH_VEHICLE_STATUS,
     PATH_V5_HONK,
+    PATH_WARRANTY,
+    PATH_WIFI_STATUS,
     PAYLOAD_KEY,
+    PREF_DURATION,
+    PREF_SOUND_TYPE,
     SECRET_KEY,
     TOUCH_POINT,
     V5_BASE_URL,
@@ -140,8 +153,24 @@ def normalize_wgs84(lat, lng):
     return lat_w, lng_w
 
 
+def _ser_sign(value: Any) -> str:
+    """App 签名序列化（v3.1.4，从 R3Signature 反编译还原）：
+    - dict  -> "{k=v&k2=v2}"（键排序，递归）
+    - list  -> "[a&b]"（元素依次，递归）
+    - 其他  -> str(value)
+    顶层拼接沿用现有平面 k=v&...（compute_sign 的 biz 不包花括号）。
+    """
+    if isinstance(value, dict):
+        return "{" + "&".join(
+            f"{k}={_ser_sign(v)}" for k, v in sorted(value.items())
+        ) + "}"
+    if isinstance(value, list):
+        return "[" + "&".join(_ser_sign(v) for v in value) + "]"
+    return str(value)
+
+
 def _canonical(params: dict[str, Any]) -> str:
-    items = sorted((str(k), str(params[k])) for k in params if k != "sign")
+    items = sorted((str(k), _ser_sign(params[k])) for k in params if k != "sign")
     return "&".join(f"{k}={v}" for k, v in items)
 
 
@@ -650,49 +679,109 @@ class FordPassApi:
         duration: int = DEFAULT_HONK_DURATION,
         chirp_type: int = 3,
     ) -> dict[str, Any]:
-        """保存鸣笛寻车设置（RCC Profile 账户云端持久化，尽力通道）。
+        """保存鸣笛寻车设置到福特账户云端（v3.1.4，UserPreferenceV2 真通道）。
 
-        2026-10-01 从福特派 App（libapp.so, blutter）还原：
-        POST /api/cnxapi-cds/crcc/v1/profile-by-vin
-        body: {userPreferences: [{preferenceType: "CHIRP_TYPE",
-               preferenceValue: "<chirp_type>"},
-              {preferenceType: "CHIRP_OR_HONK_DURATION",
-               preferenceValue: "<duration>"}],
-              encryptedVin, xjw} + timestamp/sign（_request 自动附加）。
-        字段结构已通过服务端 JSON 校验（100502 未知字段类错误不再出现）；
-        但该端点的签名体系为 App 的 signatureR2（独立 secretKey/payLoadKey，
-        尚未还原），当前以 R3 compute_sign 尝试——若服务端返回
-        "sign is error"（100400），设置仍已本地保存（见 switch.py），
-        下次鸣笛 POST honk 时会把设置参数传给车机，效果等同上传车机。
+        2026-10-02 逆向 libapp.so（blutter）还原并实机验证：
+        POST /api/cnxapi-pds/v1/user/preference-by-groups
+        body: {preferenceGroups: [{groupName: "VehicleAnnouncementSetting",
+               userPreferences: [{preferenceType: "vehicleAnnouncementSoundType",
+                                  preferenceValue: "<chrip1|chirp2|chirpHonk|honk|panic>"},
+                                 {preferenceType: "vehicleAnnouncementDuration",
+                                  preferenceValue: "<5-20>"}]}], timestamp, sign}
+        - 顶层不包 encryptedVin/xjw（DTO 拒绝未知字段，实测 400）
+        - sign = compute_sign({preferenceGroups, timestamp})（R3 双重 +
+          嵌套序列化：list→[a&b]、dict→{k=v}）——200 保存成功；
+          GET preference-list 回读确认已写入福特云端。
+        旧 RCC profile-by-vin 通道（CHIRP_TYPE）已废弃（其 100400 sign 为
+        R2 独立密钥体系；真实通道即本 UserPreferenceV2）。
         """
+        announce = CHIRP_TO_ANNOUNCE.get(
+            CHIRP_TYPE_OPTIONS[chirp_type - 1] if 0 < chirp_type <= 5 else DEFAULT_CHIRP_TYPE,
+            "chirpHonk",
+        )
+        groups = [
+            {
+                "groupName": GROUP_VEHICLE_ANNOUNCEMENT,
+                "userPreferences": [
+                    {"preferenceType": PREF_SOUND_TYPE, "preferenceValue": announce},
+                    {"preferenceType": PREF_DURATION, "preferenceValue": str(duration)},
+                ],
+            }
+        ]
+        body = {"preferenceGroups": groups}
+        data = await self._request("POST", PATH_USER_PREF_GROUPS, body=body)
+        if isinstance(data, dict) and data.get("status") not in (None, 200):
+            raise FordPassApiError(data.get("errorCode"), data.get("error"))
+        return {"cloud": True, "announce": announce, "duration": duration}
+
+    async def get_chirp_preference(self) -> dict[str, Any]:
+        """读取福特账户云端的鸣笛寻车设置（v3.1.4，UserPreferenceV2 查询）。
+
+        GET /api/cnxapi-pds/v1/user/preference-list?timestamp=&sign=
+        （仅两键——不带 encryptedVin/xjw；2026-10-02 实测 200 回读
+        VehicleAnnouncementSetting 组已存值）。
+        返回 {groupName, userPreferences: [...]} 或 {}（无数据）。
+        """
+        try:
+            data = await self._request("GET", PATH_USER_PREF_LIST, query={})
+        except FordPassApiError:
+            return {}
+        payload = data.get("data", {}) if isinstance(data, dict) else {}
+        groups = payload.get("groups") if isinstance(payload, dict) else None
+        if not isinstance(groups, list):
+            return {}
+        for group in groups:
+            if isinstance(group, dict) and group.get("groupName") == GROUP_VEHICLE_ANNOUNCEMENT:
+                prefs = group.get("userPreferences") or []
+                out: dict[str, str] = {}
+                for pref in prefs:
+                    if isinstance(pref, dict):
+                        out[pref.get("preferenceType")] = pref.get("preferenceValue")
+                return out
+        return {}
+
+    # ------------------------------------------------------------ service info
+    async def _get_signed(
+        self, path: str, vin: str, query: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """R3 compute_sign + 修正 headers + 无 appKey 的标准 GET（v3.1.4）。
+
+        2026-10-02 实测：maintenance-plan / recall / sim/info / wifi/status
+        均 200（headers 必须用 App 真实无连字符名，且 query 必须带
+        encryptedVin/xjw——见 probe_r2f）。
+        """
+        q = dict(query or {})
         enc_vin, xjw = await asyncio.to_thread(
             lambda: self.crypto.encrypt_field(vin)
         )
-        prefs = [
-            {"preferenceType": "CHIRP_TYPE", "preferenceValue": str(chirp_type)},
-            {
-                "preferenceType": "CHIRP_OR_HONK_DURATION",
-                "preferenceValue": str(duration),
-            },
-        ]
-        body = {
-            "userPreferences": prefs,
-            "encryptedVin": enc_vin,
-            "xjw": xjw,
-        }
-        try:
-            data = await self._request("POST", PATH_CRCC_PROFILE, body=body)
-            return data if isinstance(data, dict) else {"raw": data}
-        except FordPassApiError as exc:
-            if "sign is error" in str(exc) or "100400" in str(exc):
-                # R2 签名未还原——云端持久化失败，但本地设置仍生效
-                self._log.info(
-                    "FordPass 鸣笛设置：RCC 云端持久化被签名拦截（status=%s），"
-                    "已本地保存，下次鸣笛按新设置执行",
-                    exc.status,
-                )
-                return {"cloud": False, "error": str(exc)}
-            raise
+        q["encryptedVin"] = enc_vin
+        q["xjw"] = xjw
+        data = await self._request("GET", path, query=q)
+        return data if isinstance(data, dict) else {"raw": data}
+
+    async def get_maintenance_plan(self, vin: str) -> dict[str, Any]:
+        """保养计划：GET /api/cnxapi-cds/v1/maintenance-plan（200 实测）。"""
+        return await self._get_signed(PATH_MAINTENANCE_PLAN, vin)
+
+    async def get_recall(self, vin: str) -> dict[str, Any]:
+        """召回信息：GET /api/cnxapi-vds/v1/vehicles/recall（200 实测）。"""
+        return await self._get_signed(PATH_RECALL, vin)
+
+    async def get_sim_info(self, vin: str) -> dict[str, Any]:
+        """SIM 卡信息：GET /api/cnxapi-cds/v1/vehicle/sim/info（200 实测）。"""
+        return await self._get_signed(PATH_SIM_INFO, vin)
+
+    async def get_wifi_status(self, vin: str) -> dict[str, Any]:
+        """WiFi 热点状态：GET /api/cnxapi-cds/v1/vehicle/wifi/status（200 实测）。"""
+        return await self._get_signed(PATH_WIFI_STATUS, vin)
+
+    async def get_warranty(self, vin: str) -> dict[str, Any]:
+        """质保信息：GET /api/cnxapi-cds/v1/warranty。
+
+        签名已过（R3 无 appKey），但服务端 100502 Validation exception
+        （参数校验，App 请求参数尚未完全还原，待模拟器抓包补充）。
+        """
+        return await self._get_signed(PATH_WARRANTY, vin)
 
     async def wait_command_complete(
         self, vin: str, command_id: str, command_type: str,
