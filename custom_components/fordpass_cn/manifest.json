@@ -13,7 +13,7 @@
     "unicorn==2.1.4",
     "pyelftools==0.29"
   ],
-  "version": "3.0.8",
+  "version": "3.0.9",
   "homeassistant": "2024.6.0",
   "loggers": [
     "custom_components.fordpass_cn"
