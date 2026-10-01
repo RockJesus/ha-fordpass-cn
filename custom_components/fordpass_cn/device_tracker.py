@@ -41,7 +41,7 @@ class FordPassDeviceTracker(TrackerEntity):
     @property
     def available(self) -> bool:
         """Unavailable while the user disables location tracking."""
-        return self.coordinator.track_location and super().available
+        return True  # v3.1.2: 定位实体恒可用（保留最后坐标）
 
     @property
     def source_type(self) -> str:
