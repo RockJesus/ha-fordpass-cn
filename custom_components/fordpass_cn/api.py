@@ -536,7 +536,20 @@ class FordPassApi:
         async with self._session.request(
             "POST", url, headers=self._headers(), json=body
         ) as resp:
-            text = await resp.text()
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                # v3.0.9: 与 _request 的 v3.0.6 保护对齐——网关偶发返回
+                # 非文本响应（二进制/损坏 body）时先读原始字节诊断，
+                # 再转成明确的 FordPassApiError，避免裸 codec 错误冒泡。
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass %s -> 非文本响应 %d bytes (status=%s): %s",
+                    url, len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
+                )
             self._log.debug("FordPass v5 honk POST -> %s %s", resp.status, text[:500])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
@@ -582,7 +595,20 @@ class FordPassApi:
         async with self._session.request(
             "DELETE", url, headers=self._headers()
         ) as resp:
-            text = await resp.text()
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                # v3.0.9: 与 _request 的 v3.0.6 保护对齐——网关偶发返回
+                # 非文本响应（二进制/损坏 body）时先读原始字节诊断，
+                # 再转成明确的 FordPassApiError，避免裸 codec 错误冒泡。
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass %s -> 非文本响应 %d bytes (status=%s): %s",
+                    url, len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
+                )
             self._log.debug("FordPass v5 honk DELETE -> %s %s", resp.status, text[:500])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
@@ -958,7 +984,20 @@ class FordPassApi:
         async with self._session.get(
             BASE_URL + PATH_THIRD_PARTY_TOKEN, headers=self._headers(), params=params
         ) as resp:
-            text = await resp.text()
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                # v3.0.9: 与 _request 的 v3.0.6 保护对齐——网关偶发返回
+                # 非文本响应（二进制/损坏 body）时先读原始字节诊断，
+                # 再转成明确的 FordPassApiError，避免裸 codec 错误冒泡。
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass %s -> 非文本响应 %d bytes (status=%s): %s",
+                    PATH_THIRD_PARTY_TOKEN, len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
+                )
             self._log.debug("FordPass third-party-token -> %s %s", resp.status, text[:300])
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
@@ -1025,7 +1064,20 @@ class FordPassApi:
         async with self._session.post(
             LBS_BASE_URL + PATH_QUERY_LOCATION, headers=headers, json=body
         ) as resp:
-            text = await resp.text()
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                # v3.0.9: 与 _request 的 v3.0.6 保护对齐——网关偶发返回
+                # 非文本响应（二进制/损坏 body）时先读原始字节诊断，
+                # 再转成明确的 FordPassApiError，避免裸 codec 错误冒泡。
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass %s -> 非文本响应 %d bytes (status=%s): %s",
+                    PATH_QUERY_LOCATION, len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
+                )
             self._log.debug("FordPass LBS -> %s %s", resp.status, text[:500])
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
