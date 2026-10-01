@@ -106,9 +106,10 @@ CMD_EXTEND_START = CMD_TRUNK_UNLOCK  # 兼容旧名（后备箱解锁）
 # v2.10.0: 白名单全部命令补全（此前未接入的项）
 CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"      # 中央区灯光开（无独立关闭命令）
 CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
-# 鸣笛寻车（v3.0.4）：中国区 send-command 网关白名单不含 Honk（HTTP 400 100502），
-# 已切换为 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，实测 200 + commandId）
+# 鸣笛寻车（v3.0.5 起为 switch）：中国区 send-command 网关白名单不含 Honk（HTTP 400 100502），
+# 走 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，实测 200 + commandId）
 CMD_HONK = "Honk"
+HONK_AUTO_OFF_SECONDS = 30                          # 鸣笛寻车自动复位秒数（App 鸣笛约 30 秒自动停止）
 CMD_TRAILER_CHECK_START = "TrailerLightCheckStart"  # 拖车灯光检测开始（皮卡/拖车）
 CMD_TRAILER_CHECK_STOP = "TrailerLightCheckStop"    # 拖车灯光检测停止
 CMD_VA_INIT = "InitialVA"                           # 语音助手初始化
