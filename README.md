@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.2.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.3.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -57,6 +57,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v3.1.3**：新增「OTA 设置状态」传感器（`GET /api/alert/v1/ota/setting-info`，实测 200）——展示远程 OTA 开关、激活排程、当前/目标版本、状态描述；车辆无 OTA 能力或端点失败时不创建实体。同时完成对逆向清单中其余候选端点的实机验证：警报寻车（v5 `/panic/{duration}` 404）、单门独立解锁（v5 `/door/{doortype}/lock` 404，send-command 拒绝 `doorType` 字段）、保养/质保/召回/SIM/WIFI（`sign is error` 100400，signatureR2 签名未还原）、OTA 详情/版本（`capabilityMmota is false` 206004）——以上端点在本车型/网关不可用，均不接入，避免制造失败实体
 - **v3.1.2**：所有实体不再因福特云刷新失败而显示「不可用」——`available` 统一固定为可用（开关/锁/按钮/选择器/传感器/定位/图片共 15 处），刷新失败时保留最后已知状态，不再整体变灰；操作类实体在云异常时调用仍会返回明确错误提示，但实体本身始终可用
 - **v3.1.1**：修复保存集成选项时的崩溃——`async_update_options` 在集成尚未加载完成时被调用（重启中 / 加载失败 / 已卸载后再改选项）会抛 `KeyError: 'fordpass_cn'`；本次改为防御性读取：未加载时安全跳过，新选项在下次加载时从 `entry.options` 自动生效（无状态丢失）
 - **v3.1.0**：修复「保存鸣笛设置」按钮崩溃——点击报 `'FordPassCoordinator' object has no attribute 'entry_id'`（v3.0.8 引入：按钮读取配置时依赖 coordinator 上的 entry_id，但 coordinator 未保存该属性）；本次给 coordinator 增加 `entry_id` 属性（构造时由配置条目传入），按钮读取改为「entry_id 直取 + 遍历兜底」，任何构造路径下点击均不再报错
