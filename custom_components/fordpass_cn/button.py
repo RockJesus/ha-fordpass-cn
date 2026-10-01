@@ -190,15 +190,15 @@ class FordPassButton(ButtonEntity):
 
 
 class FordPassSaveHonkSettingsButton(ButtonEntity):
-    """保存鸣笛设置（v3.0.8）。
+    """保存鸣笛设置（v3.1.4）。
 
     按下即把 select 实体的「持续时长 / 鸣笛类型」保存：
     1) 本地持久化：config entry options（select 变化时已实时写入，
        此处再次确认，保证按钮点击时使用最新值）；
-    2) 上传车机：调用 RCC Profile 端点
-       POST /api/cnxapi-cds/crcc/v1/profile-by-vin（App 同款通道）——
-       字段结构已通过服务端校验；若 signatureR2 云端签名校验失败，
-       回退为「下次鸣笛按新设置把参数传给车机」（等效上传）。
+    2) 上传福特账户云端：UserPreferenceV2
+       POST /api/cnxapi-pds/v1/user/preference-by-groups
+       （VehicleAnnouncementSetting 组，2026-10-02 逆向还原 + 实机 200
+       保存成功并回读确认——不再走旧 RCC profile-by-vin 通道）。
     """
 
     _attr_icon = "mdi:content-save"
@@ -253,12 +253,15 @@ class FordPassSaveHonkSettingsButton(ButtonEntity):
             )
             if isinstance(resp, dict) and resp.get("cloud") is False:
                 _LOGGER.warning(
-                    "FordPass 鸣笛设置已本地保存；账户云端持久化被签名拦截：%s",
+                    "FordPass 鸣笛设置已本地保存；账户云端持久化失败：%s",
                     resp.get("error"),
                 )
             else:
-                _LOGGER.info("FordPass 鸣笛设置已保存上传（%s）",
-                             resp if not isinstance(resp, dict) else "OK")
+                _LOGGER.info(
+                    "FordPass 鸣笛设置已保存上传福特云端（类型=%s 时长=%ss）",
+                    (resp or {}).get("announce") if isinstance(resp, dict) else "?",
+                    (resp or {}).get("duration") if isinstance(resp, dict) else duration,
+                )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 保存鸣笛设置失败（本地设置仍生效）: %s", exc)
             raise
