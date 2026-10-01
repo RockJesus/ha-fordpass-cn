@@ -509,15 +509,72 @@ class FordPassApi:
         )
         return inner
 
-    async def honk_command(self, vin: str) -> dict[str, Any]:
-        """DELETE /api/vehicles/v5/{vin}/honk on the v5 gateway (verified live).
+    async def honk_command(
+        self,
+        vin: str,
+        duration: int = 30,
+        interval: int = 0,
+        chirp_type: int = 1,
+    ) -> dict[str, Any]:
+        """POST /api/vehicles/v5/{vin}/honk — 鸣笛寻车「开」通道。
 
-        Verified 2026-10-01 with the standard DLT headers: the v5 route
-        DELETE honk returns HTTP 200 + ``commandId`` (the only v5 command
-        channel confirmed on this VIN's model — the send-command whitelist
-        rejects ``Honk`` with 100502, and the app's POST honk uses a
-        proprietary encrypted envelope that has not been re-implemented yet).
-        The endpoint takes NO body and NO sign/timestamp query.
+        2026-10-01 从福特派 App（libapp.so, blutter 反编译）还原：
+        FordHonkCommand::sendCommand 构造参数 map
+        {ChirpOrHonkDuration, IntervalBetweenRequests, ChirpType}
+        → FordRemoteControlApiService::sendHonkCommand（POST + requestBody）。
+        v5 网关 POST honk 为明文 JSON（无需 wbsk 加密信封），
+        默认 30 秒鸣笛、ChirpType=1（喇叭）。
+        """
+        url = V5_BASE_URL + PATH_V5_HONK.format(vin=vin)
+        body = {
+            "ChirpOrHonkDuration": duration,
+            "IntervalBetweenRequests": interval,
+            "ChirpType": chirp_type,
+        }
+        async with self._session.request(
+            "POST", url, headers=self._headers(), json=body
+        ) as resp:
+            text = await resp.text()
+            self._log.debug("FordPass v5 honk POST -> %s %s", resp.status, text[:500])
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    async with self._session.request(
+                        "POST", url, headers=self._headers(), json=body
+                    ) as resp2:
+                        text2 = await resp2.text()
+                        if resp2.status >= 400:
+                            raise FordPassApiError(resp2.status, text2[:300])
+                        if not text2:
+                            return {}
+                        try:
+                            return json.loads(text2)
+                        except json.JSONDecodeError:
+                            return {"raw": text2}
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass v5 honk token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
+            if resp.status >= 400:
+                raise FordPassApiError(resp.status, text[:300])
+            if not text:
+                return {}
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"raw": text}
+
+    async def honk_cancel_command(self, vin: str) -> dict[str, Any]:
+        """DELETE /api/vehicles/v5/{vin}/honk — 鸣笛寻车「关」通道。
+
+        与 App 一致：FordHonkCancelCommand → honkCancelCommand →
+        sendHonkCancelCommand（DELETE，无 body）。
+        若服务器当前无进行中鸣笛，DELETE 返回 200 + commandId（无害幂等）。
         """
         url = V5_BASE_URL + PATH_V5_HONK.format(vin=vin)
         async with self._session.request(
