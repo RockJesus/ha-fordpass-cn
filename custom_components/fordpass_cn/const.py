@@ -7,14 +7,33 @@ DOMAIN = "fordpass_cn"
 BASE_URL = "https://cn.api.mps.ford.com.cn"
 LBS_BASE_URL = "https://api-connect.ford.com.cn"
 # v5 REST gateway — recovered from the app's Dart AOT code and verified live
-# (2026-10-01): DELETE /api/vehicles/v5/{vin}/honk returns HTTP 200 + commandId
-# with the standard DLT headers (no body / no sign / no timestamp).  The POST
-# honk (start) requires the app's proprietary RSA-OAEP + AES-CCM envelope
-# (HttpEncryptService / SensorWhiteBoxEncryptionService), which is not yet
-# re-implemented; the DELETE route is the only v5 command channel verified on
-# this VIN's model.
+# (2026-10-01): POST /api/vehicles/v5/{vin}/honk (body: ChirpOrHonkDuration/
+# IntervalBetweenRequests/ChirpType) returns HTTP 200 + commandId; DELETE on the
+# same path (the app's FordHonkCancelCommand) also returns 200 + commandId.
+# Both channels verified against the live gateway with the standard DLT headers
+# (no sign/timestamp envelope needed on this route).
 V5_BASE_URL = "https://cnapi.cv.ford.com.cn"
 PATH_V5_HONK = "/api/vehicles/v5/{vin}/honk"
+
+# 鸣笛寻车设置（v3.0.8）——「保存上传到车机」双通道：
+# 1) 车机生效通道（已验证）：POST v5 honk 的 body 参数（ChirpOrHonkDuration /
+#    ChirpType）直接决定车机鸣笛时长与音效——每次鸣笛都把设置参数传给车机；
+# 2) 账户云端持久化通道（尽力而为）：RCC Profile 保存端点，字段结构已通过
+#    服务端 JSON 校验（{userPreferences: [{preferenceType, preferenceValue}],
+#    encryptedVin, xjw} + timestamp/sign）；签名体系为 App 的 signatureR2
+#    （独立 secretKey/payLoadKey，尚未还原），当前用集成已有 R3 签名尝试，
+#    失败时回退为本地保存（下次鸣笛仍按设置生效）。
+PATH_CRCC_PROFILE = "/api/cnxapi-cds/crcc/v1/profile-by-vin"
+# 持续时长选项（App 设置页滑块 5-20 秒，默认 10 秒）
+HONK_DURATION_OPTIONS = [5, 10, 15, 20]
+DEFAULT_HONK_DURATION = 10
+# 鸣笛类型选项（App 设置页 5 种，按强度从弱到强，ChirpType=索引+1；
+# ChirpType=1 已对活网关实测有效，映射按 App 设置顺序推断）
+CHIRP_TYPE_OPTIONS = ["雨落荷叶", "急浪拍岸", "汽笛长鸣", "空谷回音", "声光共舞"]
+DEFAULT_CHIRP_TYPE = "汽笛长鸣"  # App 设置页默认选中项
+# 保存到 config entry options 的键
+CONF_HONK_DURATION = "honk_duration"
+CONF_CHIRP_TYPE = "chirp_type"
 
 # LBS (vehicle location) gateway — recovered from the app's Dart AOT code and
 # verified against 26 live captures (x-sign 26/26).
@@ -146,4 +165,4 @@ DEFAULT_SCAN_INTERVAL_MINUTES = 30
 DEFAULT_CONF_FLOW_TITLE = "福特派互联"
 
 # Platforms
-PLATFORMS = ["lock", "switch", "button", "sensor", "device_tracker"]
+PLATFORMS = ["lock", "switch", "button", "sensor", "device_tracker", "select"]
