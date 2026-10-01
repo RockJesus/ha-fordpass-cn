@@ -1,6 +1,7 @@
-# FordPass China 福特派互联
+# FordPass China 福特派互联 Home Assistant 自定义集成
 
-![FordPass China](custom_components/fordpass_cn/brand/logo.png)
+<img width="256" height="256" alt="images" src=custom_components/fordpass_cn/brand/logo.png />
+
 
 Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务，支持短信验证码 / 用户名密码两种登录方式、远程控车与车辆定位追踪。
 
@@ -85,6 +86,13 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 - **v2.4.0**：LBS 签名与 VIN 加密破解，车辆定位实验版
 - **v2.3.0**：实体中文化、车牌传感器、设备名=车型、令牌自动刷新修复
 - **v2.1.0**：修复 refresh-dlt-token 请求体多余字段导致的 400 错误
+  
+# 欢迎来我的博客 Welcome to my blog: [![RJ](https://img.shields.io/badge/Rock-Jesus-purple.svg)](https://rockjesus.cn)
+
+# ************ BUY ME A COFFEE 您的鼓励是我的荣幸 ************
+| 支付宝打赏                                                                                                                                                              | 微信打赏                                                                                                                                                              |  微信赞赏                                                                                                                                                              | 
+| ----------------------------------------------------------   | ----------------------------------------------------------   | ----------------------------------------------------------   |
+| ![zfb](https://user-images.githubusercontent.com/23656651/111026777-3011dc80-8427-11eb-931e-8731a12cc3b4.jpeg) | ![wx](https://user-images.githubusercontent.com/23656651/111026785-3ef88f00-8427-11eb-9c0b-d773e2da067d.jpeg) | ![zsm](https://user-images.githubusercontent.com/23656651/111026828-9434a080-8427-11eb-809e-b67a010447ce.png) | 
 
 ## 免责声明
 
