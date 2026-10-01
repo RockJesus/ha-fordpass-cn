@@ -175,6 +175,24 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass OTA setting fetch failed: %s", exc)
             data["ota_setting"] = None
+        # v3.1.4: 服务信息端点（保养计划/召回/SIM/WiFi；warranty 100502 暂不拉取）
+        for key, coro in (
+            ("maintenance_plan", self.api.get_maintenance_plan(self.vin)),
+            ("recall", self.api.get_recall(self.vin)),
+            ("sim_info", self.api.get_sim_info(self.vin)),
+            ("wifi_status", self.api.get_wifi_status(self.vin)),
+        ):
+            try:
+                data[key] = await coro
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass %s fetch failed: %s", key, exc)
+                data[key] = None
+        # v3.1.4: 鸣笛设置云端查询（UserPreferenceV2，尽力而为）
+        try:
+            data["chirp_cloud"] = await self.api.get_chirp_preference()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass chirp preference fetch failed: %s", exc)
+            data["chirp_cloud"] = None
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
