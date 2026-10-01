@@ -267,7 +267,21 @@ class FordPassApi:
         async with self._session.request(
             method, url, headers=self._headers(headers), **kwargs
         ) as resp:
-            text = await resp.text()
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                # v3.0.6: 网关偶发返回非文本响应（二进制/损坏 body，如
+                # ForceRefresh 后立即拉取 vehicle-status 时），先读原始字节
+                # 便于诊断，再转成明确的 FordPassApiError——不再让 aiohttp
+                # 的裸 codec 错误冒泡到日志。
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass %s -> 非文本响应 %d bytes (status=%s): %s",
+                    path, len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
+                )
             self._log.debug("FordPass %s -> %s %s", path, resp.status, text[:2000])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
@@ -433,20 +447,43 @@ class FordPassApi:
         return vehicles
 
     async def get_vehicle_status(self, vin: str) -> dict[str, Any]:
-        """GET /v1/vehicle-status, response body is encrypted (verified live)."""
-        enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-        data = await self._request(
-            "GET",
-            PATH_VEHICLE_STATUS,
-            query={"encryptedVin": enc_vin, "xjw": xjw},
-        )
-        inner = data.get("data", {})
-        if inner.get("encryptedResponseBody"):
-            plain = await asyncio.to_thread(lambda: self.crypto.decrypt_field(inner["encryptedResponseBody"], inner["xjw"]))
-            result = json.loads(plain)
-            self._log.debug("FordPass vehicle-status raw: %s", json.dumps(result, ensure_ascii=False)[:6000])
-            return result
-        return inner
+        """GET /v1/vehicle-status, response body is encrypted (verified live).
+
+        v3.0.6: ForceRefresh 后立即拉取时福特网关偶发返回瞬时异常（非文本/
+        空 data/解密失败），自动重试一次（间隔 2 秒）再放弃，避免「手动拉取
+        最新状态」流程被偶发抖动打断。
+        """
+        for attempt in (1, 2):
+            try:
+                enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+                data = await self._request(
+                    "GET",
+                    PATH_VEHICLE_STATUS,
+                    query={"encryptedVin": enc_vin, "xjw": xjw},
+                )
+                inner = data.get("data", {})
+                if inner.get("encryptedResponseBody"):
+                    plain = await asyncio.to_thread(
+                        lambda: self.crypto.decrypt_field(
+                            inner["encryptedResponseBody"], inner["xjw"]
+                        )
+                    )
+                    result = json.loads(plain)
+                    self._log.debug(
+                        "FordPass vehicle-status raw: %s",
+                        json.dumps(result, ensure_ascii=False)[:6000],
+                    )
+                    return result
+                return inner
+            except (FordPassApiError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+                if attempt == 1:
+                    self._log.warning(
+                        "FordPass vehicle-status 瞬时异常（第 1 次，2 秒后重试）: %s",
+                        exc,
+                    )
+                    await asyncio.sleep(2)
+                    continue
+                raise
 
     # ------------------------------------------------------------- commands
     async def send_command(self, vin: str, command_type: str) -> dict[str, Any]:
