@@ -114,6 +114,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = FordPassCoordinator(
         hass, api, vin, interval, vehicle_label, license_plate,
         track_location, nickname, vehicle_image_url, coordinate_system,
+        entry_id=entry.entry_id,
     )
     await coordinator.async_config_entry_first_refresh()
 
