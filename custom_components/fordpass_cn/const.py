@@ -15,22 +15,40 @@ LBS_BASE_URL = "https://api-connect.ford.com.cn"
 V5_BASE_URL = "https://cnapi.cv.ford.com.cn"
 PATH_V5_HONK = "/api/vehicles/v5/{vin}/honk"
 
-# 鸣笛寻车设置（v3.0.8）——「保存上传到车机」双通道：
-# 1) 车机生效通道（已验证）：POST v5 honk 的 body 参数（ChirpOrHonkDuration /
-#    ChirpType）直接决定车机鸣笛时长与音效——每次鸣笛都把设置参数传给车机；
-# 2) 账户云端持久化通道（尽力而为）：RCC Profile 保存端点，字段结构已通过
-#    服务端 JSON 校验（{userPreferences: [{preferenceType, preferenceValue}],
-#    encryptedVin, xjw} + timestamp/sign）；签名体系为 App 的 signatureR2
-#    （独立 secretKey/payLoadKey，尚未还原），当前用集成已有 R3 签名尝试，
-#    失败时回退为本地保存（下次鸣笛仍按设置生效）。
-PATH_CRCC_PROFILE = "/api/cnxapi-cds/crcc/v1/profile-by-vin"
+# 鸣笛寻车设置（v3.1.4）——「保存上传到车机」真云端通道：
+# 账户云端持久化 = UserPreferenceV2（2026-10-02 逆向 libapp.so 还原，实机验证）：
+#   POST /api/cnxapi-pds/v1/user/preference-by-groups
+#   body: {preferenceGroups: [{groupName: "VehicleAnnouncementSetting",
+#          userPreferences: [{preferenceType: "vehicleAnnouncementSoundType",
+#                             preferenceValue: "<chrip1|chirp2|chirpHonk|honk|panic>"},
+#                            {preferenceType: "vehicleAnnouncementDuration",
+#                             preferenceValue: "<5-20>"}]}], timestamp, sign}
+#   GET  /api/cnxapi-pds/v1/user/preference-list?timestamp=&sign=（查询已存设置）
+# 签名 = 集成 compute_sign（R3 双重），嵌套 list/dict 按 App 序列化
+# （list → "[a&b]"、dict → "{k=v&...}"、顶层平面 k=v&...）；已 200 保存成功
+# 并回读确认（chirp2 + 10 秒写入福特云端）。车机生效通道（POST v5 honk 参数
+# 直达车机）保持不变——鸣笛时仍把设置参数传给车机。
+PATH_CRCC_PROFILE = "/api/cnxapi-cds/crcc/v1/profile-by-vin"  # 旧 RCC 通道（已弃用，保留历史）
+PATH_USER_PREF_GROUPS = "/api/cnxapi-pds/v1/user/preference-by-groups"
+PATH_USER_PREF_LIST = "/api/cnxapi-pds/v1/user/preference-list"
+GROUP_VEHICLE_ANNOUNCEMENT = "VehicleAnnouncementSetting"
+PREF_SOUND_TYPE = "vehicleAnnouncementSoundType"
+PREF_DURATION = "vehicleAnnouncementDuration"
 # 持续时长选项（App 设置页滑块 5-20 秒，默认 10 秒）
 HONK_DURATION_OPTIONS = [5, 10, 15, 20]
 DEFAULT_HONK_DURATION = 10
-# 鸣笛类型选项（App 设置页 5 种，按强度从弱到强，ChirpType=索引+1；
-# ChirpType=1 已对活网关实测有效，映射按 App 设置顺序推断）
+# 鸣笛类型选项（App 设置页 5 种，按强度从弱到强）
 CHIRP_TYPE_OPTIONS = ["雨落荷叶", "急浪拍岸", "汽笛长鸣", "空谷回音", "声光共舞"]
 DEFAULT_CHIRP_TYPE = "汽笛长鸣"  # App 设置页默认选中项
+# 中文类型 → VehicleAnnouncementType（App 反编译枚举：chrip1=0/chirp2=1/
+# chirpHonk=2/honk=3/panic=4）；「保存鸣笛设置」上传云端用此值
+CHIRP_TO_ANNOUNCE = {
+    "雨落荷叶": "chrip1",
+    "急浪拍岸": "chirp2",
+    "汽笛长鸣": "chirpHonk",
+    "空谷回音": "honk",
+    "声光共舞": "panic",
+}
 # 保存到 config entry options 的键
 CONF_HONK_DURATION = "honk_duration"
 CONF_CHIRP_TYPE = "chirp_type"
@@ -83,6 +101,14 @@ PATH_ACTIVE_ALERT = "/api/cnxapi-cds/v1/vha/activealert"
 # ota/detail、ota/versions 在锐际上被服务端拒绝（errorCode 206004
 # "capabilityMmota is false"），故仅 setting-info 接入。
 PATH_OTA_SETTING = "/api/alert/v1/ota/setting-info"
+# 服务信息端点（v3.1.4，实测 2026-10-02）：R3 compute_sign + 修正 headers +
+# 无 appKey（maintenance/recall 早期版本带 appKey 参与签名；headers 修正后
+# 无 appKey 亦 200）。warranty 已过验签但服务端 100502（参数校验，待 App 抓包）。
+PATH_MAINTENANCE_PLAN = "/api/cnxapi-cds/v1/maintenance-plan"
+PATH_RECALL = "/api/cnxapi-vds/v1/vehicles/recall"
+PATH_SIM_INFO = "/api/cnxapi-cds/v1/vehicle/sim/info"
+PATH_WIFI_STATUS = "/api/cnxapi-cds/v1/vehicle/wifi/status"
+PATH_WARRANTY = "/api/cnxapi-cds/v1/warranty"
 
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
