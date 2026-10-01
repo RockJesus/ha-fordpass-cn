@@ -70,7 +70,7 @@ class FordPassVehicleImage(ImageEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self.coordinator.vehicle_image_url)
+        return True  # v3.1.2: 图片实体恒可用（无 URL 时保留已下载图片）
 
     @property
     def state(self) -> str:
