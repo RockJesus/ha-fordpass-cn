@@ -2,9 +2,10 @@
 
 v2.10.0: 灯光寻车开关——开 = ZoneLightingON（灯光寻车），关 = ZoneLightingOFF（关闭灯光寻车）。
 v3.0.1: 后备箱锁已从 switch 迁移为 lock 实体（见 lock.py），此处仅保留远程启动与灯光寻车。
-v3.0.5: 修复灯光寻车初始状态 unknown（默认关闭）；鸣笛寻车从 button 迁移为 switch
-（开 = v5 网关 DELETE /api/vehicles/v5/{vin}/honk 触发鸣笛，鸣笛 30 秒自动停止，
-开关自动复位；关 = 本地置位——POST 停止通道的官方加密信封尚未还原，无法提前停止）。
+v3.0.5: 修复灯光寻车初始状态 unknown（默认关闭）；鸣笛寻车从 button 迁移为 switch。
+v3.0.7: 鸣笛寻车真实双通道（静态逆向还原 App 协议）——开 = POST /api/vehicles/v5/{vin}/honk
+（body: ChirpOrHonkDuration/IntervalBetweenRequests/ChirpType），关 = DELETE 同路径（App 的
+FordHonkCancelCommand 通道）；触发后 30 秒自动复位。
 """
 from __future__ import annotations
 
@@ -117,12 +118,13 @@ class FordPassLightSwitch(SwitchEntity):
 
 
 class FordPassHonkSwitch(SwitchEntity):
-    """鸣笛寻车开关（v3.0.5，由 button 迁移）。
+    """鸣笛寻车开关（v3.0.7，真实开/关双通道）。
 
-    开 = v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，实测 200 + commandId）
-    触发鸣笛；App 鸣笛寻车响约 30 秒自动停止，开关在触发后自动复位为关。
-    关 = 本地置位——官方 App 停止鸣笛走 POST（RSA-OAEP + AES-CCM 加密信封，
-    尚未还原），暂无真实提前停止通道；若后续还原 POST 信封将补真实停止。
+    2026-10-01 静态逆向还原 App 官方协议（libapp.so, blutter）：
+    - 开 = POST /api/vehicles/v5/{vin}/honk（body: ChirpOrHonkDuration/
+      IntervalBetweenRequests/ChirpType，明文 JSON）——FordHonkCommand
+    - 关 = DELETE /api/vehicles/v5/{vin}/honk（无 body）——FordHonkCancelCommand
+    开关在触发后仍按 HONK_AUTO_OFF_SECONDS 自动复位（车辆鸣笛约 30 秒自停）。
     """
 
     _attr_assumed_state = True
@@ -153,7 +155,7 @@ class FordPassHonkSwitch(SwitchEntity):
         try:
             resp = await self.coordinator.api.honk_command(self.coordinator.vin)
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass 鸣笛寻车（v5 通道）失败: %s", exc)
+            _LOGGER.warning("FordPass 鸣笛寻车（POST 开）失败: %s", exc)
             raise
         if isinstance(resp, dict) and resp.get("commandId"):
             _LOGGER.info("FordPass 鸣笛寻车已触发 commandId=%s", resp["commandId"])
@@ -163,6 +165,13 @@ class FordPassHonkSwitch(SwitchEntity):
         self.coordinator.hass.async_create_task(self._auto_off())
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        # 无真实提前停止通道（POST 加密信封未还原），本地复位
+        # 真实停止通道：DELETE /api/vehicles/v5/{vin}/honk（与 App 取消鸣笛一致）
+        try:
+            resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 鸣笛寻车（DELETE 关）失败: %s", exc)
+            raise
+        if isinstance(resp, dict) and resp.get("commandId"):
+            _LOGGER.info("FordPass 鸣笛寻车已停止 commandId=%s", resp["commandId"])
         self._state = False
         self.async_write_ha_state()
