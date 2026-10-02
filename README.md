@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.7.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.8.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -48,19 +48,28 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 |---|---|---|
 | device_tracker | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
 | image | 车辆图片 | 车型渲染图（如「锐际 Escape」） |
-| lock | 车门锁 / 后备箱锁 | 上锁 / 解锁 |
-| button | 远程启动 / 熄火 / 刷新状态 / 保存鸣笛设置 / 重置空调滤芯 | 远程启动引擎、手动拉取最新状态、请求车机刷新状态、保存鸣笛设置（上传福特账户云端 UserPreferenceV2 + 本地持久化）、重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`，重置后更换日期更新为当天） |
-| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 | 已远程启动/未远程启动；灯光寻车开/关；鸣笛寻车（真实双通道：开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径；鸣笛时长与类型按设置生效） |
+| lock | 车门锁 | 上锁 / 解锁（DoorLock / DoorUnlock，实测正常） |
+| button | 手动拉取最新状态 / 请求车机刷新状态 / 重置空调滤芯 / 拖车灯光检测 | 手动拉取（ForceRefresh 云端拉取回 HA）；请求车机刷新（AutoRefresh 命令车机上报，两个命令键值不同、均已实测 200）；重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`，实测成功） |
+| switch | 远程启动 / 鸣笛寻车 | 远程启动/熄火（实测正常）；鸣笛寻车（开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径；鸣笛时长与类型按设置生效） |
 | select | 鸣笛持续时长 / 鸣笛类型 | 鸣笛寻车设置：持续时长 5/10/15/20 秒；鸣笛类型 雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞（选择即保存，鸣笛时参数直达车机） |
-| sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌、自动熄火倒计时等 |
+| sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌、自动熄火倒计时、车窗（未关闭显示程度/百分比）等 |
 | sensor | 车辆异常警示 | 真实告警接口（胎压监测系统警告等），无异常显示「无异常」 |
 | sensor | 保养计划 / 召回信息 / SIM 卡 / WiFi 热点 | 服务信息（v3.1.5，`GET maintenance-plan / recall / sim/info / wifi/status`，实测 200；数据无效或服务端业务失败时如实显示，不创建失败实体） |
 | sensor | 空调滤芯状态 | 滤芯健康度 + 上次更换日期（v3.1.7，`GET /api/cnxapi-vds/v1/aar/status`，实测 200；App 6.16.0 新增功能，无 AAR 能力的车型不创建实体） |
 | sensor | 鸣笛设置云端状态 | 福特账户云端 VehicleAnnouncementSetting 回读（类型 + 时长），App/其他设备改动可同步感知 |
 
+> **v3.1.8 实测限制（锐际 Escape，2026-10-02 车旁实测）**：send-command 网关
+> 只对部分命令有 cmdSpec，其余返回 `228205 cmdSpec can not empty` 或 402——
+> **后备箱锁解锁（TrunkUnlock）、灯光寻车（ZoneLightingON/OFF）、中央区灯光、
+> 语音助手初始化/取消、辅助设置、OTA 激活排程在本车型云端均不可用**，实体已
+> 移除（避免无反应的假实体）。App 端后备箱解锁/灯光寻车依赖蓝牙直连（TIMA
+> 通道），云端网关不支持；「声光共舞」鸣笛类型走独立 panic 端点（灯+喇叭），
+> 锐际实测 404，选该类型鸣笛会明确报错。鸣笛类型/时长参数已按 App 枚举修正
+> （ChirpType 0-4），请再次实测确认。
+
 ## 版本历史
 
-- **v3.1.7**：新增「空调滤芯状态 / 重置」——接入福特派 App 6.16.0 新增的 AAR（空调空气过滤器）功能：`GET /api/cnxapi-vds/v1/aar/status` 返回 `airFilter.{isHealthy, lastReplaceTime}`（实测 200），新增「空调滤芯」传感器（正常 / 需更换 + 上次更换日期属性）；`PUT /api/cnxapi-vds/v1/aar/status`（body `{channel:"IVI", filterStatus:0, xjw, encryptedVin}`，R3 签名，实测 200 success，重置后 `lastReplaceTime` 更新为当天）新增「重置空调滤芯」按钮，重置成功后自动刷新数据。实体按车型能力数据驱动创建——无 AAR 数据的车型（如老款燃油车）不创建滤芯实体，0 unavailable
+- **v3.1.8**：按实车测试清单修复与收敛——①**移除网关不支持实体**：后备箱锁（TrunkUnlock）、灯光寻车（ZoneLighting）、中央区灯光（402）、语音助手初始化/取消、辅助设置、OTA 激活排程在锐际实测均被网关拒绝（`228205 cmdSpec can not empty` / 402），移除实体避免假按钮；②**鸣笛类型/时长参数修正**：ChirpType 从 1-5 修正为 App 枚举 0-4（此前差一错位）；「声光共舞」改为走独立 panic 端点 `POST /api/vehicles/v5/{vin}/panic/{duration}`（灯+喇叭，锐际 404 明确报错）；③**车窗状态**：未关闭时显示「未关闭（部分开启/全开）」，数值型数据（部分车型）显示「未关闭 N%」；④**远程启动时间**：修复毫秒时间戳解析（此前 13 位毫秒解析失败显示「未启动」）；⑤确认门锁/远程启动/重置空调滤芯/刷新类命令均实测正常
 
 - **v3.1.6**：全车型自动适配 + 多 VIN 支持——账号下每一辆车建立独立 coordinator / 设备 / 实体组（设备名 = 车辆昵称/车型，实体前缀 = 车辆名拼音，此前只加载第一辆车）。实体创建全部数据驱动：传感器按 vehicle-status 实际字段过滤（`skip_if_missing` + 创建期 `data_usable`），控制实体按车型能力过滤（`crccFlag` 远程控车 / `dualRearWheel` 双后轮拖车 / 尾门字段 / `preCondStatusDsply` 远程空调等）。因此**任何车型登录（电马纯电 / 锐界L混动 / 领裕柴油 / Ranger皮卡 / 锐际燃油等）只加载自己车真实支持的设备与实体，0 unavailable**（刷新失败保留最后已知状态）。修改扫描间隔/定位开关即时应用到全部车辆
 
