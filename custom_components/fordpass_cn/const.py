@@ -109,6 +109,13 @@ PATH_RECALL = "/api/cnxapi-vds/v1/vehicles/recall"
 PATH_SIM_INFO = "/api/cnxapi-cds/v1/vehicle/sim/info"
 PATH_WIFI_STATUS = "/api/cnxapi-cds/v1/vehicle/wifi/status"
 PATH_WARRANTY = "/api/cnxapi-cds/v1/warranty"
+# 空调滤芯状态/重置（v3.1.7，2026-10-02 逆向还原 + 实机 200）：
+#   GET  /api/cnxapi-vds/v1/aar/status → data.airFilter.{isHealthy,lastReplaceTime,
+#         lastReplaceTimestamp}（AARStatusResponseDataAirFilter，6.16.0 App 新增）
+#   PUT  /api/cnxapi-vds/v1/aar/status body={channel:"IVI", filterStatus:0, xjw,
+#         encryptedVin} → data:"success"；重置后 lastReplaceTime 更新为当天。
+#   内部链路：vds 网关转调 BESL /api/besl/maintenance/reminder/ivi/filter/v1/status。
+PATH_AAR_STATUS = "/api/cnxapi-vds/v1/aar/status"
 
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
