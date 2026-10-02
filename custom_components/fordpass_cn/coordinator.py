@@ -193,6 +193,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass chirp preference fetch failed: %s", exc)
             data["chirp_cloud"] = None
+        # v3.1.7: 空调滤芯状态（GET /api/cnxapi-vds/v1/aar/status，尽力而为；
+        # 无 AAR 能力/接口失败的车型 data 置 None——实体不创建，不显示不可用）
+        try:
+            data["air_filter"] = await self.api.get_air_filter_status(self.vin)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass air filter status fetch failed: %s", exc)
+            data["air_filter"] = None
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
