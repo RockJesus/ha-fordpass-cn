@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.5.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.6.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -59,7 +59,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
-- **v3.1.5**：修复保养计划传感器恒为 unknown（实测响应字段是 `data.values` 而非 `data.data`），现按里程 + 保养项目显示；SIM/WiFi 传感器在服务端业务失败时如实显示原因（如 `CONS.SYS.0002` / `CONS.AUTH.0005`）；服务信息传感器 attributes 改为摘要级（保养计划原始响应超 16KB 会触发 recorder 拒绝存储告警，现只保留前 6 个保养节点摘要，其余实体仅保留关键字段）
+- **v3.1.6**：全车型自动适配 + 多 VIN 支持——账号下每一辆车建立独立 coordinator / 设备 / 实体组（设备名 = 车辆昵称/车型，实体前缀 = 车辆名拼音，此前只加载第一辆车）。实体创建全部数据驱动：传感器按 vehicle-status 实际字段过滤（`skip_if_missing` + 创建期 `data_usable`），控制实体按车型能力过滤（`crccFlag` 远程控车 / `dualRearWheel` 双后轮拖车 / 尾门字段 / `preCondStatusDsply` 远程空调等）。因此**任何车型登录（电马纯电 / 锐界L混动 / 领裕柴油 / Ranger皮卡 / 锐际燃油等）只加载自己车真实支持的设备与实体，0 unavailable**（刷新失败保留最后已知状态）。修改扫描间隔/定位开关即时应用到全部车辆
 
 - **v3.1.4**：鸣笛寻车设置云端保存真正打通——逆向还原福特派 App 的 UserPreferenceV2 通道（`POST /api/cnxapi-pds/v1/user/preference-by-groups`，`VehicleAnnouncementSetting` 组：`vehicleAnnouncementSoundType` 5 种类型 + `vehicleAnnouncementDuration` 5-20 秒），`保存鸣笛设置`按钮现在把设置**真实写入福特账户云端**（旧 RCC profile-by-vin 通道 100400 根因 = signatureR2 独立密钥体系，实为误入）；签名层修正：headers 用 App 真实无连字符名（`appversion/ostype/osversion/clienttype`）、嵌套参数按 App 序列化（list→`[a&b]`、dict→`{k=v}`）；新增「鸣笛设置云端状态」传感器（`GET preference-list` 回读，App/其他设备改动可同步感知）。同时打通此前 100400 的保养计划/召回/SIM/WiFi 四个端点（实测 200），新增对应服务信息传感器（数据无效时不创建）；质保端点已过验签但服务端参数校验 100502（待 App 抓包），暂不接入
 - **v3.1.3**：新增「OTA 设置状态」传感器（`GET /api/alert/v1/ota/setting-info`，实测 200）——展示远程 OTA 开关、激活排程、当前/目标版本、状态描述；车辆无 OTA 能力或端点失败时不创建实体。同时完成对逆向清单中其余候选端点的实机验证：警报寻车（v5 `/panic/{duration}` 404）、单门独立解锁（v5 `/door/{doortype}/lock` 404，send-command 拒绝 `doorType` 字段）、OTA 详情/版本（`capabilityMmota is false` 206004）——以上端点在本车型/网关不可用，均不接入，避免制造失败实体
