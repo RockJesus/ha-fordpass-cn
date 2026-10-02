@@ -241,6 +241,13 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     chirp_cloud = coordinator.data.get("chirp_cloud")
     if isinstance(chirp_cloud, dict) and chirp_cloud:
         sensors.append(FordPassChirpCloudSensor(coordinator))
+    # v3.1.7: 空调滤芯状态（AAR 能力车型；无 airFilter 字段的车型不创建，
+    # 保证其他用户登录各自车型时不出现不支持的实体）
+    air_filter = coordinator.data.get("air_filter")
+    if isinstance(air_filter, dict):
+        af_payload = air_filter.get("data") if isinstance(air_filter.get("data"), dict) else None
+        if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
+            sensors.append(FordPassAirFilterSensor(coordinator))
     return sensors
 
 
@@ -711,6 +718,42 @@ class _ServiceInfoSensor(SensorEntity):
     def _summary(self, data: dict) -> dict:  # pragma: no cover - override
         """返回需要展示在 attributes 的摘要级字段（防超限）。"""
         return {}
+
+
+class FordPassAirFilterSensor(_ServiceInfoSensor):
+    """空调滤芯状态（v3.1.7）：GET /api/cnxapi-vds/v1/aar/status。
+
+    实测响应（2026-10-02）data.airFilter.{isHealthy, lastReplaceTime,
+    lastReplaceTimestamp}——isHealthy=false 表示滤芯需更换；lastReplaceTime
+    为上次重置（更换）日期，重置成功后更新为当天。
+    """
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "air_filter", "空调滤芯", "mdi:air-filter")
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        air = payload.get("airFilter") if isinstance(payload, dict) else None
+        if not isinstance(air, dict):
+            return None
+        healthy = air.get("isHealthy")
+        if healthy is None:
+            return None
+        if str(healthy).lower() in ("true", "1", "yes", "on"):
+            return "正常"
+        return "需更换"
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        air = payload.get("airFilter") if isinstance(payload, dict) else None
+        if not isinstance(air, dict):
+            return {}
+        out: dict[str, Any] = {}
+        if air.get("lastReplaceTime"):
+            out["last_replace"] = str(air["lastReplaceTime"])
+        if air.get("lastReplaceTimestamp") is not None:
+            out["last_replace_timestamp"] = air["lastReplaceTimestamp"]
+        return out
 
 
 class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
