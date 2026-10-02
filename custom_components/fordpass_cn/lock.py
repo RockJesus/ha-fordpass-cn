@@ -22,14 +22,18 @@ from .coordinator import FordPassCoordinator
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    locks: list[LockEntity] = [FordPassLock(coordinator)]
-    # 后备箱锁：有尾门 / 内尾门字段（支持后备箱解锁）才创建
-    status = coordinator.data.get("vehiclestatus", {}) or {}
-    if capability.usable(
-        status, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
-    ):
-        locks.append(FordPassTrunkLock(coordinator))
+    # v3.1.6: 多 VIN——每辆车独立创建锁实体（按各自车型能力过滤）
+    payload = hass.data[DOMAIN][entry.entry_id]
+    coordinators = payload.get("coordinators") or [payload["coordinator"]]
+    locks: list[LockEntity] = []
+    for coordinator in coordinators:
+        locks.append(FordPassLock(coordinator))
+        # 后备箱锁：有尾门 / 内尾门字段（支持后备箱解锁）才创建
+        status = coordinator.data.get("vehiclestatus", {}) or {}
+        if capability.usable(
+            status, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
+        ):
+            locks.append(FordPassTrunkLock(coordinator))
     async_add_entities(locks)
 
 
