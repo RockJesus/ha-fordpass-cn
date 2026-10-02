@@ -33,6 +33,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         vehicle_image_url: str | None = None,
         coordinate_system: str = COORDINATE_WGS84,
         entry_id: str | None = None,
+        car_id: str | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -57,6 +58,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v3.0.10: 保存鸣笛设置按钮经由此定位 hass.data[DOMAIN][entry_id] 的
         # honk_settings（按钮 _settings 依赖 entry_id 取配置实时值）。
         self.entry_id = entry_id
+        # v3.1.13: 车辆列表 encryptedCarId（停车影像/行车监控请求参数——
+        # 锐际为 null = 车型无远程影像硬件，影像按钮不创建）
+        self.car_id = car_id
+        # v3.1.13: 最近一次鸣笛命令状态（鸣笛开关触发后轮询
+        # announcestatus/{commandId} 写入；「鸣笛命令状态」传感器读取）
+        self.announce_status: dict[str, Any] | None = None
     @property
     def vehicle_model(self) -> str:
         """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
@@ -211,6 +218,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception as exc:  # noqa: BLE001
                 self.logger.debug("FordPass %s fetch failed: %s", key, exc)
                 data[key] = None
+        # v3.1.13: 车辆能力清单 v4（cvfeatures，App 首页能力卡片权威来源；
+        # 失败置 None——实体不创建，不显示不可用）
+        try:
+            data["capability_v4"] = await self.api.capability_v4(self.vin)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass capability_v4 fetch failed: %s", exc)
+            data["capability_v4"] = None
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
