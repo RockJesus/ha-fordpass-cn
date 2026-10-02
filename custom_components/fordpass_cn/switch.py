@@ -30,6 +30,8 @@ from .const import (
     CHIRP_TO_TYPE,
     CMD_ENGINE_START,
     CMD_ENGINE_STOP,
+    CMD_LIGHT_FIND_OFF,
+    CMD_LIGHT_FIND_ON,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
     DOMAIN,
@@ -49,9 +51,13 @@ async def async_setup_entry(
     switches: list[SwitchEntity] = []
     for coordinator in coordinators:
         switches.append(FordPassEngineSwitch(coordinator))
-        # 鸣笛寻车（v3.0.5 由按钮迁移为开关，远程控车能力 crccFlag）
+        # 远程控车能力 crccFlag 有效才创建寻车类开关
         status = coordinator.data.get("vehiclestatus", {}) or {}
         if capability.usable(status, [["crccFlag"]]):
+            # v3.1.10: 恢复灯光寻车（v3.1.8 曾因锐际网关 228205 移除；
+            # 其他车型云端可能支持——登录后按能力创建，按下报错即如实提示）
+            switches.append(FordPassLightSwitch(coordinator))
+            # 鸣笛寻车（v3.0.5 由按钮迁移为开关）
             switches.append(FordPassHonkSwitch(coordinator))
     async_add_entities(switches)
 
@@ -82,6 +88,53 @@ class FordPassEngineSwitch(SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.run_command(CMD_ENGINE_STOP)
+
+
+class FordPassLightSwitch(SwitchEntity):
+    """灯光寻车开关（ZoneLightingON / ZoneLightingOFF）。
+
+    灯光寻车是瞬时命令、车辆不回报灯光状态，开关状态为记忆值（assumed）。
+    v3.0.5: 初始状态默认关闭（False），避免实体显示 unknown。
+    v3.1.8: 曾因锐际网关 228205「cmdSpec can not empty」临时移除——App 端
+    该命令依赖蓝牙 TIMA 通道，云端 send-command 网关仅部分车型支持。
+    v3.1.10: 恢复创建（全车型支持策略：登录后按车型能力判断，云端支持的
+    车型可用；不支持时按下返回网关明确报错，如实提示）。
+    """
+
+    _attr_assumed_state = True
+    _attr_icon = "mdi:car-light-high"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-light_find"
+        self._attr_name = "灯光寻车"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._state: bool = False
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def is_on(self) -> bool:
+        return self._state
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        try:
+            await self.coordinator.run_command(CMD_LIGHT_FIND_ON)
+        except Exception:
+            raise
+        self._state = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        try:
+            await self.coordinator.run_command(CMD_LIGHT_FIND_OFF)
+        except Exception:
+            raise
+        self._state = False
+        self.async_write_ha_state()
 
 
 class FordPassHonkSwitch(SwitchEntity):
