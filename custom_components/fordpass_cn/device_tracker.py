@@ -21,12 +21,14 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    # Always create the tracker entity. The option toggle only controls
+    # v3.1.6: 多 VIN——每辆车独立创建定位实体
+    payload = hass.data[DOMAIN][entry.entry_id]
+    coordinators = payload.get("coordinators") or [payload["coordinator"]]
+    # Always create the tracker entities. The option toggle only controls
     # availability + whether the coordinator fetches LBS data, so flipping
     # "track_location" in the options flow takes effect immediately without
     # restarting HA (see async_update_options in __init__.py).
-    async_add_entities([FordPassDeviceTracker(coordinator)])
+    async_add_entities([FordPassDeviceTracker(c) for c in coordinators])
 
 
 class FordPassDeviceTracker(TrackerEntity):
