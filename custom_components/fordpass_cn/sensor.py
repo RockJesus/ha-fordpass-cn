@@ -11,6 +11,7 @@ from homeassistant.const import UnitOfLength, UnitOfPressure
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import capability
 from .const import CHIRP_TO_ANNOUNCE, DOMAIN
 from .coordinator import FordPassCoordinator
 
@@ -253,6 +254,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         ccf_payload = ccf.get("data") if isinstance(ccf.get("data"), dict) else None
         if isinstance(ccf_payload, dict) and ccf_payload.get("featureData"):
             sensors.append(FordPassCFeaturesSensor(coordinator))
+            # v3.1.20: 云端能力探测——位图有已开通能力才创建（全车型自动
+            # 适配：各自位图 → 各自能力集 → 实体自动创建）
+            if capability.parse_cloud_features(ccf):
+                sensors.append(FordPassCloudProbeSensor(coordinator))
     # v3.1.13: 鸣笛命令状态（最近一次鸣笛的 announcestatus 结果；未触发时
     # 显示「未触发」，永远可用——v3.1.2 规则）
     sensors.append(FordPassAnnounceStatusSensor(coordinator))
@@ -957,6 +962,60 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
         if payload.get("videoManualUrl"):
             out["manual_url"] = str(payload["videoManualUrl"])
         return out
+
+
+class FordPassCloudProbeSensor(SensorEntity):
+    """云端能力探测（v3.1.20）——全车型自动创建的关键。
+
+    解析 ccfeatures availableFeatures 位图（VDSFeatureType，逆向福特派
+    6.16.0 libapp.so 还原的 24 项枚举）→ 该车开通的云端服务能力集。
+    位图不同 → 能力集不同 → 实体自动适配：如锐际纯油
+    03,04,05,06,07,08,10,11,23 = 计划保养服务/指南/道路救援/延保/福特金融/
+    私充服务/我的订阅/我的试驾 + 未定义特性 0x23。无位图数据的车型不创建。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:cloud-search"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-cloud_probe"
+        self._attr_name = "云端能力探测"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def native_value(self) -> str:
+        feats = capability.parse_cloud_features(
+            (self.coordinator.data or {}).get("ccfeatures")
+        )
+        if not feats:
+            return "无能力数据"
+        named = [f["zh"] for f in feats]
+        return f"已开通 {len(feats)} 项：{'、'.join(named)}"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        feats = capability.parse_cloud_features(
+            (self.coordinator.data or {}).get("ccfeatures")
+        )
+        attrs: dict[str, Any] = {
+            "last_poll": (
+                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+                if self.coordinator.last_poll
+                else None
+            )
+        }
+        if not feats:
+            return attrs
+        attrs["capabilities"] = [f"{f['zh']}（{f['en']}）" for f in feats]
+        attrs["feature_ids"] = ", ".join(f["raw"] for f in feats)
+        for f in feats:
+            attrs[f"capability_{f['id']:02x}"] = f"{f['zh']}（{f['en']}）"
+        return attrs
 
 
 class FordPassOilLifeSensor(_ServiceInfoSensor):
