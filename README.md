@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.8.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.9.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -56,7 +56,17 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 | sensor | 车辆异常警示 | 真实告警接口（胎压监测系统警告等），无异常显示「无异常」 |
 | sensor | 保养计划 / 召回信息 / SIM 卡 / WiFi 热点 | 服务信息（v3.1.5，`GET maintenance-plan / recall / sim/info / wifi/status`，实测 200；数据无效或服务端业务失败时如实显示，不创建失败实体） |
 | sensor | 空调滤芯状态 | 滤芯健康度 + 上次更换日期（v3.1.7，`GET /api/cnxapi-vds/v1/aar/status`，实测 200；App 6.16.0 新增功能，无 AAR 能力的车型不创建实体） |
+| sensor | 车辆服务信息 | 云端能力位图 + 救援/客服/售后电话 + 电子说明书地址（v3.1.9，`GET /api/cnxapi-vds/v2/vehicles/ccfeatures`，实测 200；App 用于判断每辆车支持哪些功能的权威云端清单） |
+| sensor | 机油寿命 / 剩余可行驶里程 / 慢漏气胎 / 预测性诊断 | 预测性诊断（v3.1.9，`GET /api/cnxapi-cds/prognostic/v1/list`，实测 200）：机油寿命百分比、按寿命剩余里程、慢漏气胎标识、诊断提示（featureType=OL 机油寿命族） |
 | sensor | 鸣笛设置云端状态 | 福特账户云端 VehicleAnnouncementSetting 回读（类型 + 时长），App/其他设备改动可同步感知 |
+
+> **v3.1.9 实测限制补充**：send-command 网关返回完整白名单枚举
+> `(ForceRefresh, TrailerLightCheckStart/Stop, TrunkUnlock, DoorLock/DoorUnlock,
+> RemoteStart/RemoteStop, InitialVA, CancelVA, CentralZoneLightingON,
+> ZoneLightingON/OFF, OTAActivationSchedule, ASUSetting, AutoRefresh)`——锐际
+> 实测除已移除项外全部接入，**远程启动延长（ExtendStart）不在白名单**，不创建
+> 实体。ccfeatures 能力位图（`03,04,05,06,07,08,10,11,23`）的数字编码含义
+> 逐车型确认中，先以原始位图呈现。
 
 > **v3.1.8 实测限制（锐际 Escape，2026-10-02 车旁实测）**：send-command 网关
 > 只对部分命令有 cmdSpec，其余返回 `228205 cmdSpec can not empty` 或 402——
@@ -69,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 版本历史
 
+- **v3.1.9**：新增两组云端服务信息实体（逆向 6.16.0 确认、全部 200 实测）——①**车辆服务信息**（`GET /api/cnxapi-vds/v2/vehicles/ccfeatures`）：云端能力位图 availableFeatures + authedFeatures + 道路救援/客服/售后电话 + 车型电子说明书 URL，这是 App 判断「每辆车支持哪些功能」的权威云端清单；②**预测性诊断**（`GET /api/cnxapi-cds/prognostic/v1/list`）：机油寿命百分比（iolm=41）、剩余可行驶里程（4000km）、寿命归零月份、慢漏气胎标识、诊断提示，拆分 4 个传感器；③修正：删除 `CMD_EXTEND_START` 误导别名（曾错误指向 TrunkUnlock）；实测 send-command 白名单完整枚举确认 ExtendStart（远程启动延长）不在其中，锐际不支持，不创建实体。数据驱动创建——无 ccfeatures/prognostic 数据的车型不创建实体，0 unavailable
 - **v3.1.8**：按实车测试清单修复与收敛——①**移除网关不支持实体**：后备箱锁（TrunkUnlock）、灯光寻车（ZoneLighting）、中央区灯光（402）、语音助手初始化/取消、辅助设置、OTA 激活排程在锐际实测均被网关拒绝（`228205 cmdSpec can not empty` / 402），移除实体避免假按钮；②**鸣笛类型/时长参数修正**：ChirpType 从 1-5 修正为 App 枚举 0-4（此前差一错位）；「声光共舞」改为走独立 panic 端点 `POST /api/vehicles/v5/{vin}/panic/{duration}`（灯+喇叭，锐际 404 明确报错）；③**车窗状态**：未关闭时显示「未关闭（部分开启/全开）」，数值型数据（部分车型）显示「未关闭 N%」；④**远程启动时间**：修复毫秒时间戳解析（此前 13 位毫秒解析失败显示「未启动」）；⑤确认门锁/远程启动/重置空调滤芯/刷新类命令均实测正常
 
 - **v3.1.6**：全车型自动适配 + 多 VIN 支持——账号下每一辆车建立独立 coordinator / 设备 / 实体组（设备名 = 车辆昵称/车型，实体前缀 = 车辆名拼音，此前只加载第一辆车）。实体创建全部数据驱动：传感器按 vehicle-status 实际字段过滤（`skip_if_missing` + 创建期 `data_usable`），控制实体按车型能力过滤（`crccFlag` 远程控车 / `dualRearWheel` 双后轮拖车 / 尾门字段 / `preCondStatusDsply` 远程空调等）。因此**任何车型登录（电马纯电 / 锐界L混动 / 领裕柴油 / Ranger皮卡 / 锐际燃油等）只加载自己车真实支持的设备与实体，0 unavailable**（刷新失败保留最后已知状态）。修改扫描间隔/定位开关即时应用到全部车辆
