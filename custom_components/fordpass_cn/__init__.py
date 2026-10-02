@@ -112,6 +112,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass, api, vin, interval, _vehicle_label(vehicle), license_plate,
             track_location, nickname, vehicle_image_url, coordinate_system,
             entry_id=entry.entry_id,
+            car_id=vehicle.get("encryptedCarId") or None,
         )
         coordinators.append(coordinator)
 
