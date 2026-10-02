@@ -49,6 +49,17 @@ CHIRP_TO_ANNOUNCE = {
     "空谷回音": "honk",
     "声光共舞": "panic",
 }
+# 中文类型 → v5 honk 请求的 ChirpType 数字（0-4，与 App 枚举一致，v3.1.8）：
+# 0=chrip1 / 1=chirp2 / 2=chirpHonk / 3=honk / 4=panic。
+# 注意：4（声光共舞 panic）在部分车型走独立的 /panic/{duration} 端点
+# （灯+喇叭警报），锐际实测 404（云端不支持）；其余 0-3 走 POST /honk。
+CHIRP_TO_TYPE = {
+    "雨落荷叶": 0,
+    "急浪拍岸": 1,
+    "汽笛长鸣": 2,
+    "空谷回音": 3,
+    "声光共舞": 4,
+}
 # 保存到 config entry options 的键
 CONF_HONK_DURATION = "honk_duration"
 CONF_CHIRP_TYPE = "chirp_type"
@@ -167,6 +178,10 @@ CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
 # 走 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，实测 200 + commandId）
 CMD_HONK = "Honk"
 HONK_AUTO_OFF_SECONDS = 30                          # 鸣笛寻车自动复位秒数（App 鸣笛约 30 秒自动停止）
+# 声光共舞（panic）端点（v3.1.8）：App 的 FordPanicCommand 走
+# POST /api/vehicles/v5/{vin}/panic/{paniconduration}（灯+喇叭警报）；
+# 锐际实测 404（云端不支持，App 中该类型可能也只在部分车型/蓝牙下可用）。
+PATH_V5_PANIC = "/api/vehicles/v5/{vin}/panic/{duration}"
 CMD_TRAILER_CHECK_START = "TrailerLightCheckStart"  # 拖车灯光检测开始（皮卡/拖车）
 CMD_TRAILER_CHECK_STOP = "TrailerLightCheckStop"    # 拖车灯光检测停止
 CMD_VA_INIT = "InitialVA"                           # 语音助手初始化
