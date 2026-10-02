@@ -26,15 +26,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import capability
 from .const import (
     CHIRP_TYPE_OPTIONS,
-    CMD_ASU_SETTING,
     CMD_AUTO_REFRESH,
-    CMD_CENTRAL_LIGHTING,
-    CMD_OTA_SCHEDULE,
     CMD_REFRESH_STATUS,
     CMD_TRAILER_CHECK_START,
     CMD_TRAILER_CHECK_STOP,
-    CMD_VA_CANCEL,
-    CMD_VA_INIT,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
     DOMAIN,
@@ -46,20 +41,13 @@ _LOGGER = logging.getLogger(__name__)
 
 # (key, 名称, 图标, 命令, 能力检测路径, 检测方式)
 # 检测方式: None=总是创建 / "usable"=值有效 / "on"=值为开启态 / "node"=节点存在
+# v3.1.8: 移除中央区灯光/语音助手初始化/取消/辅助设置/OTA 激活排程——锐际
+# 实测 send-command 网关返回 228205「cmdSpec can not empty」（该车型网关无
+# 这些命令规范）或 402，均无真实作用；保留代码路径便于其他车型确认支持后恢复。
 _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None]] = [
-    # 通用命令——所有车型都有
+    # 通用命令——所有车型都有（实测 200 + commandId）
     ("refresh", "手动拉取最新状态", "mdi:refresh", CMD_REFRESH_STATUS, None, None),
     ("auto_refresh", "请求车机刷新状态", "mdi:refresh-auto", CMD_AUTO_REFRESH, None, None),
-    # 远程控车开启（crccFlag=ON）才有意义
-    ("central_lighting", "中央区灯光", "mdi:car-light-high", CMD_CENTRAL_LIGHTING,
-     [["crccFlag"]], "usable"),
-    ("va_init", "语音助手初始化", "mdi:assistant", CMD_VA_INIT, [["crccFlag"]], "on"),
-    ("va_cancel", "语音助手取消", "mdi:assistant", CMD_VA_CANCEL, [["crccFlag"]], "on"),
-    # 固件/OTA 相关（firmwareUpgInProgress 字段存在即认为支持）
-    ("ota_schedule", "OTA 激活排程", "mdi:update", CMD_OTA_SCHEDULE,
-     [["firmwareUpgInProgress"]], "usable"),
-    ("asu_setting", "辅助设置", "mdi:cog-outline", CMD_ASU_SETTING,
-     [["ccsSettings"]], "node"),
     # 皮卡/拖车（双后轮启用才创建）
     ("trailer_check_start", "拖车灯光检测开始", "mdi:truck-trailer", CMD_TRAILER_CHECK_START,
      [["TPMS", "dualRearWheel"]], "on"),
