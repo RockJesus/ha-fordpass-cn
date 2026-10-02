@@ -67,37 +67,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not vehicles:
         raise RuntimeError("No vehicles found on this FordPass account")
 
-    vin = vehicles[0].get("encryptedVin") or vehicles[0].get("vin")
-    if not vin:
-        raise RuntimeError("Vehicle VIN missing from response")
-
-    _LOGGER.info("fordpass_cn vehicles[0] fields: %s",
-                 json.dumps(vehicles[0], ensure_ascii=False, default=str)[:2500])
-    vehicle_label = None
-    for key in ("localMarketValue", "displayModelName", "modelName",
-                "vehicleModel", "model", "carModel", "vehicleType",
-                "encryptedNickName", "nickName"):
-        val = vehicles[0].get(key)
-        if val and not str(val).strip().startswith("SYNC"):
-            vehicle_label = str(val)
-            break
-    if not vehicle_label:
-        for key in ("encryptedNickName", "nickName"):
-            val = vehicles[0].get(key)
-            if val and not str(val).strip().startswith("SYNC"):
-                vehicle_label = str(val)
-                break
-
-    license_plate = (
-        vehicles[0].get("encryptedLicenseplate")
-        or vehicles[0].get("licenseplate")
-        or None
-    )
-
-    nickname = (
-        vehicles[0].get("encryptedNickName")
-        or vehicles[0].get("nickName")
-        or None
+    # v3.1.6: 多 VIN 支持——账号下每一辆车建立独立的 coordinator / 设备 /
+    # 实体组。各平台按各自车型的 vehicle-status 数据创建实体（无效字段不建），
+    # 因此其他用户用各自福特派账号登录时，只加载自己车型真正支持的设备与实体。
+    _LOGGER.info(
+        "fordpass_cn vehicles: %d 辆, fields[0]=%s",
+        len(vehicles),
+        json.dumps(vehicles[0], ensure_ascii=False, default=str)[:2500],
     )
 
     # v2.7.8: scan_interval is stored/entered in MINUTES (default 30).
@@ -106,43 +82,73 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinate_system = entry.options.get(
         CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
     )
-    vehicle_image_url = (
-        vehicles[0].get("vehicleImageUrl")
-        or vehicles[0].get("imageUrl")
-        or None
-    )
-    coordinator = FordPassCoordinator(
-        hass, api, vin, interval, vehicle_label, license_plate,
-        track_location, nickname, vehicle_image_url, coordinate_system,
-        entry_id=entry.entry_id,
-    )
-    await coordinator.async_config_entry_first_refresh()
+
+    def _vehicle_label(vehicle: dict) -> str | None:
+        for key in ("localMarketValue", "displayModelName", "modelName",
+                    "vehicleModel", "model", "carModel", "vehicleType",
+                    "encryptedNickName", "nickName"):
+            val = vehicle.get(key)
+            if val and not str(val).strip().startswith("SYNC"):
+                return str(val)
+        for key in ("encryptedNickName", "nickName"):
+            val = vehicle.get(key)
+            if val and not str(val).strip().startswith("SYNC"):
+                return str(val)
+        return None
+
+    coordinators = []
+    for vehicle in vehicles:
+        vin = vehicle.get("encryptedVin") or vehicle.get("vin")
+        if not vin:
+            _LOGGER.warning("fordpass_cn skip vehicle without VIN: %s",
+                            json.dumps(vehicle, ensure_ascii=False, default=str)[:500])
+            continue
+        license_plate = (
+            vehicle.get("encryptedLicenseplate") or vehicle.get("licenseplate") or None
+        )
+        nickname = vehicle.get("encryptedNickName") or vehicle.get("nickName") or None
+        vehicle_image_url = vehicle.get("vehicleImageUrl") or vehicle.get("imageUrl") or None
+        coordinator = FordPassCoordinator(
+            hass, api, vin, interval, _vehicle_label(vehicle), license_plate,
+            track_location, nickname, vehicle_image_url, coordinate_system,
+            entry_id=entry.entry_id,
+        )
+        coordinators.append(coordinator)
+
+    if not coordinators:
+        raise RuntimeError("No usable vehicles found on this FordPass account")
+
+    for coordinator in coordinators:
+        await coordinator.async_config_entry_first_refresh()
 
     # v2.10.0: 全车型兼容检测日志——基于 vehicle-status 数据判定车型能力，
     # 与实体创建保持一致（无效字段/不支持功能不创建实体）。
-    try:
-        _vs = coordinator.data.get("vehiclestatus", {}) or {}
-        _caps = {
-            "remote_ctrl": capability.usable(_vs, [["crccFlag"]]),
-            "tailgate": capability.usable(
-                _vs, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
-            ),
-            "ev_charge": capability.usable(_vs, [["chargingStatus"], ["plugStatus"]]),
-            "ev_battery": capability.usable(_vs, [["batteryFillLevel"]]),
-            "diesel": capability.usable(_vs, [["dieselSystemStatus", "exhaustFluidLevel"]]),
-            "trailer": capability.is_on(_vs, [["TPMS", "dualRearWheel"]]),
-            "cabin_temp": capability.usable(_vs, [["CabnAmbTeActl"]]),
-            "deep_sleep": capability.usable(_vs, [["deepSleepInProgress"]]),
-        }
-        _LOGGER.info(
-            "fordpass_cn 全车型能力检测: %s",
-            json.dumps(_caps, ensure_ascii=False),
-        )
-    except Exception:  # noqa: BLE001 - 检测失败不影响集成运行
-        _LOGGER.debug("fordpass_cn capability detection failed", exc_info=True)
+    for coordinator in coordinators:
+        try:
+            _vs = coordinator.data.get("vehiclestatus", {}) or {}
+            _caps = {
+                "vin": coordinator.vin,
+                "remote_ctrl": capability.usable(_vs, [["crccFlag"]]),
+                "tailgate": capability.usable(
+                    _vs, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
+                ),
+                "ev_charge": capability.usable(_vs, [["chargingStatus"], ["plugStatus"]]),
+                "ev_battery": capability.usable(_vs, [["batteryFillLevel"]]),
+                "diesel": capability.usable(_vs, [["dieselSystemStatus", "exhaustFluidLevel"]]),
+                "trailer": capability.is_on(_vs, [["TPMS", "dualRearWheel"]]),
+                "cabin_temp": capability.usable(_vs, [["CabnAmbTeActl"]]),
+                "deep_sleep": capability.usable(_vs, [["deepSleepInProgress"]]),
+            }
+            _LOGGER.info(
+                "fordpass_cn 全车型能力检测: %s",
+                json.dumps(_caps, ensure_ascii=False),
+            )
+        except Exception:  # noqa: BLE001 - 检测失败不影响集成运行
+            _LOGGER.debug("fordpass_cn capability detection failed", exc_info=True)
 
     # v3.0.8: 鸣笛寻车设置（持续时长/鸣笛类型）初始值——来自 entry.options
-    # （select 实体修改时实时写入），默认时长 10 秒、汽笛长鸣（ChirpType=3）
+    # （select 实体修改时实时写入），默认时长 10 秒、汽笛长鸣（ChirpType=3）。
+    # 云端 UserPreference 为账户级，多车共享同一份设置。
     honk_settings = {
         CONF_HONK_DURATION: int(
             entry.options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
@@ -151,9 +157,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "api": api,
-        "coordinator": coordinator,
+        "coordinator": coordinators[0],
+        "coordinators": coordinators,
         "vehicles": vehicles,
-        "vin": vin,
+        "vin": coordinators[0].vin,
         "honk_settings": honk_settings,
     }
 
@@ -175,10 +182,12 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     async_setup_entry 从 entry.options 读取生效（无状态丢失）。
     """
     payload = (hass.data.get(DOMAIN) or {}).get(entry.entry_id)
-    coordinator: FordPassCoordinator | None = (
-        payload.get("coordinator") if isinstance(payload, dict) else None
+    coordinators = (
+        payload.get("coordinators")
+        if isinstance(payload, dict) and payload.get("coordinators")
+        else ([payload["coordinator"]] if isinstance(payload, dict) else None)
     )
-    if coordinator is None:
+    if not coordinators:
         _LOGGER.info(
             "fordpass_cn options saved before entry loaded (entry_id=%s); "
             "will take effect on next entry setup",
@@ -186,18 +195,25 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
         return
     interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES))
-    coordinator.update_interval = timedelta(minutes=interval)
-    coordinator.track_location = bool(entry.options.get("track_location", True))
-    coordinator.coordinate_system = entry.options.get(
+    track_location = bool(entry.options.get("track_location", True))
+    coordinate_system = entry.options.get(
         CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
     )
+    for coordinator in coordinators:
+        coordinator.update_interval = timedelta(minutes=interval)
+        coordinator.track_location = bool(entry.options.get("track_location", True))
+        coordinator.coordinate_system = entry.options.get(
+            CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
+        )
     _LOGGER.info(
-        "fordpass_cn options updated: scan_interval=%smin track_location=%s coordinate_system=%s",
+        "fordpass_cn options updated: scan_interval=%smin track_location=%s coordinate_system=%s (vehicles=%d)",
         interval,
-        coordinator.track_location,
-        coordinator.coordinate_system,
+        track_location,
+        coordinate_system,
+        len(coordinators),
     )
-    await coordinator.async_request_refresh()
+    for coordinator in coordinators:
+        await coordinator.async_request_refresh()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
