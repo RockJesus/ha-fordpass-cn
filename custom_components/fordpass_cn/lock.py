@@ -1,10 +1,11 @@
-"""Lock platform: vehicle lock / unlock。
+"""Lock platform: vehicle lock / unlock + 后备箱锁。
 
 门锁：DoorLock / DoorUnlock。
-后备箱锁（v3.1.8 移除）：TrunkUnlock 在锐际实测 send-command 网关返回
-228205「cmdSpec can not empty」（该车型网关无后备箱解锁命令规范），App
-端后备箱解锁依赖蓝牙直连（TIMA /v1/tima-cons-ford/...），云端通道不可用。
-保留 FordPassTrunkLock 类代码路径，其他车型确认云端支持后可恢复创建。
+后备箱锁（v3.1.10 恢复）：解锁 = TrunkUnlock（后备箱弹开可开启），锁定 =
+DoorLock（全车上锁，网关无独立后备箱锁命令，后备箱随全车锁定）。锐际实测
+TrunkUnlock 被网关 228205「cmdSpec can not empty」拒绝（App 端该命令依赖
+蓝牙 TIMA），但其他车型云端可能支持——全车型支持策略：登录后按车辆能力
+（尾门/内尾门字段）判断创建，云端不支持的车型按下会返回网关明确报错。
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import capability
 from .const import CMD_LOCK, CMD_TRUNK_UNLOCK, CMD_UNLOCK, DOMAIN
 from .coordinator import FordPassCoordinator
 
@@ -28,8 +30,12 @@ async def async_setup_entry(
     locks: list[LockEntity] = []
     for coordinator in coordinators:
         locks.append(FordPassLock(coordinator))
-        # v3.1.8: 后备箱锁实体已移除（TrunkUnlock 被网关 228205 拒绝，
-        # 制造假实体）；门锁实体已覆盖全车锁定/解锁。
+        # 后备箱锁：有尾门 / 内尾门字段（支持后备箱解锁的车型）才创建
+        status = coordinator.data.get("vehiclestatus", {}) or {}
+        if capability.usable(
+            status, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
+        ):
+            locks.append(FordPassTrunkLock(coordinator))
     async_add_entities(locks)
 
 
