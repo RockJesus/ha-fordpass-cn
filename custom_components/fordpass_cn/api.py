@@ -53,6 +53,7 @@ from .const import (
     PATH_B2C_TOKEN,
     PATH_COMMAND_STATUS,
     PATH_CRCC_PROFILE,
+    PATH_AAR_STATUS,
     PATH_GENERATE_PASSCODE,
     PATH_MAINTENANCE_PLAN,
     PATH_OTA_SETTING,
@@ -766,6 +767,42 @@ class FordPassApi:
     async def get_recall(self, vin: str) -> dict[str, Any]:
         """召回信息：GET /api/cnxapi-vds/v1/vehicles/recall（200 实测）。"""
         return await self._get_signed(PATH_RECALL, vin)
+
+    # ------------------------------------------------------------ 空调滤芯（v3.1.7）
+    async def get_air_filter_status(self, vin: str) -> dict[str, Any]:
+        """空调滤芯状态：GET /api/cnxapi-vds/v1/aar/status（200 实测）。
+
+        实测响应（2026-10-02）：
+          {"status":200,"version":"1.0","data":{
+             "xjw":"...",
+             "airFilter":{"isHealthy":true,
+                          "lastReplaceTimestamp":1779615729937,
+                          "lastReplaceTime":"2026/05/24"},
+             "encryptedVin":"..."}}
+        isHealthy=false 表示滤芯需更换；lastReplaceTime 为上次重置（更换）日期。
+        """
+        return await self._get_signed(PATH_AAR_STATUS, vin)
+
+    async def reset_air_filter(self, vin: str) -> dict[str, Any]:
+        """重置空调滤芯：PUT /api/cnxapi-vds/v1/aar/status（200 实测）。
+
+        body = {channel:"IVI", filterStatus:0, xjw, encryptedVin} + sign；
+        实测 200 {"status":200,"version":"1.0","data":"success"}，随后
+        GET aar/status 的 lastReplaceTime 更新为当天（重置生效）。
+        filterStatus 仅接受 0/1；channel 必须为 "IVI"（其余渠道触发 BESL
+        103400 illegal channel）。
+        """
+        enc_vin, xjw = await asyncio.to_thread(
+            lambda: self.crypto.encrypt_field(vin)
+        )
+        body = {
+            "channel": "IVI",
+            "filterStatus": 0,
+            "xjw": xjw,
+            "encryptedVin": enc_vin,
+        }
+        data = await self._request("PUT", PATH_AAR_STATUS, body=body)
+        return data if isinstance(data, dict) else {"raw": data}
 
     async def get_sim_info(self, vin: str) -> dict[str, Any]:
         """SIM 卡信息：GET /api/cnxapi-cds/v1/vehicle/sim/info（200 实测）。"""
