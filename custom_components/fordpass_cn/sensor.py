@@ -118,8 +118,6 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
 
     # ===== A 组：车辆状态（车门 / 点火 / 车窗） =====
     _door_map = {"Closed": "已关闭", "Open": "已打开", "Ajar": "未关紧", "Unknown": "未知"}
-    _win_map = {"Fully_Closed": "已关闭", "Fully_Open": "完全开启", "Partially_Open": "部分开启",
-                "Partial_Open": "部分开启", "Unknown": "未知"}
     sensors += [
         FordPassSensor(coordinator, "driver_door", "主驾车门", None, None, "mdi:car-door", ["doorStatus", "driverDoor"], enum_map=_door_map),
         FordPassSensor(coordinator, "passenger_door", "副驾车门", None, None, "mdi:car-door", ["doorStatus", "passengerDoor"], enum_map=_door_map),
@@ -128,10 +126,11 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         FordPassSensor(coordinator, "tailgate", "尾门", None, None, "mdi:car-back", ["doorStatus", "tailgateDoor"], enum_map=_door_map),
         FordPassSensor(coordinator, "hood", "引擎盖", None, None, "mdi:car", ["doorStatus", "hoodDoor"], enum_map=_door_map),
         FordPassSensor(coordinator, "ignition", "点火状态", None, None, "mdi:engine", ["ignitionStatus"], enum_map={"Off": "已熄火", "On": "已启动", "Run": "已启动", "Unknown": "未知"}),
-        FordPassSensor(coordinator, "driver_window", "主驾车窗", None, None, "mdi:window-closed", ["windowPosition", "driverWindowPosition"], enum_map=_win_map),
-        FordPassSensor(coordinator, "passenger_window", "副驾车窗", None, None, "mdi:window-closed", ["windowPosition", "passWindowPosition"], enum_map=_win_map),
-        FordPassSensor(coordinator, "left_rear_window", "左后车窗", None, None, "mdi:window-closed", ["windowPosition", "rearDriverWindowPos"], enum_map=_win_map),
-        FordPassSensor(coordinator, "right_rear_window", "右后车窗", None, None, "mdi:window-closed", ["windowPosition", "rearPassWindowPos"], enum_map=_win_map),
+        # 车窗（v3.1.8）：字符串枚举→已关闭/未关闭（程度）；数值→未关闭 N%
+        FordPassSensor(coordinator, "driver_window", "主驾车窗", None, None, "mdi:window-closed", ["windowPosition", "driverWindowPosition"], transform=_window_state),
+        FordPassSensor(coordinator, "passenger_window", "副驾车窗", None, None, "mdi:window-closed", ["windowPosition", "passWindowPosition"], transform=_window_state),
+        FordPassSensor(coordinator, "left_rear_window", "左后车窗", None, None, "mdi:window-closed", ["windowPosition", "rearDriverWindowPos"], transform=_window_state),
+        FordPassSensor(coordinator, "right_rear_window", "右后车窗", None, None, "mdi:window-closed", ["windowPosition", "rearPassWindowPos"], transform=_window_state),
     ]
 
     # ===== B 组：健康诊断（机油 / 电池 / 胎压） =====
@@ -531,12 +530,43 @@ def _ts_to_local(v):
         return None
 
 
+def _window_state(v):
+    """车窗位置（v3.1.8）：字符串枚举→中文；数值（0-100 百分比）→百分比。
+
+    锐际实测云端返回字符串（Fully_Closed 等，无百分比数字）；部分车型
+    可能返回数值（0=关闭、100=全开）——数值时显示「未关闭 N%」。
+    """
+    if isinstance(v, str):
+        s = v.strip().lower().replace("_", " ")
+        if s in ("fully closed", "closed", "close"):
+            return "已关闭"
+        if s in ("fully open", "fully opened", "open"):
+            return "未关闭（全开）"
+        if s in ("partially open", "partially opened", "partial open", "vent"):
+            return "未关闭（部分开启）"
+        if s in ("unknown", "not supported", "not_supported", "null"):
+            return None
+        return f"未关闭（{v}）"
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        pct = int(v)
+        if pct <= 0:
+            return "已关闭"
+        return f"未关闭 {pct}%"
+    return None
+
+
 def _remote_start_time(v):
-    """远程启动时间（v3.0.2）：unix 秒 → 本地时间；0/空（未启动）→「未启动」。"""
+    """远程启动时间（v3.1.8）：unix 秒/毫秒自适应 → 本地时间；0/空 →「未启动」。
+
+    此前按 unix 秒解析——若车机返回毫秒时间戳（13 位）会解析失败退化为
+    「未启动」（用户实测"时间不对"的根因）。现在毫秒/秒自适应。
+    """
     if not v:
         return "未启动"
     try:
-        return datetime.datetime.fromtimestamp(int(v)).strftime("%Y-%m-%d %H:%M:%S")
+        fv = float(v)
+        ts = fv / 1000 if fv > 1e12 else fv  # 毫秒/秒自适应
+        return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError, OSError):
         return "未启动"
 
