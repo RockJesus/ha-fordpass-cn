@@ -97,6 +97,13 @@ async def async_setup_entry(
         # v3.0.8: 保存鸣笛设置（与鸣笛开关同为远程控车能力 crccFlag）
         if capability.usable(status, [["crccFlag"]]):
             buttons.append(FordPassSaveHonkSettingsButton(coordinator))
+        # v3.1.7: 空调滤芯重置（AAR 能力车型——vehicle-status 无关，按
+        # coordinator 已拉取的 air_filter 数据创建，无该数据的车型不创建）
+        air_filter = coordinator.data.get("air_filter")
+        if isinstance(air_filter, dict):
+            af_payload = air_filter.get("data") if isinstance(air_filter.get("data"), dict) else None
+            if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
+                buttons.append(FordPassAirFilterResetButton(coordinator))
     async_add_entities(buttons)
 
 
@@ -269,3 +276,40 @@ class FordPassSaveHonkSettingsButton(ButtonEntity):
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 保存鸣笛设置失败（本地设置仍生效）: %s", exc)
             raise
+
+
+class FordPassAirFilterResetButton(ButtonEntity):
+    """重置空调滤芯（v3.1.7）。
+
+    PUT /api/cnxapi-vds/v1/aar/status body={channel:"IVI", filterStatus:0,
+    xjw, encryptedVin}（R3 签名，2026-10-02 实机 200 success）——重置后
+    GET aar/status 的 lastReplaceTime 更新为当天。成功后立即刷新数据，
+    让空调滤芯传感器显示新日期。
+    """
+
+    _attr_icon = "mdi:air-filter"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-reset_air_filter"
+        self._attr_name = "重置空调滤芯"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # 同保存鸣笛设置：不随福特云刷新失败而不可用
+
+    async def async_press(self) -> None:
+        _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.vin)
+        try:
+            resp = await self.coordinator.api.reset_air_filter(self.coordinator.vin)
+            _LOGGER.info("FordPass 空调滤芯重置成功: %s", str(resp)[:200])
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 空调滤芯重置失败: %s", exc)
+            raise
+        # 重置后立即刷新，让传感器显示新的 lastReplaceTime
+        try:
+            await self.coordinator.force_refresh()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 空调滤芯重置后刷新失败: %s", exc)
