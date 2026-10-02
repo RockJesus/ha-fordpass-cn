@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.9.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.10.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -48,9 +48,9 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 |---|---|---|
 | device_tracker | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
 | image | 车辆图片 | 车型渲染图（如「锐际 Escape」） |
-| lock | 车门锁 | 上锁 / 解锁（DoorLock / DoorUnlock，实测正常） |
-| button | 手动拉取最新状态 / 请求车机刷新状态 / 重置空调滤芯 / 拖车灯光检测 | 手动拉取（ForceRefresh 云端拉取回 HA）；请求车机刷新（AutoRefresh 命令车机上报，两个命令键值不同、均已实测 200）；重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`，实测成功） |
-| switch | 远程启动 / 鸣笛寻车 | 远程启动/熄火（实测正常）；鸣笛寻车（开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径；鸣笛时长与类型按设置生效） |
+| lock | 车门锁 / 后备箱锁 | 上锁 / 解锁；后备箱锁（TrunkUnlock，解锁弹开 / 随全车锁定，按车型尾门能力创建） |
+| button | 手动拉取最新状态 / 请求车机刷新状态 / 中央区灯光 / 语音助手初始化/取消 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 | 手动拉取（ForceRefresh）；请求车机刷新（AutoRefresh）；中央区灯光/语音助手/辅助设置/OTA 激活排程按车型能力创建（云端不支持的车型按下返回网关明确报错）；重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`）；拖车灯光检测（双后轮皮卡） |
+| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 | 远程启动/熄火；灯光寻车（ZoneLightingON/OFF，按车型能力创建）；鸣笛寻车（开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径；鸣笛时长与类型按设置生效） |
 | select | 鸣笛持续时长 / 鸣笛类型 | 鸣笛寻车设置：持续时长 5/10/15/20 秒；鸣笛类型 雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞（选择即保存，鸣笛时参数直达车机） |
 | sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌、自动熄火倒计时、车窗（未关闭显示程度/百分比）等 |
 | sensor | 车辆异常警示 | 真实告警接口（胎压监测系统警告等），无异常显示「无异常」 |
@@ -60,25 +60,16 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 | sensor | 机油寿命 / 剩余可行驶里程 / 慢漏气胎 / 预测性诊断 | 预测性诊断（v3.1.9，`GET /api/cnxapi-cds/prognostic/v1/list`，实测 200）：机油寿命百分比、按寿命剩余里程、慢漏气胎标识、诊断提示（featureType=OL 机油寿命族） |
 | sensor | 鸣笛设置云端状态 | 福特账户云端 VehicleAnnouncementSetting 回读（类型 + 时长），App/其他设备改动可同步感知 |
 
-> **v3.1.9 实测限制补充**：send-command 网关返回完整白名单枚举
-> `(ForceRefresh, TrailerLightCheckStart/Stop, TrunkUnlock, DoorLock/DoorUnlock,
-> RemoteStart/RemoteStop, InitialVA, CancelVA, CentralZoneLightingON,
-> ZoneLightingON/OFF, OTAActivationSchedule, ASUSetting, AutoRefresh)`——锐际
-> 实测除已移除项外全部接入，**远程启动延长（ExtendStart）不在白名单**，不创建
-> 实体。ccfeatures 能力位图（`03,04,05,06,07,08,10,11,23`）的数字编码含义
-> 逐车型确认中，先以原始位图呈现。
-
-> **v3.1.8 实测限制（锐际 Escape，2026-10-02 车旁实测）**：send-command 网关
-> 只对部分命令有 cmdSpec，其余返回 `228205 cmdSpec can not empty` 或 402——
-> **后备箱锁解锁（TrunkUnlock）、灯光寻车（ZoneLightingON/OFF）、中央区灯光、
-> 语音助手初始化/取消、辅助设置、OTA 激活排程在本车型云端均不可用**，实体已
-> 移除（避免无反应的假实体）。App 端后备箱解锁/灯光寻车依赖蓝牙直连（TIMA
-> 通道），云端网关不支持；「声光共舞」鸣笛类型走独立 panic 端点（灯+喇叭），
-> 锐际实测 404，选该类型鸣笛会明确报错。鸣笛类型/时长参数已按 App 枚举修正
-> （ChirpType 0-4），请再次实测确认。
+> 实体创建全部数据驱动：登录后按本车云端能力与车辆数据判断（多 VIN 账号下
+> 每辆车独立创建自己支持的实体组），不支持的命令按下会返回网关明确报错，
+> 不制造静默无效实体；刷新失败保留最后已知状态，0 unavailable。
 
 ## 版本历史
 
+<details>
+<summary>📜 版本历史（点击展开）</summary>
+
+- **v3.1.10**：全车型支持策略回归——恢复 v3.1.8 因锐际实测网关拒绝（228205/402）而临时移除的实体创建：**后备箱锁**（TrunkUnlock，按尾门能力创建）、**灯光寻车**（ZoneLightingON/OFF）、**中央区灯光 / 语音助手初始化/取消 / 辅助设置 / OTA 激活排程**（按各自车型能力路径判断）——集成包含全部实体代码，登录后按车辆能力判断创建，云端不支持的车型按下返回网关明确报错、如实提示；删除 `CMD_EXTEND_START` 遗留误导别名。README：版本历史全部折叠；移除「实测限制」段落（实体能力差异已由「按车型能力创建 + 按下明确报错」机制覆盖）
 - **v3.1.9**：新增两组云端服务信息实体（逆向 6.16.0 确认、全部 200 实测）——①**车辆服务信息**（`GET /api/cnxapi-vds/v2/vehicles/ccfeatures`）：云端能力位图 availableFeatures + authedFeatures + 道路救援/客服/售后电话 + 车型电子说明书 URL，这是 App 判断「每辆车支持哪些功能」的权威云端清单；②**预测性诊断**（`GET /api/cnxapi-cds/prognostic/v1/list`）：机油寿命百分比（iolm=41）、剩余可行驶里程（4000km）、寿命归零月份、慢漏气胎标识、诊断提示，拆分 4 个传感器；③修正：删除 `CMD_EXTEND_START` 误导别名（曾错误指向 TrunkUnlock）；实测 send-command 白名单完整枚举确认 ExtendStart（远程启动延长）不在其中，锐际不支持，不创建实体。数据驱动创建——无 ccfeatures/prognostic 数据的车型不创建实体，0 unavailable
 - **v3.1.8**：按实车测试清单修复与收敛——①**移除网关不支持实体**：后备箱锁（TrunkUnlock）、灯光寻车（ZoneLighting）、中央区灯光（402）、语音助手初始化/取消、辅助设置、OTA 激活排程在锐际实测均被网关拒绝（`228205 cmdSpec can not empty` / 402），移除实体避免假按钮；②**鸣笛类型/时长参数修正**：ChirpType 从 1-5 修正为 App 枚举 0-4（此前差一错位）；「声光共舞」改为走独立 panic 端点 `POST /api/vehicles/v5/{vin}/panic/{duration}`（灯+喇叭，锐际 404 明确报错）；③**车窗状态**：未关闭时显示「未关闭（部分开启/全开）」，数值型数据（部分车型）显示「未关闭 N%」；④**远程启动时间**：修复毫秒时间戳解析（此前 13 位毫秒解析失败显示「未启动」）；⑤确认门锁/远程启动/重置空调滤芯/刷新类命令均实测正常
 
@@ -95,9 +86,6 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 - **v3.0.6**：修复「手动拉取最新状态」偶发报错——福特网关在 ForceRefresh 后立即拉取 vehicle-status 时偶发返回非文本响应（原日志 `'utf-8' codec can't decode byte 0xfb`）；现在对非文本响应明确报错并自动重试一次（间隔 2 秒），不再让解码错误打断刷新流程
 - **v3.0.5**：鸣笛寻车由按钮迁移为开关实体（开 = v5 网关 `DELETE /api/vehicles/v5/{vin}/honk` 真实通道触发鸣笛，鸣笛约 30 秒自动停止、开关自动复位；关闭为本地复位——官方 App 停止鸣笛的 POST 加密信封尚未还原）；修复「灯光寻车」开关初始状态显示 `unknown`（默认关闭）；README 折叠历史版本
 - **v3.0.4**：鸣笛寻车落地——中国区 `send-command` 网关白名单不含 `Honk`（HTTP 400 100502），已切换为 v5 网关真实通道（`DELETE /api/vehicles/v5/{vin}/honk`，实测返回 200 + commandId），按钮按下即走该通道下发；后续若拿到官方 App POST 鸣笛的加密信封，将升级为开始/停止双通道（实体不变）
-
-<details>
-<summary>📜 历史版本（点击展开）</summary>
 
 - **v2.7.6**：修复用户名密码登录被 Azure AD B2C 风控拦截——登录请求（authorize → SelfAsserted → confirmed）改用同步 requests 客户端执行（实测 aiohttp 客户端会被 B2C 反自动化风控以 GlobalException 拦截，requests 客户端携带同样的 Cookie/CSRF/参数可正常通过）；csrf 与事务号（tx）优先从登录页 HTML 提取（与官方 WebView 一致）；提交凭证时手机号 `+` 正确 URL 编码；登录失败时区分"风控拦截"（提示等待后再试）与"凭证错误"；登录为一次性配置操作，在线程执行不阻塞事件循环
 - **v2.7.5**：日志与稳定性优化——「车辆异常警示」接口连续失败（如 404）时自动降级：连续 2 次失败后 1 小时内不再请求该接口（避免每轮轮询发无效请求并刷日志噪音），接口恢复后自动重试；令牌自动刷新（HTTP 401 / Cat2 token expired）日志级别从 INFO 降为 DEBUG，减少轮询期噪音；「刷新车辆状态」按钮在命令发送失败时不再重复打印 `no commandId` 警告
