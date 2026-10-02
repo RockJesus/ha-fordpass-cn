@@ -44,30 +44,35 @@ from .coordinator import FordPassCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-# (key, 名称, 图标, 命令, 能力检测路径, 检测方式)
+# (key, 名称, 图标, 命令, 能力检测路径, 检测方式, cmd_spec)
 # 检测方式: None=总是创建 / "usable"=值有效 / "on"=值为开启态 / "node"=节点存在
+# cmd_spec: 可选的 [{"key":..,"value":..}] 列表——HAR 实测（2026-10-03）确认
+#   福特派 InitialVA 带 VAType=4 + Duration=15、CancelVA 带 VAType=4；
+#   不带 cmdSpec 的命令在部分网关/车型下无响应。
 # v3.1.10: 恢复中央区灯光/语音助手初始化/取消/辅助设置/OTA 激活排程（v3.1.8
 # 曾因锐际网关 228205/402 临时移除）——全车型支持策略：登录后按车型能力判断
 # 创建，云端不支持的车型按下会返回网关明确报错，如实提示。
-_BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None]] = [
+_BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, list[dict[str, str]] | None]] = [
     # 通用命令——所有车型都有（实测 200 + commandId）
-    ("refresh", "手动拉取最新状态", "mdi:refresh", CMD_REFRESH_STATUS, None, None),
-    ("auto_refresh", "请求车机刷新状态", "mdi:refresh-auto", CMD_AUTO_REFRESH, None, None),
+    ("refresh", "手动拉取最新状态", "mdi:refresh", CMD_REFRESH_STATUS, None, None, None),
+    ("auto_refresh", "请求车机刷新状态", "mdi:refresh-auto", CMD_AUTO_REFRESH, None, None, None),
     # 远程控车开启（crccFlag=ON）才有意义
     ("central_lighting", "中央区灯光", "mdi:car-light-high", CMD_CENTRAL_LIGHTING,
-     [["crccFlag"]], "usable"),
-    ("va_init", "语音助手初始化", "mdi:assistant", CMD_VA_INIT, [["crccFlag"]], "on"),
-    ("va_cancel", "语音助手取消", "mdi:assistant", CMD_VA_CANCEL, [["crccFlag"]], "on"),
+     [["crccFlag"]], "usable", None),
+    ("va_init", "语音助手初始化", "mdi:assistant", CMD_VA_INIT, [["crccFlag"]], "on",
+     [{"key": "VAType", "value": "4"}, {"key": "Duration", "value": "15"}]),
+    ("va_cancel", "语音助手取消", "mdi:assistant", CMD_VA_CANCEL, [["crccFlag"]], "on",
+     [{"key": "VAType", "value": "4"}]),
     # 固件/OTA 相关（firmwareUpgInProgress 字段存在即认为支持）
     ("ota_schedule", "OTA 激活排程", "mdi:update", CMD_OTA_SCHEDULE,
-     [["firmwareUpgInProgress"]], "usable"),
+     [["firmwareUpgInProgress"]], "usable", None),
     ("asu_setting", "辅助设置", "mdi:cog-outline", CMD_ASU_SETTING,
-     [["ccsSettings"]], "node"),
+     [["ccsSettings"]], "node", None),
     # 皮卡/拖车（双后轮启用才创建）
     ("trailer_check_start", "拖车灯光检测开始", "mdi:truck-trailer", CMD_TRAILER_CHECK_START,
-     [["TPMS", "dualRearWheel"]], "on"),
+     [["TPMS", "dualRearWheel"]], "on", None),
     ("trailer_check_stop", "拖车灯光检测停止", "mdi:truck-trailer", CMD_TRAILER_CHECK_STOP,
-     [["TPMS", "dualRearWheel"]], "on"),
+     [["TPMS", "dualRearWheel"]], "on", None),
 ]
 
 
@@ -93,8 +98,8 @@ async def async_setup_entry(
     for coordinator in coordinators:
         status = coordinator.data.get("vehiclestatus", {}) or {}
         buttons.extend(
-            FordPassButton(coordinator, key, label, icon, command)
-            for key, label, icon, command, paths, check in _BUTTONS
+            FordPassButton(coordinator, key, label, icon, command, cmd_spec)
+            for key, label, icon, command, paths, check, cmd_spec in _BUTTONS
             if _capability_ok(status, paths, check)
         )
         # v3.0.8: 保存鸣笛设置（与鸣笛开关同为远程控车能力 crccFlag）
@@ -116,9 +121,10 @@ async def async_setup_entry(
 
 
 class FordPassButton(ButtonEntity):
-    def __init__(self, coordinator, key, label, icon, command) -> None:
+    def __init__(self, coordinator, key, label, icon, command, cmd_spec=None) -> None:
         self.coordinator = coordinator
         self._command = command
+        self._cmd_spec = cmd_spec
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = label
         self._attr_has_entity_name = False
@@ -153,7 +159,7 @@ class FordPassButton(ButtonEntity):
         resp: Any = None
         try:
             resp = await self.coordinator.api.send_command(
-                self.coordinator.vin, self._command
+                self.coordinator.vin, self._command, self._cmd_spec
             )
         except Exception as exc:  # noqa: BLE001 - keep going so entities still refresh
             _LOGGER.warning("FordPass command %s failed: %s", self._command, exc)
