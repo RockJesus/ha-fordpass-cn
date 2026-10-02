@@ -253,6 +253,13 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         ccf_payload = ccf.get("data") if isinstance(ccf.get("data"), dict) else None
         if isinstance(ccf_payload, dict) and ccf_payload.get("featureData"):
             sensors.append(FordPassCFeaturesSensor(coordinator))
+    # v3.1.13: 鸣笛命令状态（最近一次鸣笛的 announcestatus 结果；未触发时
+    # 显示「未触发」，永远可用——v3.1.2 规则）
+    sensors.append(FordPassAnnounceStatusSensor(coordinator))
+    # v3.1.13: 车辆能力清单 v4（cvfeatures；数据可用才创建）
+    cvv = coordinator.data.get("capability_v4")
+    if isinstance(cvv, dict) and (cvv.get("data") or cvv.get("list")):
+        sensors.append(FordPassCapabilityV4Sensor(coordinator))
     # v3.1.9: 预测性诊断（prognostic，200 实测）——有业务数据才创建
     prog = coordinator.data.get("prognostic")
     if isinstance(prog, dict):
@@ -911,7 +918,22 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
                 a = str(fd["authedFeatures"])
                 try:
                     av = int(a, 16)
-                    out["authed_features"] = f"{a}（0x{a} = {av}，位掩码/超范围 ID，未完全解码）"
+                    # v3.1.13: 双解释——整体值 + 逐位拆解（bitN 对应
+                    # VDSFeatureType 特性 ID；如 A4=0xA4=164=10100100₂ 拆位
+                    # bit2(4)=scheduledServicePlan 计划保养服务 / bit5(32)=rsa
+                    # 道路救援 / bit7(128)=fordCredit 福特金融——推测，待多
+                    # 车型数据验证；App dump 中仅见 "A4""A5" 相邻字符串）
+                    bits = [i for i in range(16) if av & (1 << i)]
+                    if bits:
+                        bit_desc = "、".join(
+                            f"bit{i}=0x{i:X} {self._feature_label(i)}" for i in bits
+                        )
+                        out["authed_features"] = (
+                            f"{a}（0x{a} = {av}；整体值=已授权特性位掩码；"
+                            f"拆位：{bit_desc}；具体位义待多车型数据验证）"
+                        )
+                    else:
+                        out["authed_features"] = f"{a}（0x{a} = {av}，无已知位）"
                 except ValueError:
                     out["authed_features"] = a
             if fd.get("specifiedFeatures") is not None:
@@ -1206,6 +1228,105 @@ class FordPassChirpCloudSensor(SensorEntity):
     def extra_state_attributes(self) -> dict:
         pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
         attrs = dict(pref) if isinstance(pref, dict) else {}
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+
+class FordPassAnnounceStatusSensor(SensorEntity):
+    """鸣笛命令状态（v3.1.13）：最近一次鸣笛的 announcestatus 结果。
+
+    鸣笛开关触发后轮询 GET /api/vehicles/v5/{vin}/announcestatus/{commandId}/
+    （App FordRemoteControlApiService v5 命令轮询组）写入
+    coordinator.announce_status。未触发/查询失败均显示明确中文状态，
+    永远可用（v3.1.2 规则，不显示 unavailable）。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:bullhorn-outline"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-announce_status"
+        self._attr_name = "鸣笛命令状态"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def native_value(self) -> str:
+        st = getattr(self.coordinator, "announce_status", None)
+        if not st:
+            return "未触发"
+        if st.get("status") == "执行中":
+            return "鸣笛命令执行中"
+        if st.get("status") == "查询超时":
+            return "查询失败（可能已执行完成）"
+        # 网关返回的命令状态字段（如 completed / processing / failed）
+        s = st.get("status") or st.get("commandStatus") or "已发送"
+        return str(s)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        st = getattr(self.coordinator, "announce_status", None) or {}
+        attrs = dict(st) if isinstance(st, dict) else {}
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+
+class FordPassCapabilityV4Sensor(SensorEntity):
+    """车辆能力清单 v4（v3.1.13）：GET /api/cnxapi-vds/v4/vehicles/cvfeatures。
+
+    App VcsRepositoryProvider::fetchCapabilityV4——首页能力卡片（PAAK /
+    EV 管理 / 车辆状态 / VA / WIFI / RCC / 哨兵 / 灯光寻车等）的权威来源。
+    数据可用才创建（无数据车型不创建、不显示 unavailable）；响应结构以
+    车型实测为准，能力名列表存放于 extra attributes。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:car-info"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-capability_v4"
+        self._attr_name = "车辆能力清单"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def native_value(self) -> str:
+        data = (self.coordinator.data or {}).get("capability_v4") or {}
+        if not isinstance(data, dict):
+            return "无数据"
+        payload = data.get("data")
+        if isinstance(payload, dict) and payload.get("capabilityList"):
+            items = payload["capabilityList"]
+            if isinstance(items, list) and items:
+                names = [
+                    str(i.get("capabilityName") or i.get("name") or i.get("type"))
+                    for i in items
+                    if isinstance(i, dict)
+                ]
+                if names:
+                    return "、".join(n for n in names if n)
+        return "能力清单已获取（结构待车型实测解析）"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = (self.coordinator.data or {}).get("capability_v4") or {}
+        attrs = dict(data) if isinstance(data, dict) else {}
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
