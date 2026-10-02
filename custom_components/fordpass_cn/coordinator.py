@@ -200,6 +200,17 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass air filter status fetch failed: %s", exc)
             data["air_filter"] = None
+        # v3.1.9: 云端能力+服务信息（ccfeatures）与预测性诊断（prognostic），
+        # 均 200 实测；失败置 None——实体不创建，不显示不可用
+        for key, coro in (
+            ("ccfeatures", self.api.get_ccfeatures(self.vin)),
+            ("prognostic", self.api.get_prognostic(self.vin)),
+        ):
+            try:
+                data[key] = await coro
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass %s fetch failed: %s", key, exc)
+                data[key] = None
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
