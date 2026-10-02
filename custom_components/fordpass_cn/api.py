@@ -70,6 +70,7 @@ from .const import (
     PATH_VEHICLES_LIST,
     PATH_VEHICLE_STATUS,
     PATH_V5_HONK,
+    PATH_V5_PANIC,
     PATH_WARRANTY,
     PATH_WIFI_STATUS,
     PAYLOAD_KEY,
@@ -603,6 +604,60 @@ class FordPassApi:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass v5 honk token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
+            if resp.status >= 400:
+                raise FordPassApiError(resp.status, text[:300])
+            if not text:
+                return {}
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"raw": text}
+
+    async def panic_command(self, vin: str, duration: int = 10) -> dict[str, Any]:
+        """POST /api/vehicles/v5/{vin}/panic/{paniconduration} — 声光共舞。
+
+        App 的 FordPanicCommand（v3.1.8 还原）：灯+喇叭警报，duration 直接
+        写在路径里。锐际实测 404（云端不支持该通道），调用方应捕获
+        FordPassApiError(404) 并向用户明确提示车型不支持。
+        """
+        url = V5_BASE_URL + PATH_V5_PANIC.format(vin=vin, duration=duration)
+        async with self._session.request("POST", url, headers=self._headers()) as resp:
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass %s -> 非文本响应 %d bytes (status=%s): %s",
+                    url, len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
+                )
+            self._log.debug("FordPass v5 panic POST -> %s %s", resp.status, text[:300])
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    async with self._session.request(
+                        "POST", url, headers=self._headers()
+                    ) as resp2:
+                        text2 = await resp2.text()
+                        if resp2.status >= 400:
+                            raise FordPassApiError(resp2.status, text2[:300])
+                        if not text2:
+                            return {}
+                        try:
+                            return json.loads(text2)
+                        except json.JSONDecodeError:
+                            return {"raw": text2}
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass v5 panic token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
                     self._retrying = False
