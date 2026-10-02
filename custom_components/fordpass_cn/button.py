@@ -107,6 +107,11 @@ async def async_setup_entry(
             af_payload = air_filter.get("data") if isinstance(air_filter.get("data"), dict) else None
             if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
                 buttons.append(FordPassAirFilterResetButton(coordinator))
+        # v3.1.13: 停车影像 / 行车监控（车辆列表 encryptedCarId 非空才创建——
+        # 锐际 encryptedCarId=null = 车型无远程影像硬件，不创建、0 unavailable）
+        if getattr(coordinator, "car_id", None):
+            buttons.append(FordPassImageButton(coordinator, "停车影像", "mdi:car-multiple", "parking"))
+            buttons.append(FordPassImageButton(coordinator, "行车监控", "mdi:cctv", "traffic"))
     async_add_entities(buttons)
 
 
@@ -316,3 +321,51 @@ class FordPassAirFilterResetButton(ButtonEntity):
             await self.coordinator.force_refresh()
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 空调滤芯重置后刷新失败: %s", exc)
+
+
+class FordPassImageButton(ButtonEntity):
+    """停车影像 / 行车监控查询按钮（v3.1.13）。
+
+    仅当车辆列表 encryptedCarId 非空时创建（锐际 null = 车型无远程影像
+    硬件，不创建）。按下调用 App 的 VehicleManagerEndpoint：
+    - parking:  POST /api/cnxapi-pds/v1/search-vehicle-parking-image
+    - traffic:  POST /api/cnxapi-pds/v1/search-vehicle-monitor-traffic
+    请求体含 carId（= encryptedCarId）。响应写入 coordinator.data
+    ["remote_image"]（含 kind 标记），供实体/日志查看；响应结构以
+    车型实测为准（云端可能返回记录列表或图片 URL）。
+    """
+
+    _attr_has_entity_name = False
+
+    def __init__(self, coordinator: FordPassCoordinator, label: str, icon: str, kind: str) -> None:
+        self.coordinator = coordinator
+        self._kind = kind
+        self._attr_unique_id = f"{coordinator.vin}-{kind}_image"
+        self._attr_name = label
+        self._attr_icon = icon
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    async def async_press(self) -> None:
+        car_id = getattr(self.coordinator, "car_id", None)
+        if not car_id:
+            raise RuntimeError("车辆无远程影像硬件（encryptedCarId 为空），无法查询")
+        _LOGGER.info("FordPass %s 查询发起 carId=%s", self._kind, car_id)
+        try:
+            if self._kind == "parking":
+                resp = await self.coordinator.api.parking_image(self.coordinator.vin, car_id)
+            else:
+                resp = await self.coordinator.api.monitor_traffic(self.coordinator.vin, car_id)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass %s 查询失败: %s", self._kind, exc)
+            raise
+        self.coordinator.data["remote_image"] = {
+            "kind": self._kind,
+            "car_id": car_id,
+            "resp": resp if isinstance(resp, dict) else {"raw": str(resp)[:2000]},
+        }
+        self.coordinator.async_update_listeners()
+        _LOGGER.info("FordPass %s 查询完成: %s", self._kind, str(resp)[:2000])
