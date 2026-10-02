@@ -808,13 +808,31 @@ class FordPassAirFilterSensor(_ServiceInfoSensor):
 class FordPassCFeaturesSensor(_ServiceInfoSensor):
     """云端能力+服务信息（v3.1.9）：GET /api/cnxapi-vds/v2/vehicles/ccfeatures。
 
-    data.featureData.availableFeatures 为云端能力位图（数字编码，含义逐车型
-    确认中）；authedFeatures 为已授权特性；rsa/contact/afterSalesNumber 为
-    道路救援/客服/售后电话；videoManualUrl 为车型电子说明书 H5 地址。
+    data.featureData.availableFeatures 为云端能力位图（两位 hex 特性 ID 集合，
+    v3.1.11 起逐项展开属性 + 位图二进制视图，便于多车型数据对比解码）；
+    authedFeatures 为已授权特性（单个 hex，如 A4 = 0xA4 = 164）；
+    rsa/contact/afterSalesNumber 为道路救援/客服/售后电话；
+    videoManualUrl 为车型电子说明书 H5 地址。
     """
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "ccfeatures", "车辆服务信息", "mdi:car-info")
+
+    @staticmethod
+    def _features_list(fd: dict) -> list[int]:
+        raw = fd.get("availableFeatures")
+        if not isinstance(raw, str) or not raw.strip():
+            return []
+        out = []
+        for part in raw.split(","):
+            p = part.strip()
+            if not p:
+                continue
+            try:
+                out.append(int(p, 16))
+            except ValueError:
+                out.append(int(p, 10) if p.isdigit() else -1)
+        return out
 
     def _format(self, data: dict) -> str | None:
         payload = data.get("data") if isinstance(data, dict) else None
@@ -824,6 +842,7 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
         feats = fd.get("availableFeatures")
         if not feats:
             return "无能力数据"
+        # 文本保持云端原文（两位 hex），属性里给逐项展开
         return str(feats)
 
     def _summary(self, data: dict) -> dict:
@@ -833,8 +852,26 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
         out: dict[str, Any] = {}
         fd = payload.get("featureData")
         if isinstance(fd, dict):
+            ids = self._features_list(fd)
+            # v3.1.11: 位图逐项展开（feature_03 = 特性 ID 0x03 = 3）
+            for i in sorted(ids):
+                out[f"feature_{i:02x}"] = f"特性 ID 0x{i:02X}（{i}）"
+            out["feature_count"] = len(ids)
+            # 位图二进制视图（bit0..bitN，1 = 该特性可用）——多车型对比用
+            if ids:
+                maxbit = max(ids)
+                bits = ["0"] * (maxbit + 1)
+                for i in ids:
+                    if 0 <= i <= maxbit:
+                        bits[i] = "1"
+                out["feature_bits"] = "".join(reversed(bits))  # MSB 在前
             if fd.get("authedFeatures"):
-                out["authed_features"] = str(fd["authedFeatures"])
+                a = str(fd["authedFeatures"])
+                try:
+                    av = int(a, 16)
+                    out["authed_features"] = f"{a}（0x{a} = {av}）"
+                except ValueError:
+                    out["authed_features"] = a
             if fd.get("specifiedFeatures") is not None:
                 out["specified_features"] = fd["specifiedFeatures"]
         for key, label in (
