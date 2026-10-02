@@ -131,6 +131,13 @@ class FordPassVehicleImage(ImageEntity):
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    if coordinator.vehicle_image_url:
-        async_add_entities([FordPassVehicleImage(hass, coordinator)])
+    # v3.1.6: 多 VIN——每辆车独立创建图片实体（有车辆图片 URL 才创建）
+    payload = hass.data[DOMAIN][entry.entry_id]
+    coordinators = payload.get("coordinators") or [payload["coordinator"]]
+    entities = [
+        FordPassVehicleImage(hass, coordinator)
+        for coordinator in coordinators
+        if coordinator.vehicle_image_url
+    ]
+    if entities:
+        async_add_entities(entities)
