@@ -798,17 +798,22 @@ class FordPassApi:
                 return {"raw": text}
 
     async def capability_v4(self, vin: str) -> dict[str, Any]:
-        """GET /api/cnxapi-vds/v4/vehicles/cvfeatures — 车辆能力清单 v4。
+        """车辆能力清单 v4（cvfeatures）——端点实测迭代。
 
-        v3.1.13 从福特派 6.16.0 还原：App VcsRepositoryProvider::fetchCapabilityV4
-        ——首页能力卡片（PAAK / EV 管理 / 车辆状态 / VA / WIFI / RCC / 哨兵 /
-        灯光寻车等）的权威来源。
-        v3.1.15 修正：改用 _get_signed（encryptedVin/xjw query + R3 签名，与
-        ccfeatures(v2) 同通道）——v3.1.14 用 appKey/appVersion/clientType query
-        实测 404（Resource not found），修正后重新实测；失败如实报错（实体显示
-        错误原因，0 unavailable）。
+        v3.1.13 从福特派 6.16.0 还原端点：App VcsRepositoryProvider::
+        fetchCapabilityV4 → GET /api/cnxapi-vds/v4/vehicles/cvfeatures（首页
+        能力卡片 PAAK/EV 管理/哨兵/灯光等的权威来源）。
+        v3.1.14 实测 GET（appKey query）→ 404；v3.1.15 实测 GET（encryptedVin/
+        xjw + R3 签名，与 ccfeatures(v2) 同通道）→ 仍 404——疑 APIM 路由仅接受
+        POST 或该路径在当前网关版本未开放；v3.1.16 试 POST（encryptedVin/xjw
+        body + R3 签名）。失败如实报错（实体显示错误原因，0 unavailable）。
         """
-        return await self._get_signed(PATH_CVFEATURES, vin)
+        enc_vin, xjw = await asyncio.to_thread(
+            lambda: self.crypto.encrypt_field(vin)
+        )
+        return await self._request(
+            "POST", PATH_CVFEATURES, body={"encryptedVin": enc_vin, "xjw": xjw}
+        )
 
     async def parking_image(self, vin: str, car_id: str) -> dict[str, Any]:
         """POST /api/cnxapi-pds/v1/search-vehicle-parking-image — 停车影像查询。
