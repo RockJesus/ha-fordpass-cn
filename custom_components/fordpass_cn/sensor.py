@@ -809,11 +809,44 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
     """云端能力+服务信息（v3.1.9）：GET /api/cnxapi-vds/v2/vehicles/ccfeatures。
 
     data.featureData.availableFeatures 为云端能力位图（两位 hex 特性 ID 集合，
-    v3.1.11 起逐项展开属性 + 位图二进制视图，便于多车型数据对比解码）；
+    v3.1.12 起按 VDSFeatureType 枚举（逆向福特派 6.16.0 libapp.so 的
+    Object Pool 还原）逐项解码：ID → App 枚举成员名 → 中文含义；
     authedFeatures 为已授权特性（单个 hex，如 A4 = 0xA4 = 164）；
     rsa/contact/afterSalesNumber 为道路救援/客服/售后电话；
     videoManualUrl 为车型电子说明书 H5 地址。
     """
+
+    # VDSFeatureType 枚举（App: mobile_cn_data_adapter vds_type.dart）——
+    # 逆向自福特派 6.16.0 libapp.so 对象池（pp.txt）：off_8=枚举值, off_10=成员名。
+    # vdsFeatureList 在 App 中即为该全集（24 项），availableFeatures 按枚举值过滤。
+    VDS_FEATURE_NAMES: dict[int, tuple[str, str]] = {
+        0x0: ("osb", "在线服务"),
+        0x1: ("maintenanceSchedule", "保养计划"),
+        0x2: ("serviceHistory", "服务记录"),
+        0x3: ("scheduledServicePlan", "计划保养服务"),
+        0x4: ("guides", "指南"),
+        0x5: ("rsa", "道路救援"),
+        0x6: ("extendedWarranty", "延保"),
+        0x7: ("fordCredit", "福特金融"),
+        0x8: ("privateChargingService", "私充服务"),
+        0x9: ("eCard", "电子卡"),
+        0xA: ("WallBoxAutoAuth", "家充桩自动认证"),
+        0xB: ("customerFeedback", "客户反馈"),
+        0xC: ("carGuide", "用车指南"),
+        0xD: ("personalizedPicture", "个性化照片"),
+        0xE: ("rccAuto", "RCC 自动"),
+        0xF: ("InteSubscription", "国际订阅"),
+        0x10: ("MySubscription", "我的订阅"),
+        0x11: ("MyTestDrive", "我的试驾"),
+        0x12: ("MyOrder", "我的订单"),
+        0x13: ("ReservationInquiry", "预约查询"),
+        0x14: ("MaintenanceWorkOrder", "保养工单"),
+        0x15: ("CarPickupDeliveryInquiry", "取送车查询"),
+        0x16: ("MyRights", "我的权益"),
+        0x17: ("SyncToCarNavigation", "同步到车机导航"),
+    }
+    # 枚举上限 = 0x17（23）；超过该范围的特性 ID（如锐际的 0x23=35）
+    # 在 App 中无对应枚举成员，checkVDSFeature 会直接忽略。
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "ccfeatures", "车辆服务信息", "mdi:car-info")
@@ -834,6 +867,12 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
                 out.append(int(p, 10) if p.isdigit() else -1)
         return out
 
+    def _feature_label(self, i: int) -> str:
+        if i in self.VDS_FEATURE_NAMES:
+            en, zh = self.VDS_FEATURE_NAMES[i]
+            return f"{en}（{zh}）"
+        return "未定义特性 ID（App 枚举越界，忽略）"
+
     def _format(self, data: dict) -> str | None:
         payload = data.get("data") if isinstance(data, dict) else None
         fd = payload.get("featureData") if isinstance(payload, dict) else None
@@ -842,7 +881,7 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
         feats = fd.get("availableFeatures")
         if not feats:
             return "无能力数据"
-        # 文本保持云端原文（两位 hex），属性里给逐项展开
+        # 文本保留云端原文（两位 hex），名称见属性
         return str(feats)
 
     def _summary(self, data: dict) -> dict:
@@ -853,10 +892,13 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
         fd = payload.get("featureData")
         if isinstance(fd, dict):
             ids = self._features_list(fd)
-            # v3.1.11: 位图逐项展开（feature_03 = 特性 ID 0x03 = 3）
+            # v3.1.12: 位图逐项解码（feature_03 = scheduledServicePlan（计划保养服务））
             for i in sorted(ids):
-                out[f"feature_{i:02x}"] = f"特性 ID 0x{i:02X}（{i}）"
+                out[f"feature_{i:02x}"] = f"特性 ID 0x{i:02X}（{i}）= {self._feature_label(i)}"
             out["feature_count"] = len(ids)
+            named = [self._feature_label(i) for i in sorted(ids) if i in self.VDS_FEATURE_NAMES]
+            if named:
+                out["features"] = "、".join(named)
             # 位图二进制视图（bit0..bitN，1 = 该特性可用）——多车型对比用
             if ids:
                 maxbit = max(ids)
@@ -869,7 +911,7 @@ class FordPassCFeaturesSensor(_ServiceInfoSensor):
                 a = str(fd["authedFeatures"])
                 try:
                     av = int(a, 16)
-                    out["authed_features"] = f"{a}（0x{a} = {av}）"
+                    out["authed_features"] = f"{a}（0x{a} = {av}，位掩码/超范围 ID，未完全解码）"
                 except ValueError:
                     out["authed_features"] = a
             if fd.get("specifiedFeatures") is not None:
