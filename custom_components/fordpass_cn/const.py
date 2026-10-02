@@ -127,6 +127,10 @@ PATH_WARRANTY = "/api/cnxapi-cds/v1/warranty"
 #         encryptedVin} → data:"success"；重置后 lastReplaceTime 更新为当天。
 #   内部链路：vds 网关转调 BESL /api/besl/maintenance/reminder/ivi/filter/v1/status。
 PATH_AAR_STATUS = "/api/cnxapi-vds/v1/aar/status"
+# v3.1.9: 云端能力+服务信息（200 实测，锐际）
+PATH_CCFEATURES = "/api/cnxapi-vds/v2/vehicles/ccfeatures"
+# v3.1.9: 预测性诊断（机油寿命/剩余里程/慢漏气胎，200 实测，锐际）
+PATH_PROGNOSTIC = "/api/cnxapi-cds/prognostic/v1/list"
 
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
@@ -170,8 +174,9 @@ CMD_ENGINE_STOP = "RemoteStop"
 CMD_TRUNK_UNLOCK = "TrunkUnlock"
 CMD_LIGHT_FIND_ON = "ZoneLightingON"
 CMD_LIGHT_FIND_OFF = "ZoneLightingOFF"
-CMD_EXTEND_START = CMD_TRUNK_UNLOCK  # 兼容旧名（后备箱解锁）
-# v2.10.0: 白名单全部命令补全（此前未接入的项）
+# v3.1.9: 删除 CMD_EXTEND_START 旧别名（曾错误指向 TrunkUnlock；App 远程启动延长
+# 的真实规范是 FORD_EXTEND_START，但锐际实测 send-command 网关白名单不含此项，
+# 不支持——见 v3.1.9 实测限制）。
 CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"      # 中央区灯光开（无独立关闭命令）
 CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
 # 鸣笛寻车（v3.0.5 起为 switch）：中国区 send-command 网关白名单不含 Honk（HTTP 400 100502），
