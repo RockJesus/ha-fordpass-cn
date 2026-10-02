@@ -219,12 +219,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.logger.debug("FordPass %s fetch failed: %s", key, exc)
                 data[key] = None
         # v3.1.13: 车辆能力清单 v4（cvfeatures，App 首页能力卡片权威来源；
-        # 失败置 None——实体不创建，不显示不可用）
+        # 失败存 {"error":...} 而非 None——「车辆能力清单」传感器永远创建，
+        # 如实显示获取失败原因（0 unavailable），便于本轮端点实测诊断）
         try:
             data["capability_v4"] = await self.api.capability_v4(self.vin)
+            if not isinstance(data["capability_v4"], dict):
+                data["capability_v4"] = {"raw": str(data["capability_v4"])[:500]}
         except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass capability_v4 fetch failed: %s", exc)
-            data["capability_v4"] = None
+            self.logger.warning("FordPass capability_v4 fetch failed: %s", exc)
+            data["capability_v4"] = {"error": str(exc)[:500], "ok": False}
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
