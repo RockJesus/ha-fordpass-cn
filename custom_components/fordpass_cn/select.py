@@ -36,28 +36,32 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    status = coordinator.data.get("vehiclestatus", {}) or {}
+    # v3.1.6: 多 VIN——每辆车独立创建设置实体；
+    # 设置内容为账户级（云端 UserPreference），多车共享同一份 settings
+    payload = hass.data[DOMAIN][entry.entry_id]
+    coordinators = payload.get("coordinators") or [payload["coordinator"]]
+    settings = payload.setdefault(
+        "honk_settings",
+        {
+            CONF_HONK_DURATION: int(
+                entry.options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
+            ),
+            CONF_CHIRP_TYPE: entry.options.get(
+                CONF_CHIRP_TYPE, DEFAULT_CHIRP_TYPE
+            ),
+        },
+    )
     entities: list[SelectEntity] = []
-    # 鸣笛寻车设置与鸣笛开关同为远程控车能力（crccFlag 有效才创建）
-    if capability.usable(status, [["crccFlag"]]):
-        settings = hass.data[DOMAIN][entry.entry_id].setdefault(
-            "honk_settings",
-            {
-                CONF_HONK_DURATION: int(
-                    entry.options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
-                ),
-                CONF_CHIRP_TYPE: entry.options.get(
-                    CONF_CHIRP_TYPE, DEFAULT_CHIRP_TYPE
-                ),
-            },
-        )
-        entities.append(
-            FordPassHonkDurationSelect(hass, entry, coordinator, settings)
-        )
-        entities.append(
-            FordPassChirpTypeSelect(hass, entry, coordinator, settings)
-        )
+    for coordinator in coordinators:
+        status = coordinator.data.get("vehiclestatus", {}) or {}
+        # 鸣笛寻车设置与鸣笛开关同为远程控车能力（crccFlag 有效才创建）
+        if capability.usable(status, [["crccFlag"]]):
+            entities.append(
+                FordPassHonkDurationSelect(hass, entry, coordinator, settings)
+            )
+            entities.append(
+                FordPassChirpTypeSelect(hass, entry, coordinator, settings)
+            )
     async_add_entities(entities)
 
 
