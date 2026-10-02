@@ -270,6 +270,14 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             sensors.append(FordPassRangeSensor(coordinator))
             sensors.append(FordPassSlowLeakSensor(coordinator))
             sensors.append(FordPassDiagnosticSensor(coordinator))
+    # v3.1.17: 未读消息（GET /api/cnxapi-message/app/messages/summary，
+    # HAR 实测 200）——有 data.summary 才创建（无数据车型不创建，
+    # 不显示不可用）
+    msg = coordinator.data.get("messages")
+    if isinstance(msg, dict):
+        msg_payload = msg.get("data") if isinstance(msg.get("data"), dict) else None
+        if isinstance(msg_payload, dict) and isinstance(msg_payload.get("summary"), dict):
+            sensors.append(FordPassMessageSensor(coordinator))
     return sensors
 
 
@@ -1188,6 +1196,54 @@ class FordPassWifiSensor(_ServiceInfoSensor):
             if status.get(k) not in (None, "", "Null"):
                 keep[k] = status[k]
         return keep
+
+
+class FordPassMessageSensor(_ServiceInfoSensor):
+    """未读消息（v3.1.17）：GET /api/cnxapi-message/app/messages/summary。
+
+    HAR 实测（2026-10-03）：data.summary.{allRedDotStatus, unReadCategoryId,
+    unReadCategoryDescription, readMessageSubject} + data.categories[]。
+    allRedDotStatus = 0 无未读 / 1 有未读；categories[].redDotStatus 为各
+    分类红点。无 summary 数据的车型不创建（0 unavailable）。
+    """
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "messages", "未读消息", "mdi:email-alert")
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        summary = payload.get("summary") if isinstance(payload, dict) else None
+        if not isinstance(summary, dict):
+            return None
+        red = summary.get("allRedDotStatus")
+        if red is None:
+            return None
+        try:
+            has = int(red) != 0
+        except (TypeError, ValueError):
+            has = bool(red)
+        return "有未读消息" if has else "无未读消息"
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        summary = payload.get("summary") if isinstance(payload, dict) else None
+        out: dict[str, Any] = {}
+        if isinstance(summary, dict):
+            if summary.get("unReadCategoryDescription"):
+                out["unread_description"] = str(summary["unReadCategoryDescription"])
+            if summary.get("readMessageSubject"):
+                out["latest_message"] = str(summary["readMessageSubject"])
+            if summary.get("unReadCategoryId"):
+                out["unread_category_id"] = str(summary["unReadCategoryId"])
+        cats = payload.get("categories") if isinstance(payload, dict) else None
+        if isinstance(cats, list):
+            unread = [
+                c.get("categoryId") for c in cats
+                if isinstance(c, dict) and c.get("redDotStatus")
+            ]
+            if unread:
+                out["unread_categories"] = unread
+        return out
 
 
 class FordPassChirpCloudSensor(SensorEntity):
