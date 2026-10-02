@@ -50,14 +50,16 @@ from .const import (
     OS_TYPE,
     OS_VERSION,
     PATH_ACTIVE_ALERT,
+    PATH_AAR_STATUS,
     PATH_B2C_TOKEN,
+    PATH_CCFEATURES,
     PATH_COMMAND_STATUS,
     PATH_CRCC_PROFILE,
-    PATH_AAR_STATUS,
     PATH_GENERATE_PASSCODE,
     PATH_MAINTENANCE_PLAN,
     PATH_OTA_SETTING,
     PATH_PASSCODE_LOGIN,
+    PATH_PROGNOSTIC,
     PATH_QUERY_LOCATION,
     PATH_RECALL,
     PATH_REFRESH_TOKEN,
@@ -858,6 +860,40 @@ class FordPassApi:
         }
         data = await self._request("PUT", PATH_AAR_STATUS, body=body)
         return data if isinstance(data, dict) else {"raw": data}
+
+    async def get_ccfeatures(self, vin: str) -> dict[str, Any]:
+        """云端能力+服务信息：GET /api/cnxapi-vds/v2/vehicles/ccfeatures（v3.1.9，200 实测）。
+
+        实测响应（2026-10-02，锐际）：
+          {"status":200,"data":{
+             "rsaNumber":"4006501668", "contactNumber":"4009213266",
+             "afterSalesNumber":"4000031111",
+             "videoManualUrl":"https://h5fya.fuyu.club/manual/escape/index.html",
+             "featureData":{"availableFeatures":"03,04,05,06,07,08,10,11,23",
+                            "authedFeatures":"A4", "specifiedFeatures":null},
+             "sign":"...","timestamp":...}}
+        featureData.availableFeatures 是云端能力位图（数字编码，含义逐车型确认）；
+        rsa/contact/afterSalesNumber 为救援/客服/售后电话；videoManualUrl 为
+        车型电子说明书 H5。App 用该接口判断每辆车支持哪些功能。
+        """
+        return await self._get_signed(PATH_CCFEATURES, vin)
+
+    async def get_prognostic(self, vin: str) -> dict[str, Any]:
+        """预测性诊断：GET /api/cnxapi-cds/prognostic/v1/list（v3.1.9，200 实测）。
+
+        实测响应（2026-10-02，锐际）：
+          {"status":200,"data":{
+             "featureType":"OL", "confidenceLevel":2, "shouldShow":false,
+             "urgency":"N", "messageDesc":null, "messageCode":null,
+             "eventTime":"2026/10/02 15:09:15", "iolm":41, "remainingKMs":4000,
+             "dateOnZero":"2027/02", "tiresWithSlowLeak":null, ...}}
+        - featureType "OL" = Oil Life（机油寿命）；iolm 为寿命百分比（41）；
+        - remainingKMs 为按当前寿命剩余可行驶里程（4000 km）；
+        - dateOnZero 为寿命归零（需保养）的预计月份；
+        - tiresWithSlowLeak 为慢漏气胎标识（null=无）；urgency/messageDesc 为
+          需展示的诊断提示（urgency 枚举，messageDesc 为文案）。
+        """
+        return await self._get_signed(PATH_PROGNOSTIC, vin)
 
     async def get_sim_info(self, vin: str) -> dict[str, Any]:
         """SIM 卡信息：GET /api/cnxapi-cds/v1/vehicle/sim/info（200 实测）。"""
