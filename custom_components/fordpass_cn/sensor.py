@@ -247,6 +247,21 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         af_payload = air_filter.get("data") if isinstance(air_filter.get("data"), dict) else None
         if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
             sensors.append(FordPassAirFilterSensor(coordinator))
+    # v3.1.9: 云端能力+服务信息（ccfeatures，200 实测）——有 featureData 才创建
+    ccf = coordinator.data.get("ccfeatures")
+    if isinstance(ccf, dict):
+        ccf_payload = ccf.get("data") if isinstance(ccf.get("data"), dict) else None
+        if isinstance(ccf_payload, dict) and ccf_payload.get("featureData"):
+            sensors.append(FordPassCFeaturesSensor(coordinator))
+    # v3.1.9: 预测性诊断（prognostic，200 实测）——有业务数据才创建
+    prog = coordinator.data.get("prognostic")
+    if isinstance(prog, dict):
+        prog_payload = prog.get("data") if isinstance(prog.get("data"), dict) else None
+        if isinstance(prog_payload, dict):
+            sensors.append(FordPassOilLifeSensor(coordinator))
+            sensors.append(FordPassRangeSensor(coordinator))
+            sensors.append(FordPassSlowLeakSensor(coordinator))
+            sensors.append(FordPassDiagnosticSensor(coordinator))
     return sensors
 
 
@@ -701,10 +716,10 @@ class _ServiceInfoSensor(SensorEntity):
 
     _attr_has_entity_name = False
 
-    def __init__(self, coordinator, key: str, label: str, icon: str) -> None:
+    def __init__(self, coordinator, key: str, label: str, icon: str, uid: str | None = None) -> None:
         self.coordinator = coordinator
         self._data_key = key
-        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_unique_id = f"{coordinator.vin}-{uid or key}"
         self._attr_name = label
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
@@ -783,6 +798,165 @@ class FordPassAirFilterSensor(_ServiceInfoSensor):
             out["last_replace"] = str(air["lastReplaceTime"])
         if air.get("lastReplaceTimestamp") is not None:
             out["last_replace_timestamp"] = air["lastReplaceTimestamp"]
+        return out
+
+
+# ---------------------------------------------------------------------------
+# v3.1.9: 云端能力+服务信息（ccfeatures）与预测性诊断（prognostic）
+# 实测（2026-10-02，锐际）均为 HTTP 200；无数据车型不创建实体。
+# ---------------------------------------------------------------------------
+class FordPassCFeaturesSensor(_ServiceInfoSensor):
+    """云端能力+服务信息（v3.1.9）：GET /api/cnxapi-vds/v2/vehicles/ccfeatures。
+
+    data.featureData.availableFeatures 为云端能力位图（数字编码，含义逐车型
+    确认中）；authedFeatures 为已授权特性；rsa/contact/afterSalesNumber 为
+    道路救援/客服/售后电话；videoManualUrl 为车型电子说明书 H5 地址。
+    """
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "ccfeatures", "车辆服务信息", "mdi:car-info")
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        fd = payload.get("featureData") if isinstance(payload, dict) else None
+        if not isinstance(fd, dict):
+            return None
+        feats = fd.get("availableFeatures")
+        if not feats:
+            return "无能力数据"
+        return str(feats)
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[str, Any] = {}
+        fd = payload.get("featureData")
+        if isinstance(fd, dict):
+            if fd.get("authedFeatures"):
+                out["authed_features"] = str(fd["authedFeatures"])
+            if fd.get("specifiedFeatures") is not None:
+                out["specified_features"] = fd["specifiedFeatures"]
+        for key, label in (
+            ("rsaNumber", "roadside_assist"),
+            ("contactNumber", "customer_service"),
+            ("afterSalesNumber", "after_sales"),
+        ):
+            if payload.get(key):
+                out[label] = str(payload[key])
+        if payload.get("videoManualUrl"):
+            out["manual_url"] = str(payload["videoManualUrl"])
+        return out
+
+
+class FordPassOilLifeSensor(_ServiceInfoSensor):
+    """机油寿命（v3.1.9）：prognostic.data.iolm（%）。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "prognostic", "机油寿命", "mdi:oil")
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        iolm = payload.get("iolm") if isinstance(payload, dict) else None
+        if iolm is None:
+            return None
+        return f"{int(iolm)}%"
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[str, Any] = {}
+        if payload.get("dateOnZero"):
+            out["zero_on"] = str(payload["dateOnZero"])  # 寿命归零（需保养）月份
+        if payload.get("remainingKMs") is not None:
+            out["remaining_km"] = payload["remainingKMs"]
+        return out
+
+
+class FordPassRangeSensor(_ServiceInfoSensor):
+    """剩余可行驶里程（v3.1.9）：prognostic.data.remainingKMs（km）。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "prognostic", "剩余可行驶里程", "mdi:road-variant", uid="prognostic_range")
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        km = payload.get("remainingKMs") if isinstance(payload, dict) else None
+        if km is None:
+            return None
+        return f"{int(km)} km"
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[str, Any] = {}
+        if payload.get("iolm") is not None:
+            out["oil_life"] = f"{int(payload['iolm'])}%"
+        if payload.get("dateOnZero"):
+            out["zero_on"] = str(payload["dateOnZero"])
+        return out
+
+
+class FordPassSlowLeakSensor(_ServiceInfoSensor):
+    """慢漏气胎（v3.1.9）：prognostic.data.tiresWithSlowLeak（null=无）。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "prognostic", "慢漏气胎", "mdi:tire", uid="prognostic_slowleak")
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        leak = payload.get("tiresWithSlowLeak") if isinstance(payload, dict) else None
+        if leak is None:
+            return "无"
+        if isinstance(leak, (list, str)) and len(str(leak)) == 0:
+            return "无"
+        return str(leak)
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[str, Any] = {}
+        if payload.get("eventTime"):
+            out["event_time"] = str(payload["eventTime"])
+        if payload.get("remainingKMs") is not None:
+            out["remaining_km"] = payload["remainingKMs"]
+        return out
+
+
+class FordPassDiagnosticSensor(_ServiceInfoSensor):
+    """预测性诊断提示（v3.1.9）：prognostic 的 urgency/messageDesc/messageCode。"""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "prognostic", "预测性诊断", "mdi:alert-decagram", uid="prognostic_msg")
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        desc = payload.get("messageDesc")
+        if desc:
+            return str(desc)
+        urgency = payload.get("urgency")
+        if urgency in (None, "", "N"):
+            return "无异常"
+        return f"提示（{urgency}）"
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[str, Any] = {}
+        if payload.get("featureType"):
+            out["feature_type"] = str(payload["featureType"])  # OL=机油寿命
+        if payload.get("urgency"):
+            out["urgency"] = str(payload["urgency"])
+        if payload.get("messageCode"):
+            out["message_code"] = payload["messageCode"]
+        if payload.get("eventTime"):
+            out["event_time"] = str(payload["eventTime"])
         return out
 
 
