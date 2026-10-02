@@ -256,9 +256,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # v3.1.13: 鸣笛命令状态（最近一次鸣笛的 announcestatus 结果；未触发时
     # 显示「未触发」，永远可用——v3.1.2 规则）
     sensors.append(FordPassAnnounceStatusSensor(coordinator))
-    # v3.1.13: 车辆能力清单 v4（cvfeatures；数据可用才创建）
+    # v3.1.13: 车辆能力清单 v4（cvfeatures；任何 dict 响应都创建——
+    # 失败时如实显示错误原因，数据可用时显示能力名；0 unavailable）
     cvv = coordinator.data.get("capability_v4")
-    if isinstance(cvv, dict) and (cvv.get("data") or cvv.get("list")):
+    if isinstance(cvv, dict) and cvv:
         sensors.append(FordPassCapabilityV4Sensor(coordinator))
     # v3.1.9: 预测性诊断（prognostic，200 实测）——有业务数据才创建
     prog = coordinator.data.get("prognostic")
@@ -1310,6 +1311,8 @@ class FordPassCapabilityV4Sensor(SensorEntity):
         data = (self.coordinator.data or {}).get("capability_v4") or {}
         if not isinstance(data, dict):
             return "无数据"
+        if data.get("error"):
+            return f"获取失败：{data['error']}"
         payload = data.get("data")
         if isinstance(payload, dict) and payload.get("capabilityList"):
             items = payload["capabilityList"]
