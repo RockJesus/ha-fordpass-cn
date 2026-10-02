@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.1.19**：`capability_v4`（cvfeatures v4）拉取失败日志降级——该路径经 v3.1.14-16 多轮 GET/POST 实测均 404（中国区网关无此路由，App 当前版本未实际调用），为预期状态，不再每次刷新刷 WARNING（降为 DEBUG）；「车辆能力清单」传感器仍如实显示获取失败原因，0 unavailable——能力数据以已生效的 ccfeatures（v2）位图 + VDSFeatureType 解码为准
 - **v3.1.18**：修复 v3.1.17 未读消息传感器未创建问题——`api.py` 缺失 `PATH_MESSAGES_SUMMARY` 导入导致拉取时 NameError（coordinator 捕获后 data 置 None、实体不创建）——补齐导入后 messages/summary 正常拉取（HAR + 实机 200：allRedDotStatus=1 有未读），「未读消息」传感器按数据创建，0 unavailable
 - **v3.1.17**：语音助手按钮补齐 cmdSpec + 新增未读消息传感器——① **InitialVA/CancelVA 修复**：HAR 实测（2026-10-03）确认福特派真实请求带 `cmdSpec`（InitialVA = VAType:4 + Duration:15、CancelVA = VAType:4），此前集成只发 commandType 导致网关 `228205 cmdSpec can not empty` / 部分车型无响应——`send_command` 新增可选 cmdSpec 参数，语音助手按钮按福特派真实参数发送；② **未读消息传感器**：`GET /api/cnxapi-message/app/messages/summary`（HAR 实测 200，仅 timestamp+sign 签名）——显示「有/无未读消息」+ 属性含未读描述 / 最新消息主题 / 未读分类列表；无该数据的车型不创建，0 unavailable
 - **v3.1.15**：cvfeatures v4 端点请求修正——v3.1.14 用 `appKey/appVersion/clientType` query 实测 404（Resource not found），本次改用 `_get_signed`（encryptedVin/xjw query + R3 签名，与 ccfeatures(v2) 同通道）重新实测；「车辆能力清单」传感器如实显示结果（成功=能力名列表，失败=错误原因，0 unavailable）
