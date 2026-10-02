@@ -55,9 +55,12 @@ from .const import (
     PATH_CCFEATURES,
     PATH_COMMAND_STATUS,
     PATH_CRCC_PROFILE,
+    PATH_CVFEATURES,
     PATH_GENERATE_PASSCODE,
     PATH_MAINTENANCE_PLAN,
+    PATH_MONITOR_TRAFFIC,
     PATH_OTA_SETTING,
+    PATH_PARKING_IMAGE,
     PATH_PASSCODE_LOGIN,
     PATH_PROGNOSTIC,
     PATH_QUERY_LOCATION,
@@ -69,6 +72,7 @@ from .const import (
     PATH_THIRD_PARTY_TOKEN,
     PATH_USER_PREF_GROUPS,
     PATH_USER_PREF_LIST,
+    PATH_V5_ANNOUNCE_STATUS,
     PATH_VEHICLES_LIST,
     PATH_VEHICLE_STATUS,
     PATH_V5_HONK,
@@ -730,6 +734,103 @@ class FordPassApi:
                 return json.loads(text)
             except json.JSONDecodeError:
                 return {"raw": text}
+
+    async def announcestatus(self, vin: str, command_id: str) -> dict[str, Any]:
+        """GET /api/vehicles/v5/{vin}/announcestatus/{commandId}/ — 鸣笛命令状态。
+
+        v3.1.13 从福特派 6.16.0（libapp.so, blutter 对象池）还原：App
+        FordRemoteControlApiService 的 v5 命令轮询组（statusrefresh/{commandId} /
+        engine/start/{commandId} / doors/lock/{commandId} / announcestatus/{commandId}
+        并列）——鸣笛（POST honk）返回 commandId 后，以此查询命令执行结果。
+        与 honk 同为 v5 明文通道（无 wbsk 加密信封）。
+        """
+        url = V5_BASE_URL + PATH_V5_ANNOUNCE_STATUS.format(
+            vin=vin, command_id=command_id
+        )
+        async with self._session.request("GET", url, headers=self._headers()) as resp:
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass %s -> 非文本响应 %d bytes (status=%s): %s",
+                    url, len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
+                )
+            self._log.debug(
+                "FordPass v5 announcestatus -> %s %s", resp.status, text[:500]
+            )
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    async with self._session.request(
+                        "GET", url, headers=self._headers()
+                    ) as resp2:
+                        text2 = await resp2.text()
+                        if resp2.status >= 400:
+                            raise FordPassApiError(resp2.status, text2[:300])
+                        if not text2:
+                            return {}
+                        try:
+                            return json.loads(text2)
+                        except json.JSONDecodeError:
+                            return {"raw": text2}
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error(
+                        "FordPass v5 announcestatus token refresh failed: %s", exc
+                    )
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
+            if resp.status >= 400:
+                raise FordPassApiError(resp.status, text[:300])
+            if not text:
+                return {}
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"raw": text}
+
+    async def capability_v4(self, vin: str) -> dict[str, Any]:
+        """GET /api/cnxapi-vds/v4/vehicles/cvfeatures — 车辆能力清单 v4。
+
+        v3.1.13 从福特派 6.16.0 还原：App VcsRepositoryProvider::fetchCapabilityV4
+        ——首页能力卡片（PAAK / EV 管理 / 车辆状态 / VA / WIFI / RCC / 哨兵 /
+        灯光寻车等）的权威来源。此前集成实测 404（疑缺完整 query），本次接入后
+        实测；失败时如实报错，调用方不创建实体（0 unavailable 保持）。
+        """
+        return await self._request(
+            "GET",
+            PATH_CVFEATURES,
+            query={"appKey": "fordpass", "appVersion": APP_VERSION, "clientType": CLIENT_TYPE},
+        )
+
+    async def parking_image(self, vin: str, car_id: str) -> dict[str, Any]:
+        """POST /api/cnxapi-pds/v1/search-vehicle-parking-image — 停车影像查询。
+
+        v3.1.13 还原：App VehicleManagerEndpoint.searchVehicleParkingImage，
+        请求体含 carId（= 车辆列表 encryptedCarId）。锐际 encryptedCarId=null
+        → 集成不创建按钮、不调用。响应含图片记录列表（车型支持时）。
+        """
+        return await self._request(
+            "POST", PATH_PARKING_IMAGE, {"carId": car_id, "vin": vin}
+        )
+
+    async def monitor_traffic(self, vin: str, car_id: str) -> dict[str, Any]:
+        """POST /api/cnxapi-pds/v1/search-vehicle-monitor-traffic — 行车监控查询。
+
+        App VehicleManagerEndpoint.searchVehicleMonitorTraffic，与停车影像
+        同组（PDS 网关），请求体含 carId。锐际无该硬件 → 不创建实体。
+        """
+        return await self._request(
+            "POST", PATH_MONITOR_TRAFFIC, {"carId": car_id, "vin": vin}
+        )
 
     async def save_honk_settings(
         self,
