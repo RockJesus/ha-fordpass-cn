@@ -802,14 +802,13 @@ class FordPassApi:
 
         v3.1.13 从福特派 6.16.0 还原：App VcsRepositoryProvider::fetchCapabilityV4
         ——首页能力卡片（PAAK / EV 管理 / 车辆状态 / VA / WIFI / RCC / 哨兵 /
-        灯光寻车等）的权威来源。此前集成实测 404（疑缺完整 query），本次接入后
-        实测；失败时如实报错，调用方不创建实体（0 unavailable 保持）。
+        灯光寻车等）的权威来源。
+        v3.1.15 修正：改用 _get_signed（encryptedVin/xjw query + R3 签名，与
+        ccfeatures(v2) 同通道）——v3.1.14 用 appKey/appVersion/clientType query
+        实测 404（Resource not found），修正后重新实测；失败如实报错（实体显示
+        错误原因，0 unavailable）。
         """
-        return await self._request(
-            "GET",
-            PATH_CVFEATURES,
-            query={"appKey": "fordpass", "appVersion": APP_VERSION, "clientType": CLIENT_TYPE},
-        )
+        return await self._get_signed(PATH_CVFEATURES, vin)
 
     async def parking_image(self, vin: str, car_id: str) -> dict[str, Any]:
         """POST /api/cnxapi-pds/v1/search-vehicle-parking-image — 停车影像查询。
