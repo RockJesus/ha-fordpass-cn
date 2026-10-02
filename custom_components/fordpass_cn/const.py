@@ -131,6 +131,10 @@ PATH_AAR_STATUS = "/api/cnxapi-vds/v1/aar/status"
 PATH_CCFEATURES = "/api/cnxapi-vds/v2/vehicles/ccfeatures"
 # v3.1.9: 预测性诊断（机油寿命/剩余里程/慢漏气胎，200 实测，锐际）
 PATH_PROGNOSTIC = "/api/cnxapi-cds/prognostic/v1/list"
+# v3.1.17: 未读消息摘要（HAR 实测 200）：GET /api/cnxapi-message/app/messages/summary
+# ?timestamp=&sign=（无 encryptedVin 参数）→ data.summary.{allRedDotStatus,
+# unReadCategoryId/unReadCategoryDescription/readMessageSubject} + data.categories[]
+PATH_MESSAGES_SUMMARY = "/api/cnxapi-message/app/messages/summary"
 
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
