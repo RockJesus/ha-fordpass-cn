@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.14.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.15.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.1.15**：cvfeatures v4 端点请求修正——v3.1.14 用 `appKey/appVersion/clientType` query 实测 404（Resource not found），本次改用 `_get_signed`（encryptedVin/xjw query + R3 签名，与 ccfeatures(v2) 同通道）重新实测；「车辆能力清单」传感器如实显示结果（成功=能力名列表，失败=错误原因，0 unavailable）
 - **v3.1.14**：「车辆能力清单」传感器增强——任何 dict 响应都创建实体（0 unavailable），获取失败时如实显示错误原因（如 `获取失败：404 Not Found...`），成功但结构未识别时显示「已获取（结构待车型实测解析）」+ 原始响应属性——本轮 cvfeatures v4 端点实测诊断用（此前 404 疑缺完整 query，实体属性可查实际响应/错误）
 - **v3.1.13**：「都继续」四线全部落地——① **鸣笛命令状态传感器**：逆向确认 App 的 `GET /api/vehicles/v5/{vin}/announcestatus/{commandId}/`（v5 命令轮询组，与 statusrefresh/{commandId} 并列），鸣笛开关触发后自动轮询 announcestatus 三次（2s/5s/10s），结果写入「鸣笛命令状态」传感器（未触发/执行中/网关状态/查询失败，永远可用不显示 unavailable）；② **停车影像 / 行车监控**：逆向确认 App `VehicleManagerEndpoint.searchVehicleParkingImage / searchVehicleMonitorTraffic`（PDS 网关），请求体含 `carId`=车辆列表 `encryptedCarId`——非空才创建按钮（锐际 encryptedCarId=null = 无远程影像硬件，不创建、0 unavailable）；③ **authedFeatures 双解释**：`A4=0xA4=164=10100100₂` 逐位拆解为 VDSFeatureType 特性名（bit2 计划保养服务 / bit5 道路救援 / bit7 福特金融，待多车型验证）；④ **车辆能力清单 v4**：逆向确认 `GET /api/cnxapi-vds/v4/vehicles/cvfeatures`（App `VcsRepositoryProvider::fetchCapabilityV4`，首页能力卡片 PAAK/EV 管理/哨兵/灯光等的权威来源）——接入「车辆能力清单」传感器；此前 404 疑缺完整 query，本次接入后实测
 - **v3.1.12**：能力位图解码完成——逆向福特派 6.16.0 `libapp.so`（VS Build Tools + Dart 3.8.1 SDK 源码 + blutter 全链 MSVC 编译，stripped 库打 magic 快照扫描/段表补丁），从 Object Pool 还原 `VDSFeatureType` 枚举全集 24 项（osb 在线服务 / maintenanceSchedule 保养计划 / serviceHistory 服务记录 / scheduledServicePlan 计划保养服务 / guides 指南 / rsa 道路救援 / extendedWarranty 延保 / fordCredit 福特金融 / privateChargingService 私充服务 / eCard 电子卡 / WallBoxAutoAuth 家充桩自动认证 / customerFeedback 客户反馈 / carGuide 用车指南 / personalizedPicture 个性化照片 / rccAuto / InteSubscription 国际订阅 / MySubscription 我的订阅 / MyTestDrive 我的试驾 / MyOrder 我的订单 / ReservationInquiry 预约查询 / MaintenanceWorkOrder 保养工单 / CarPickupDeliveryInquiry 取送车查询 / MyRights 我的权益 / SyncToCarNavigation 同步到车机导航）——**锐际位图解出**：`03,04,05,06,07,08,10,11,23` = 计划保养服务、指南、道路救援、延保、福特金融、私充服务、我的订阅、我的试驾 + 未定义特性（0x23=35 超 App 枚举范围，`checkVDSFeature` 忽略）。「车辆服务信息」传感器属性升级：`feature_XX` 输出 `成员名（中文含义）`、新增 `features` 汇总、authedFeatures 标注位掩码未完全解码；解码映射写死进集成，任何车型登录后位图即可翻译
