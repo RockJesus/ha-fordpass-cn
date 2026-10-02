@@ -77,3 +77,84 @@ def is_on(status: dict | None, paths: list[list[str]]) -> bool:
     if isinstance(val, str):
         return val.strip().lower() in {"1", "true", "on", "yes", "enabled"}
     return False
+
+
+# ---------------------------------------------------------------------------
+# v3.1.20: 云端能力探测（ccfeatures availableFeatures 位图 → VDSFeatureType）
+# 全车型自动创建的关键——每辆车登录后按各自云端能力位图探测开通的服务能力，
+# 位图不同 → 能力集不同 → 实体自动适配（如锐际纯油 03,04,05,06,07,08,10,
+# 11,23 = 计划保养服务/指南/道路救援/延保/福特金融/私充服务/我的订阅/我的试驾
+# + 未定义特性 0x23）。
+# VDSFeatureType 枚举（App: mobile_cn_data_adapter vds_type.dart）——逆向自
+# 福特派 6.16.0 libapp.so 对象池：off_8=枚举值, off_10=成员名。
+# vdsFeatureList 在 App 中即为该全集（24 项），availableFeatures 按枚举值过滤。
+# ---------------------------------------------------------------------------
+VDS_FEATURE_NAMES: dict[int, tuple[str, str]] = {
+    0x0: ("osb", "在线服务"),
+    0x1: ("maintenanceSchedule", "保养计划"),
+    0x2: ("serviceHistory", "服务记录"),
+    0x3: ("scheduledServicePlan", "计划保养服务"),
+    0x4: ("guides", "指南"),
+    0x5: ("rsa", "道路救援"),
+    0x6: ("extendedWarranty", "延保"),
+    0x7: ("fordCredit", "福特金融"),
+    0x8: ("privateChargingService", "私充服务"),
+    0x9: ("eCard", "电子卡"),
+    0xA: ("WallBoxAutoAuth", "家充桩自动认证"),
+    0xB: ("customerFeedback", "客户反馈"),
+    0xC: ("carGuide", "用车指南"),
+    0xD: ("personalizedPicture", "个性化照片"),
+    0xE: ("rccAuto", "RCC 自动"),
+    0xF: ("InteSubscription", "国际订阅"),
+    0x10: ("MySubscription", "我的订阅"),
+    0x11: ("MyTestDrive", "我的试驾"),
+    0x12: ("MyOrder", "我的订单"),
+    0x13: ("ReservationInquiry", "预约查询"),
+    0x14: ("MaintenanceWorkOrder", "保养工单"),
+    0x15: ("CarPickupDeliveryInquiry", "取送车查询"),
+    0x16: ("MyRights", "我的权益"),
+    0x17: ("SyncToCarNavigation", "同步到车机导航"),
+}
+# 枚举上限 = 0x17（23）；超过该范围的特性 ID（如锐际的 0x23=35）
+# 在 App 中无对应枚举成员，checkVDSFeature 会直接忽略。
+
+# 能力 → 集成实体创建映射（全车型自动创建）：位图含该能力时，
+# 对应服务实体可创建（vehicle-status 判断之外的第二层云端能力判定）。
+CLOUD_FEATURE_ENTITIES: dict[int, tuple[str, str]] = {
+    0x1: ("maintenance_plan", "保养计划"),
+    0x3: ("maintenance_plan", "计划保养服务"),
+}
+
+
+def parse_cloud_features(ccfeatures_data: dict | None) -> list[dict[str, Any]]:
+    """解析 ccfeatures 响应 → 已开通云端能力列表。
+
+    每项 {id: int, en: str, zh: str, raw: str}；无 featureData /
+    availableFeatures 为空 / 数据结构异常时返回 []（调用方不创建实体）。
+    """
+    if not isinstance(ccfeatures_data, dict):
+        return []
+    payload = ccfeatures_data.get("data")
+    if not isinstance(payload, dict):
+        return []
+    fd = payload.get("featureData")
+    if not isinstance(fd, dict):
+        return []
+    raw = fd.get("availableFeatures")
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    out: list[dict[str, Any]] = []
+    for part in raw.split(","):
+        p = part.strip()
+        if not p:
+            continue
+        try:
+            fid = int(p, 16)
+        except ValueError:
+            if p.isdigit():
+                fid = int(p, 10)
+            else:
+                continue
+        en, zh = VDS_FEATURE_NAMES.get(fid, ("unknown", "未定义特性"))
+        out.append({"id": fid, "en": en, "zh": zh, "raw": p})
+    return out
