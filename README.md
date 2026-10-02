@@ -29,7 +29,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.1.10.zip`）
+1. 下载最新版 Release（`fordpass_cn_3.1.11.zip`）
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.1.11**：能力位图（ccfeatures `availableFeatures`）结构化增强——逐项展开属性（`feature_03`~`feature_23` = 特性 ID 0x03…，十进制对照）+ `feature_count` + 位图二进制视图（`feature_bits`，MSB 在前，1 = 该特性可用）+ `authedFeatures` 展开（A4 = 0xA4 = 164）；为多车型位图对比解码提供数据基础（同一枚举下数字重叠 = 同能力）
 - **v3.1.10**：全车型支持策略回归——恢复 v3.1.8 因锐际实测网关拒绝（228205/402）而临时移除的实体创建：**后备箱锁**（TrunkUnlock，按尾门能力创建）、**灯光寻车**（ZoneLightingON/OFF）、**中央区灯光 / 语音助手初始化/取消 / 辅助设置 / OTA 激活排程**（按各自车型能力路径判断）——集成包含全部实体代码，登录后按车辆能力判断创建，云端不支持的车型按下返回网关明确报错、如实提示；删除 `CMD_EXTEND_START` 遗留误导别名。README：版本历史全部折叠；移除「实测限制」段落（实体能力差异已由「按车型能力创建 + 按下明确报错」机制覆盖）
 - **v3.1.9**：新增两组云端服务信息实体（逆向 6.16.0 确认、全部 200 实测）——①**车辆服务信息**（`GET /api/cnxapi-vds/v2/vehicles/ccfeatures`）：云端能力位图 availableFeatures + authedFeatures + 道路救援/客服/售后电话 + 车型电子说明书 URL，这是 App 判断「每辆车支持哪些功能」的权威云端清单；②**预测性诊断**（`GET /api/cnxapi-cds/prognostic/v1/list`）：机油寿命百分比（iolm=41）、剩余可行驶里程（4000km）、寿命归零月份、慢漏气胎标识、诊断提示，拆分 4 个传感器；③修正：删除 `CMD_EXTEND_START` 误导别名（曾错误指向 TrunkUnlock）；实测 send-command 白名单完整枚举确认 ExtendStart（远程启动延长）不在其中，锐际不支持，不创建实体。数据驱动创建——无 ccfeatures/prognostic 数据的车型不创建实体，0 unavailable
 - **v3.1.8**：按实车测试清单修复与收敛——①**移除网关不支持实体**：后备箱锁（TrunkUnlock）、灯光寻车（ZoneLighting）、中央区灯光（402）、语音助手初始化/取消、辅助设置、OTA 激活排程在锐际实测均被网关拒绝（`228205 cmdSpec can not empty` / 402），移除实体避免假按钮；②**鸣笛类型/时长参数修正**：ChirpType 从 1-5 修正为 App 枚举 0-4（此前差一错位）；「声光共舞」改为走独立 panic 端点 `POST /api/vehicles/v5/{vin}/panic/{duration}`（灯+喇叭，锐际 404 明确报错）；③**车窗状态**：未关闭时显示「未关闭（部分开启/全开）」，数值型数据（部分车型）显示「未关闭 N%」；④**远程启动时间**：修复毫秒时间戳解析（此前 13 位毫秒解析失败显示「未启动」）；⑤确认门锁/远程启动/重置空调滤芯/刷新类命令均实测正常
