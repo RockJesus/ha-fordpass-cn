@@ -526,14 +526,22 @@ class FordPassApi:
                 raise
 
     # ------------------------------------------------------------- commands
-    async def send_command(self, vin: str, command_type: str) -> dict[str, Any]:
-        """POST /v1/vehicles/send-command (verified live for Auto/ForceRefresh)."""
+    async def send_command(
+        self, vin: str, command_type: str, cmd_spec: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        """POST /v1/vehicles/send-command (verified live for Auto/ForceRefresh).
+
+        v3.1.17: 支持 cmd_spec（福特派真实请求：InitialVA 带
+        [{key: VAType, value: 4}, {key: Duration, value: 15}]，
+        CancelVA 带 [{key: VAType, value: 4}]——HAR 实测确认）。
+        """
         enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-        data = await self._request(
-            "POST",
-            PATH_SEND_COMMAND,
-            {"commandType": command_type, "encryptedVin": enc_vin, "xjw": xjw},
-        )
+        body: dict[str, Any] = {
+            "commandType": command_type, "encryptedVin": enc_vin, "xjw": xjw,
+        }
+        if cmd_spec:
+            body["cmdSpec"] = cmd_spec
+        data = await self._request("POST", PATH_SEND_COMMAND, body)
         inner = data.get("data", {})
         if inner.get("encryptedResponseBody"):
             plain = await asyncio.to_thread(lambda: self.crypto.decrypt_field(inner["encryptedResponseBody"], inner["xjw"]))
@@ -929,6 +937,17 @@ class FordPassApi:
     async def get_recall(self, vin: str) -> dict[str, Any]:
         """召回信息：GET /api/cnxapi-vds/v1/vehicles/recall（200 实测）。"""
         return await self._get_signed(PATH_RECALL, vin)
+
+    # ------------------------------------------------------------ 未读消息（v3.1.17）
+    async def get_messages_summary(self) -> dict[str, Any]:
+        """未读消息摘要：GET /api/cnxapi-message/app/messages/summary（HAR 实测 200）。
+
+        2026-10-03 抓包还原：无 encryptedVin 参数，仅 timestamp+sign 签名
+        （_request 自动附加）。响应 data.summary.{allRedDotStatus,
+        unReadCategoryId, unReadCategoryDescription, readMessageSubject}
+        + data.categories[]。
+        """
+        return await self._request("GET", PATH_MESSAGES_SUMMARY)
 
     # ------------------------------------------------------------ 空调滤芯（v3.1.7）
     async def get_air_filter_status(self, vin: str) -> dict[str, Any]:
