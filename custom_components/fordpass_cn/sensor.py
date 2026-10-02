@@ -75,7 +75,16 @@ def _is_usable(status, paths) -> bool:
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    # v3.1.6: 多 VIN——每辆车按各自 vehicle-status 数据独立构建传感器组
+    payload = hass.data[DOMAIN][entry.entry_id]
+    coordinators = payload.get("coordinators") or [payload["coordinator"]]
+    all_sensors: list[SensorEntity] = []
+    for coordinator in coordinators:
+        all_sensors.extend(_make_sensors(coordinator))
+    async_add_entities(all_sensors)
+
+
+def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors = [
         FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),
         FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
@@ -232,7 +241,7 @@ async def async_setup_entry(
     chirp_cloud = coordinator.data.get("chirp_cloud")
     if isinstance(chirp_cloud, dict) and chirp_cloud:
         sensors.append(FordPassChirpCloudSensor(coordinator))
-    async_add_entities(sensors)
+    return sensors
 
 
 class FordPassVehicleAttrSensor(SensorEntity):
