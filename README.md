@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.2.0**：**版本号规则修正**——按十进制、每段不超过 9、超 9 前一位 +1（如 2.1.9 → 2.2.0）回归合规版本轨道；功能与 v3.1.20 一致（云端能力探测等）
 - **v3.1.20**：新增**云端能力探测**传感器（全车型自动创建的关键）——把 ccfeatures `availableFeatures` 位图（VDSFeatureType 24 项枚举，逆向自福特派 6.16.0 libapp.so）解析为该车开通的云端服务能力集，状态直接显示「已开通 N 项：计划保养服务、指南、道路救援…」，属性含 capabilities 中文列表 / feature_ids 原始位图 / 逐项 capability_XX（如锐际纯油 `03,04,05,06,07,08,10,11,23` = 计划保养服务/指南/道路救援/延保/福特金融/私充服务/我的订阅/我的试驾 + 未定义特性 0x23）；解码表移入 `capability.py`（`parse_cloud_features`）供全平台复用——不同车型登录后按各自位图自动创建，无位图数据的车型不创建，0 unavailable
 - **v3.1.19**：`capability_v4`（cvfeatures v4）拉取失败日志降级——该路径经 v3.1.14-16 多轮 GET/POST 实测均 404（中国区网关无此路由，App 当前版本未实际调用），为预期状态，不再每次刷新刷 WARNING（降为 DEBUG）；「车辆能力清单」传感器仍如实显示获取失败原因，0 unavailable——能力数据以已生效的 ccfeatures（v2）位图 + VDSFeatureType 解码为准
 - **v3.1.18**：修复 v3.1.17 未读消息传感器未创建问题——`api.py` 缺失 `PATH_MESSAGES_SUMMARY` 导入导致拉取时 NameError（coordinator 捕获后 data 置 None、实体不创建）——补齐导入后 messages/summary 正常拉取（HAR + 实机 200：allRedDotStatus=1 有未读），「未读消息」传感器按数据创建，0 unavailable
