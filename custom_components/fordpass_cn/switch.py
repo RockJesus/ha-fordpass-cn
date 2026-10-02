@@ -222,10 +222,42 @@ class FordPassHonkSwitch(SwitchEntity):
                 "FordPass 鸣笛寻车已触发 commandId=%s（时长=%ss 类型=%s）",
                 resp["commandId"], duration, chirp_name,
             )
+            # v3.1.13: 鸣笛后轮询 announcestatus/{commandId} 查询命令执行
+            # 结果（App FordRemoteControlApiService v5 轮询组），写入
+            # coordinator.announce_status 供「鸣笛命令状态」传感器读取。
+            self.coordinator.hass.async_create_task(
+                self._poll_announce(self.coordinator.vin, resp["commandId"])
+            )
         self._state = True
         self.async_write_ha_state()
         # 鸣笛 30 秒自动结束，开关同步复位
         self.coordinator.hass.async_create_task(self._auto_off())
+
+    async def _poll_announce(self, vin: str, command_id: str) -> None:
+        """轮询 v5 announcestatus/{commandId}（2s/5s/10s 三次，尽力而为）。
+
+        结果写入 coordinator.announce_status；全部失败置 error 对象，
+        传感器仍显示「查询失败」而非不可用（v3.1.2 规则）。
+        """
+        self.coordinator.announce_status = {"command_id": command_id, "status": "执行中"}
+        for delay in (2, 5, 10):
+            await asyncio.sleep(delay)
+            try:
+                st = await self.coordinator.api.announcestatus(vin, command_id)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("FordPass announcestatus 查询失败（%ss 后重试）: %s", delay, exc)
+                continue
+            if isinstance(st, dict) and st:
+                st.setdefault("command_id", command_id)
+                self.coordinator.announce_status = st
+                self.coordinator.async_update_listeners()
+                return
+        self.coordinator.announce_status = {
+            "command_id": command_id,
+            "status": "查询超时",
+            "error": "announcestatus 三次查询均失败（鸣笛命令可能已执行完成）",
+        }
+        self.coordinator.async_update_listeners()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         # 真实停止通道：DELETE /api/vehicles/v5/{vin}/honk（与 App 取消鸣笛一致）
