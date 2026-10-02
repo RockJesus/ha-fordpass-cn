@@ -83,16 +83,20 @@ def _capability_ok(status: dict, paths: list[list[str]] | None, check: str | Non
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    status = coordinator.data.get("vehiclestatus", {}) or {}
-    buttons = [
-        FordPassButton(coordinator, key, label, icon, command)
-        for key, label, icon, command, paths, check in _BUTTONS
-        if _capability_ok(status, paths, check)
-    ]
-    # v3.0.8: 保存鸣笛设置（与鸣笛开关同为远程控车能力 crccFlag）
-    if capability.usable(status, [["crccFlag"]]):
-        buttons.append(FordPassSaveHonkSettingsButton(coordinator))
+    # v3.1.6: 多 VIN——每辆车按各自车型能力过滤创建按钮组
+    payload = hass.data[DOMAIN][entry.entry_id]
+    coordinators = payload.get("coordinators") or [payload["coordinator"]]
+    buttons: list[ButtonEntity] = []
+    for coordinator in coordinators:
+        status = coordinator.data.get("vehiclestatus", {}) or {}
+        buttons.extend(
+            FordPassButton(coordinator, key, label, icon, command)
+            for key, label, icon, command, paths, check in _BUTTONS
+            if _capability_ok(status, paths, check)
+        )
+        # v3.0.8: 保存鸣笛设置（与鸣笛开关同为远程控车能力 crccFlag）
+        if capability.usable(status, [["crccFlag"]]):
+            buttons.append(FordPassSaveHonkSettingsButton(coordinator))
     async_add_entities(buttons)
 
 
