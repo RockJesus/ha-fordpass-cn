@@ -218,6 +218,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception as exc:  # noqa: BLE001
                 self.logger.debug("FordPass %s fetch failed: %s", key, exc)
                 data[key] = None
+        # v3.1.17: 未读消息摘要（HAR 实测 200；无 encryptedVin，失败置 None——
+        # 实体不创建，不显示不可用）
+        try:
+            data["messages"] = await self.api.get_messages_summary()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass messages summary fetch failed: %s", exc)
+            data["messages"] = None
         # v3.1.13: 车辆能力清单 v4（cvfeatures，App 首页能力卡片权威来源；
         # 失败存 {"error":...} 而非 None——「车辆能力清单」传感器永远创建，
         # 如实显示获取失败原因（0 unavailable），便于本轮端点实测诊断）
