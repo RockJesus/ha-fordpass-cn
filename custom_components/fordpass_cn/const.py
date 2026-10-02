@@ -187,6 +187,19 @@ HONK_AUTO_OFF_SECONDS = 30                          # 鸣笛寻车自动复位�
 # POST /api/vehicles/v5/{vin}/panic/{paniconduration}（灯+喇叭警报）；
 # 锐际实测 404（云端不支持，App 中该类型可能也只在部分车型/蓝牙下可用）。
 PATH_V5_PANIC = "/api/vehicles/v5/{vin}/panic/{duration}"
+# v3.1.13: 鸣笛命令状态查询（App FordRemoteControlApiService，v5 命令轮询组：
+# statusrefresh/{commandId} / engine/start/{commandId} / doors/lock/{commandId} /
+# announcestatus/{commandId} 并列——honk 返回 commandId 后查命令执行结果）
+PATH_V5_ANNOUNCE_STATUS = "/api/vehicles/v5/{vin}/announcestatus/{command_id}/"
+# v3.1.13: 车辆能力清单 v4（App VcsRepositoryProvider::fetchCapabilityV4，
+# GET /api/cnxapi-vds/v4/vehicles/cvfeatures——App 首页能力卡片 PAAK/EV 管理/
+# 哨兵/灯光等的权威来源；此前实测 404，可能缺完整 query，本次接入后实测）
+PATH_CVFEATURES = "/api/cnxapi-vds/v4/vehicles/cvfeatures"
+# v3.1.13: 停车影像 / 行车监控（App VehicleManagerEndpoint：searchVehicleParkingImage /
+# searchVehicleMonitorTraffic，PDS 网关；请求体含 carId=车辆列表 encryptedCarId，
+# 锐际 encryptedCarId=null = 车型无远程影像硬件——实体不创建）
+PATH_PARKING_IMAGE = "/api/cnxapi-pds/v1/search-vehicle-parking-image"
+PATH_MONITOR_TRAFFIC = "/api/cnxapi-pds/v1/search-vehicle-monitor-traffic"
 CMD_TRAILER_CHECK_START = "TrailerLightCheckStart"  # 拖车灯光检测开始（皮卡/拖车）
 CMD_TRAILER_CHECK_STOP = "TrailerLightCheckStop"    # 拖车灯光检测停止
 CMD_VA_INIT = "InitialVA"                           # 语音助手初始化
