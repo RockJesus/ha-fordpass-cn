@@ -37,14 +37,18 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: FordPassCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    status = coordinator.data.get("vehiclestatus", {}) or {}
-    switches: list[SwitchEntity] = [FordPassEngineSwitch(coordinator)]
-    # 灯光寻车：远程控车功能开启（crccFlag 有效）才创建
-    if capability.usable(status, [["crccFlag"]]):
-        switches.append(FordPassLightSwitch(coordinator))
-        # 鸣笛寻车（v3.0.5 由按钮迁移为开关，同为远程控车能力）
-        switches.append(FordPassHonkSwitch(coordinator))
+    # v3.1.6: 多 VIN——每辆车独立创建开关组（按各自车型能力过滤）
+    payload = hass.data[DOMAIN][entry.entry_id]
+    coordinators = payload.get("coordinators") or [payload["coordinator"]]
+    switches: list[SwitchEntity] = []
+    for coordinator in coordinators:
+        status = coordinator.data.get("vehiclestatus", {}) or {}
+        switches.append(FordPassEngineSwitch(coordinator))
+        # 灯光寻车：远程控车功能开启（crccFlag 有效）才创建
+        if capability.usable(status, [["crccFlag"]]):
+            switches.append(FordPassLightSwitch(coordinator))
+            # 鸣笛寻车（v3.0.5 由按钮迁移为开关，同为远程控车能力）
+            switches.append(FordPassHonkSwitch(coordinator))
     async_add_entities(switches)
 
 
