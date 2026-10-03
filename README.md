@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.2.2**：**鸣笛设置保存修复**——HAR 实证 App 保存写入 `AnnouncementType`（值=枚举数字 `0-4`）+ `Duration`（值=`5-20`）；集成此前误写旧槽位 `vehicleAnnouncementSoundType`（枚举名）/`vehicleAnnouncementDuration`（App 新逻辑不读取，导致「更改类型/时长保存无效」）。保存按钮与「鸣笛设置云端状态」传感器改读写 AnnouncementType + Duration（与 App 逐字一致），旧槽位仅作回读兜底（枚举名自动转中文）
 - **v3.2.1**：**声光共舞修复**——鸣笛寻车开关在类型为「声光共舞」时不再走 V5 `/panic/{duration}`（中国区网关 404），改走 **send-command `InitialVA`**（cmdSpec `VAType=4`+`Duration`，HAR 实测 200 + commandId，App 官方声光寻车通道：灯+喇叭同响），关闭改走 `send-command CancelVA`；命令结果经 `command-execution-status` 轮询写入「鸣笛命令状态」传感器。同时修正误标：`InitialVA`/`CancelVA` 实为鸣笛通告通道（FORD_HONK/FORD_HONK_CANCEL，非语音助手），「语音助手初始化/取消」按钮重命名为「声光寻车触发（鸣笛+灯光）/取消」
 - **v3.2.0**：**版本号规则修正**——按十进制、每段不超过 9、超 9 前一位 +1（如 2.1.9 → 2.2.0）回归合规版本轨道；功能与 v3.1.20 一致（云端能力探测等）
 - **v3.1.20**：新增**云端能力探测**传感器（全车型自动创建的关键）——把 ccfeatures `availableFeatures` 位图（VDSFeatureType 24 项枚举，逆向自福特派 6.16.0 libapp.so）解析为该车开通的云端服务能力集，状态直接显示「已开通 N 项：计划保养服务、指南、道路救援…」，属性含 capabilities 中文列表 / feature_ids 原始位图 / 逐项 capability_XX（如锐际纯油 `03,04,05,06,07,08,10,11,23` = 计划保养服务/指南/道路救援/延保/福特金融/私充服务/我的订阅/我的试驾 + 未定义特性 0x23）；解码表移入 `capability.py`（`parse_cloud_features`）供全平台复用——不同车型登录后按各自位图自动创建，无位图数据的车型不创建，0 unavailable
