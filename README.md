@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.2.3**：**鸣笛设置同步修复**——保存按钮/鸣笛开关改读 config entry options（select 每次选择即持久化的权威值），修复 HA 重启后与内存 honk_settings 分裂导致「保存按钮存默认值、鸣笛用默认类型/时长」的问题（v3.2.2 实测：select 显示声光共舞/15 秒，保存后云端却写汽笛长鸣/10 秒——根因即此）
 - **v3.2.2**：**鸣笛设置保存修复**——HAR 实证 App 保存写入 `AnnouncementType`（值=枚举数字 `0-4`）+ `Duration`（值=`5-20`）；集成此前误写旧槽位 `vehicleAnnouncementSoundType`（枚举名）/`vehicleAnnouncementDuration`（App 新逻辑不读取，导致「更改类型/时长保存无效」）。保存按钮与「鸣笛设置云端状态」传感器改读写 AnnouncementType + Duration（与 App 逐字一致），旧槽位仅作回读兜底（枚举名自动转中文）
 - **v3.2.1**：**声光共舞修复**——鸣笛寻车开关在类型为「声光共舞」时不再走 V5 `/panic/{duration}`（中国区网关 404），改走 **send-command `InitialVA`**（cmdSpec `VAType=4`+`Duration`，HAR 实测 200 + commandId，App 官方声光寻车通道：灯+喇叭同响），关闭改走 `send-command CancelVA`；命令结果经 `command-execution-status` 轮询写入「鸣笛命令状态」传感器。同时修正误标：`InitialVA`/`CancelVA` 实为鸣笛通告通道（FORD_HONK/FORD_HONK_CANCEL，非语音助手），「语音助手初始化/取消」按钮重命名为「声光寻车触发（鸣笛+灯光）/取消」
 - **v3.2.0**：**版本号规则修正**——按十进制、每段不超过 9、超 9 前一位 +1（如 2.1.9 → 2.2.0）回归合规版本轨道；功能与 v3.1.20 一致（云端能力探测等）
