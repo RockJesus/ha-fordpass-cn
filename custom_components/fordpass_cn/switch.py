@@ -178,22 +178,24 @@ class FordPassHonkSwitch(SwitchEntity):
         self.async_write_ha_state()
 
     def _settings(self) -> tuple[int, str]:
-        """读取当前鸣笛设置（select 实体保存于 hass.data / entry options）。
+        """读取当前鸣笛设置（select 持久化于 entry options——权威来源）。
 
         v3.1.8: 返回 (持续时长秒, 鸣笛类型中文名)——类型数字由
         CHIRP_TO_TYPE 统一映射为 App 枚举 0-4。找不到设置时回退默认
         （时长 10 秒 / 汽笛长鸣 chirpHonk=2），与 App 默认一致。
+        v3.2.3: 改读 entry.options（select 每次选择即写入的持久化值），
+        修复重启后与内存 honk_settings 分裂导致用默认设置鸣笛的问题。
         """
-        settings = (
-            self.coordinator.hass.data.get(DOMAIN, {})
-            .get(self.coordinator.entry_id, {})
-            .get("honk_settings", {})
-        )
+        options: dict = {}
+        entry_id = getattr(self.coordinator, "entry_id", None)
+        if entry_id:
+            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
+            options = entry.options if entry else {}
         try:
-            duration = int(settings.get(CONF_HONK_DURATION, 10) or 10)
+            duration = int(options.get(CONF_HONK_DURATION, 10) or 10)
         except (TypeError, ValueError):
             duration = 10
-        chirp_name = settings.get(CONF_CHIRP_TYPE) or "汽笛长鸣"
+        chirp_name = options.get(CONF_CHIRP_TYPE) or "汽笛长鸣"
         return duration, str(chirp_name)
 
     @staticmethod
