@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.3.0**：**手机号密码（B2C）登录对齐福特派 6.16.0 + EdgeOne WAF 诊断**——对照 HAR 实测将 B2C 登录四步全部对齐 App 真实请求（WebView UA Android 12、`x-requested-with: com.ford.fordpasscn`、完整 sec-fetch 头、authorize 补 `tnc_consent1_accepted=true&tnc_consent2_accepted=false`、confirmed 带 diags）；福特登录页已前置**腾讯云 EdgeOne 安全防护**，实测纯 HTTP 客户端（requests/curl_cffi 全指纹/Chrome headless）均被 567 拦截——WAF 策略变严所致非代码问题，现自动识别拦截页并给出明确提示（改用短信验证码登录或稍后重试），App 登录不受影响；待 WAF 放宽后密码登录参数已就绪可直接生效
 - **v3.2.6**：**SIM/WiFi「未开通」判定修正**——业务失败响应的错误码（`returnErrCode=402/401`）与错误描述（`returnErrMsg=CONS.SYS.0002/CONS.AUTH.0005`）均在业务层给出；v3.2.5 只认 `CONS.` 前缀错误码，实际错误码是数字（402/401），导致仍显示「查询失败（402/401）」。现任一字段命中 `CONS.` 前缀或错误码为 `401/402/403/404` 即显示「**车辆未开通该服务**」，错误码/描述保留在属性
 - **v3.2.5**：**传感器数据对齐 HAR 实证**——全量对比福特派 6.16.0 抓包（1152 条）与集成解析：vehicle-status（R3 解密体）/vha 主动告警/空调滤芯/未读消息/保养计划/召回/预测性诊断（机油寿命·剩余里程·慢漏气）/云端能力/偏好 全部字段一致（里程 59258、油量 49.67%、胎压 222/227/239/247 kPa、机油寿命 41% 等逐项核对）；两处修正——①「保养计划」由只显示首项改为显示**完整首档全部项目 + 档数**（App 展示全部里程档）；②「SIM 卡」「WiFi 热点」服务端返回业务失败（`CONS.SYS.0002`/`CONS.AUTH.0005`）时语义由「查询失败（错误码）」改为「**车辆未开通该服务**」——锐际纯油无车联网 SIM/热点服务、App 无该功能入口（HAR 无任何 sim/wifi 请求），错误码保留在属性；`sensor/shadow` 判定为订阅接口（返回 shadowId 走推送通道）、`onlinernr` 为账号实名认证状态，均不接入
 - **v3.2.4**：**实体精简与显示优化**——「鸣笛持续时长」选项显示加单位（`5 秒/10 秒/15 秒/20 秒`，持久化仍存数字）；删除「车辆服务信息」「车辆能力清单」两个传感器（含停用 cvfeatures v4 拉取，消除每次刷新的 404 请求）；全平台实体 available 恒 True（保留最后已知状态，0 unavailable）
