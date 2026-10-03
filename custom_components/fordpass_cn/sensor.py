@@ -248,24 +248,15 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         af_payload = air_filter.get("data") if isinstance(air_filter.get("data"), dict) else None
         if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
             sensors.append(FordPassAirFilterSensor(coordinator))
-    # v3.1.9: 云端能力+服务信息（ccfeatures，200 实测）——有 featureData 才创建
+    # v3.1.9: 云端能力探测（ccfeatures 能力位图；位图有已开通能力才创建——
+    # 全车型自动适配：各自位图 → 各自能力集 → 实体自动创建）。
+    # v3.2.4: 不再创建「车辆服务信息」传感器（ccfeatures 明细，用户要求删除）。
     ccf = coordinator.data.get("ccfeatures")
-    if isinstance(ccf, dict):
-        ccf_payload = ccf.get("data") if isinstance(ccf.get("data"), dict) else None
-        if isinstance(ccf_payload, dict) and ccf_payload.get("featureData"):
-            sensors.append(FordPassCFeaturesSensor(coordinator))
-            # v3.1.20: 云端能力探测——位图有已开通能力才创建（全车型自动
-            # 适配：各自位图 → 各自能力集 → 实体自动创建）
-            if capability.parse_cloud_features(ccf):
-                sensors.append(FordPassCloudProbeSensor(coordinator))
+    if isinstance(ccf, dict) and capability.parse_cloud_features(ccf):
+        sensors.append(FordPassCloudProbeSensor(coordinator))
     # v3.1.13: 鸣笛命令状态（最近一次鸣笛的 announcestatus 结果；未触发时
     # 显示「未触发」，永远可用——v3.1.2 规则）
     sensors.append(FordPassAnnounceStatusSensor(coordinator))
-    # v3.1.13: 车辆能力清单 v4（cvfeatures；任何 dict 响应都创建——
-    # 失败时如实显示错误原因，数据可用时显示能力名；0 unavailable）
-    cvv = coordinator.data.get("capability_v4")
-    if isinstance(cvv, dict) and cvv:
-        sensors.append(FordPassCapabilityV4Sensor(coordinator))
     # v3.1.9: 预测性诊断（prognostic，200 实测）——有业务数据才创建
     prog = coordinator.data.get("prognostic")
     if isinstance(prog, dict):
@@ -823,146 +814,6 @@ class FordPassAirFilterSensor(_ServiceInfoSensor):
 
 
 # ---------------------------------------------------------------------------
-# v3.1.9: 云端能力+服务信息（ccfeatures）与预测性诊断（prognostic）
-# 实测（2026-10-02，锐际）均为 HTTP 200；无数据车型不创建实体。
-# ---------------------------------------------------------------------------
-class FordPassCFeaturesSensor(_ServiceInfoSensor):
-    """云端能力+服务信息（v3.1.9）：GET /api/cnxapi-vds/v2/vehicles/ccfeatures。
-
-    data.featureData.availableFeatures 为云端能力位图（两位 hex 特性 ID 集合，
-    v3.1.12 起按 VDSFeatureType 枚举（逆向福特派 6.16.0 libapp.so 的
-    Object Pool 还原）逐项解码：ID → App 枚举成员名 → 中文含义；
-    authedFeatures 为已授权特性（单个 hex，如 A4 = 0xA4 = 164）；
-    rsa/contact/afterSalesNumber 为道路救援/客服/售后电话；
-    videoManualUrl 为车型电子说明书 H5 地址。
-    """
-
-    # VDSFeatureType 枚举（App: mobile_cn_data_adapter vds_type.dart）——
-    # 逆向自福特派 6.16.0 libapp.so 对象池（pp.txt）：off_8=枚举值, off_10=成员名。
-    # vdsFeatureList 在 App 中即为该全集（24 项），availableFeatures 按枚举值过滤。
-    VDS_FEATURE_NAMES: dict[int, tuple[str, str]] = {
-        0x0: ("osb", "在线服务"),
-        0x1: ("maintenanceSchedule", "保养计划"),
-        0x2: ("serviceHistory", "服务记录"),
-        0x3: ("scheduledServicePlan", "计划保养服务"),
-        0x4: ("guides", "指南"),
-        0x5: ("rsa", "道路救援"),
-        0x6: ("extendedWarranty", "延保"),
-        0x7: ("fordCredit", "福特金融"),
-        0x8: ("privateChargingService", "私充服务"),
-        0x9: ("eCard", "电子卡"),
-        0xA: ("WallBoxAutoAuth", "家充桩自动认证"),
-        0xB: ("customerFeedback", "客户反馈"),
-        0xC: ("carGuide", "用车指南"),
-        0xD: ("personalizedPicture", "个性化照片"),
-        0xE: ("rccAuto", "RCC 自动"),
-        0xF: ("InteSubscription", "国际订阅"),
-        0x10: ("MySubscription", "我的订阅"),
-        0x11: ("MyTestDrive", "我的试驾"),
-        0x12: ("MyOrder", "我的订单"),
-        0x13: ("ReservationInquiry", "预约查询"),
-        0x14: ("MaintenanceWorkOrder", "保养工单"),
-        0x15: ("CarPickupDeliveryInquiry", "取送车查询"),
-        0x16: ("MyRights", "我的权益"),
-        0x17: ("SyncToCarNavigation", "同步到车机导航"),
-    }
-    # 枚举上限 = 0x17（23）；超过该范围的特性 ID（如锐际的 0x23=35）
-    # 在 App 中无对应枚举成员，checkVDSFeature 会直接忽略。
-
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "ccfeatures", "车辆服务信息", "mdi:car-info")
-
-    @staticmethod
-    def _features_list(fd: dict) -> list[int]:
-        raw = fd.get("availableFeatures")
-        if not isinstance(raw, str) or not raw.strip():
-            return []
-        out = []
-        for part in raw.split(","):
-            p = part.strip()
-            if not p:
-                continue
-            try:
-                out.append(int(p, 16))
-            except ValueError:
-                out.append(int(p, 10) if p.isdigit() else -1)
-        return out
-
-    def _feature_label(self, i: int) -> str:
-        if i in self.VDS_FEATURE_NAMES:
-            en, zh = self.VDS_FEATURE_NAMES[i]
-            return f"{en}（{zh}）"
-        return "未定义特性 ID（App 枚举越界，忽略）"
-
-    def _format(self, data: dict) -> str | None:
-        payload = data.get("data") if isinstance(data, dict) else None
-        fd = payload.get("featureData") if isinstance(payload, dict) else None
-        if not isinstance(fd, dict):
-            return None
-        feats = fd.get("availableFeatures")
-        if not feats:
-            return "无能力数据"
-        # 文本保留云端原文（两位 hex），名称见属性
-        return str(feats)
-
-    def _summary(self, data: dict) -> dict:
-        payload = data.get("data") if isinstance(data, dict) else None
-        if not isinstance(payload, dict):
-            return {}
-        out: dict[str, Any] = {}
-        fd = payload.get("featureData")
-        if isinstance(fd, dict):
-            ids = self._features_list(fd)
-            # v3.1.12: 位图逐项解码（feature_03 = scheduledServicePlan（计划保养服务））
-            for i in sorted(ids):
-                out[f"feature_{i:02x}"] = f"特性 ID 0x{i:02X}（{i}）= {self._feature_label(i)}"
-            out["feature_count"] = len(ids)
-            named = [self._feature_label(i) for i in sorted(ids) if i in self.VDS_FEATURE_NAMES]
-            if named:
-                out["features"] = "、".join(named)
-            # 位图二进制视图（bit0..bitN，1 = 该特性可用）——多车型对比用
-            if ids:
-                maxbit = max(ids)
-                bits = ["0"] * (maxbit + 1)
-                for i in ids:
-                    if 0 <= i <= maxbit:
-                        bits[i] = "1"
-                out["feature_bits"] = "".join(reversed(bits))  # MSB 在前
-            if fd.get("authedFeatures"):
-                a = str(fd["authedFeatures"])
-                try:
-                    av = int(a, 16)
-                    # v3.1.13: 双解释——整体值 + 逐位拆解（bitN 对应
-                    # VDSFeatureType 特性 ID；如 A4=0xA4=164=10100100₂ 拆位
-                    # bit2(4)=scheduledServicePlan 计划保养服务 / bit5(32)=rsa
-                    # 道路救援 / bit7(128)=fordCredit 福特金融——推测，待多
-                    # 车型数据验证；App dump 中仅见 "A4""A5" 相邻字符串）
-                    bits = [i for i in range(16) if av & (1 << i)]
-                    if bits:
-                        bit_desc = "、".join(
-                            f"bit{i}=0x{i:X} {self._feature_label(i)}" for i in bits
-                        )
-                        out["authed_features"] = (
-                            f"{a}（0x{a} = {av}；整体值=已授权特性位掩码；"
-                            f"拆位：{bit_desc}；具体位义待多车型数据验证）"
-                        )
-                    else:
-                        out["authed_features"] = f"{a}（0x{a} = {av}，无已知位）"
-                except ValueError:
-                    out["authed_features"] = a
-            if fd.get("specifiedFeatures") is not None:
-                out["specified_features"] = fd["specifiedFeatures"]
-        for key, label in (
-            ("rsaNumber", "roadside_assist"),
-            ("contactNumber", "customer_service"),
-            ("afterSalesNumber", "after_sales"),
-        ):
-            if payload.get(key):
-                out[label] = str(payload[key])
-        if payload.get("videoManualUrl"):
-            out["manual_url"] = str(payload["videoManualUrl"])
-        return out
-
 
 class FordPassCloudProbeSensor(SensorEntity):
     """云端能力探测（v3.1.20）——全车型自动创建的关键。
@@ -1397,60 +1248,6 @@ class FordPassAnnounceStatusSensor(SensorEntity):
     def extra_state_attributes(self) -> dict:
         st = getattr(self.coordinator, "announce_status", None) or {}
         attrs = dict(st) if isinstance(st, dict) else {}
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
-        return attrs
-
-
-class FordPassCapabilityV4Sensor(SensorEntity):
-    """车辆能力清单 v4（v3.1.13）：GET /api/cnxapi-vds/v4/vehicles/cvfeatures。
-
-    App VcsRepositoryProvider::fetchCapabilityV4——首页能力卡片（PAAK /
-    EV 管理 / 车辆状态 / VA / WIFI / RCC / 哨兵 / 灯光寻车等）的权威来源。
-    数据可用才创建（无数据车型不创建、不显示 unavailable）；响应结构以
-    车型实测为准，能力名列表存放于 extra attributes。
-    """
-
-    _attr_has_entity_name = False
-    _attr_icon = "mdi:car-info"
-
-    def __init__(self, coordinator) -> None:
-        self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-capability_v4"
-        self._attr_name = "车辆能力清单"
-        self._attr_device_info = coordinator.device_info
-
-    @property
-    def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
-
-    @property
-    def native_value(self) -> str:
-        data = (self.coordinator.data or {}).get("capability_v4") or {}
-        if not isinstance(data, dict):
-            return "无数据"
-        if data.get("error"):
-            return f"获取失败：{data['error']}"
-        payload = data.get("data")
-        if isinstance(payload, dict) and payload.get("capabilityList"):
-            items = payload["capabilityList"]
-            if isinstance(items, list) and items:
-                names = [
-                    str(i.get("capabilityName") or i.get("name") or i.get("type"))
-                    for i in items
-                    if isinstance(i, dict)
-                ]
-                if names:
-                    return "、".join(n for n in names if n)
-        return "能力清单已获取（结构待车型实测解析）"
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        data = (self.coordinator.data or {}).get("capability_v4") or {}
-        attrs = dict(data) if isinstance(data, dict) else {}
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
