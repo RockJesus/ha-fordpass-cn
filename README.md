@@ -49,8 +49,8 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 | device_tracker | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
 | image | 车辆图片 | 车型渲染图（如「锐际 Escape」） |
 | lock | 车门锁 / 后备箱锁 | 上锁 / 解锁；后备箱锁（TrunkUnlock，解锁弹开 / 随全车锁定，按车型尾门能力创建） |
-| button | 手动拉取最新状态 / 请求车机刷新状态 / 中央区灯光 / 语音助手初始化/取消 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 | 手动拉取（ForceRefresh）；请求车机刷新（AutoRefresh）；中央区灯光/语音助手/辅助设置/OTA 激活排程按车型能力创建（云端不支持的车型按下返回网关明确报错）；重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`）；拖车灯光检测（双后轮皮卡） |
-| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 | 远程启动/熄火；灯光寻车（ZoneLightingON/OFF，按车型能力创建）；鸣笛寻车（开 = `POST /api/vehicles/v5/{vin}/honk`，关 = `DELETE` 同路径；鸣笛时长与类型按设置生效） |
+| button | 手动拉取最新状态 / 请求车机刷新状态 / 中央区灯光 / 声光寻车触发（鸣笛+灯光）/ 声光寻车取消 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 | 手动拉取（ForceRefresh）；请求车机刷新（AutoRefresh）；中央区灯光/声光寻车/辅助设置/OTA 激活排程按车型能力创建（云端不支持的车型按下返回网关明确报错）；重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`）；拖车灯光检测（双后轮皮卡） |
+| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 | 远程启动/熄火；灯光寻车（ZoneLightingON/OFF，按车型能力创建）；鸣笛寻车（类型 0-3：开 = `POST /api/vehicles/v5/{vin}/honk`、关 = `DELETE` 同路径；类型「声光共舞」：开 = `send-command InitialVA`（cmdSpec VAType=4 + Duration）、关 = `send-command CancelVA`——HAR 实证 App 官方声光寻车通道，灯+喇叭同响）；鸣笛时长与类型按设置生效 |
 | select | 鸣笛持续时长 / 鸣笛类型 | 鸣笛寻车设置：持续时长 5/10/15/20 秒；鸣笛类型 雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞（选择即保存，鸣笛时参数直达车机） |
 | sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌、自动熄火倒计时、车窗（未关闭显示程度/百分比）等 |
 | sensor | 车辆异常警示 | 真实告警接口（胎压监测系统警告等），无异常显示「无异常」 |
@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.2.1**：**声光共舞修复**——鸣笛寻车开关在类型为「声光共舞」时不再走 V5 `/panic/{duration}`（中国区网关 404），改走 **send-command `InitialVA`**（cmdSpec `VAType=4`+`Duration`，HAR 实测 200 + commandId，App 官方声光寻车通道：灯+喇叭同响），关闭改走 `send-command CancelVA`；命令结果经 `command-execution-status` 轮询写入「鸣笛命令状态」传感器。同时修正误标：`InitialVA`/`CancelVA` 实为鸣笛通告通道（FORD_HONK/FORD_HONK_CANCEL，非语音助手），「语音助手初始化/取消」按钮重命名为「声光寻车触发（鸣笛+灯光）/取消」
 - **v3.2.0**：**版本号规则修正**——按十进制、每段不超过 9、超 9 前一位 +1（如 2.1.9 → 2.2.0）回归合规版本轨道；功能与 v3.1.20 一致（云端能力探测等）
 - **v3.1.20**：新增**云端能力探测**传感器（全车型自动创建的关键）——把 ccfeatures `availableFeatures` 位图（VDSFeatureType 24 项枚举，逆向自福特派 6.16.0 libapp.so）解析为该车开通的云端服务能力集，状态直接显示「已开通 N 项：计划保养服务、指南、道路救援…」，属性含 capabilities 中文列表 / feature_ids 原始位图 / 逐项 capability_XX（如锐际纯油 `03,04,05,06,07,08,10,11,23` = 计划保养服务/指南/道路救援/延保/福特金融/私充服务/我的订阅/我的试驾 + 未定义特性 0x23）；解码表移入 `capability.py`（`parse_cloud_features`）供全平台复用——不同车型登录后按各自位图自动创建，无位图数据的车型不创建，0 unavailable
 - **v3.1.19**：`capability_v4`（cvfeatures v4）拉取失败日志降级——该路径经 v3.1.14-16 多轮 GET/POST 实测均 404（中国区网关无此路由，App 当前版本未实际调用），为预期状态，不再每次刷新刷 WARNING（降为 DEBUG）；「车辆能力清单」传感器仍如实显示获取失败原因，0 unavailable——能力数据以已生效的 ccfeatures（v2）位图 + VDSFeatureType 解码为准
