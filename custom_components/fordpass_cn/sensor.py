@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
-from .const import CHIRP_TO_ANNOUNCE, DOMAIN
+from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
 from .coordinator import FordPassCoordinator
 
 
@@ -1330,14 +1330,20 @@ class FordPassChirpCloudSensor(SensorEntity):
         pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
         if not isinstance(pref, dict):
             return None
-        sound = pref.get("vehicleAnnouncementSoundType") or pref.get("AnnouncementType")
-        duration = pref.get("vehicleAnnouncementDuration") or pref.get("Duration")
+        # v3.2.2: 优先 App 官方槽位 AnnouncementType/Duration（HAR 实证），
+        # 旧槽位 vehicleAnnouncementSoundType/vehicleAnnouncementDuration
+        # 仅兜底（历史残留、App 新逻辑不读）。
+        sound = pref.get("AnnouncementType") or pref.get("vehicleAnnouncementSoundType")
+        duration = pref.get("Duration") or pref.get("vehicleAnnouncementDuration")
         if sound is None and duration is None:
             return None
+        # 新槽位=枚举数字（0-4）；旧槽位=枚举名（chrip1...panic）——分别映射
         type_cn = next(
             (cn for cn, en in CHIRP_TO_ANNOUNCE.items() if en == str(sound)),
-            str(sound),
+            None,
         )
+        if type_cn is None:
+            type_cn = ANNOUNCE_ENUM_CN.get(str(sound), str(sound))
         return f"{type_cn} / {duration} 秒"
 
     @property
