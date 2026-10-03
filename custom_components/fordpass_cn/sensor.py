@@ -1081,10 +1081,14 @@ class FordPassSimSensor(_ServiceInfoSensor):
         # 无 sim/info 请求）——v3.3.0 语义修正为「未开通」而非「查询失败」，
         # 错误码保留在 attributes（_summary 一并带出）。
         if payload.get("returnSuccess") is False:
-            code = payload.get("returnErrCode") or ""
-            if str(code).startswith("CONS."):
+            code = str(payload.get("returnErrCode") or "")
+            msg = str(payload.get("returnErrMsg") or "")
+            # v3.2.6: 错误码（402/CONS.SYS.0002）与错误描述（CONS.AUTH.0005）
+            # 都在业务失败时给出——任一命中即判定为「未开通该服务」；
+            # 401/402/403/404 归入同一语义（无权限/未开通/路由不存在）。
+            if code.startswith("CONS.") or msg.startswith("CONS.") or code in ("401", "402", "403", "404"):
                 return "车辆未开通该服务"
-            return f"查询失败（{code or payload.get('returnErrMsg') or '未知'}）"
+            return f"查询失败（{code or msg or '未知'}）"
         info = payload
         iccid = info.get("iccid") or info.get("simICCID")
         if iccid:
@@ -1116,10 +1120,14 @@ class FordPassWifiSensor(_ServiceInfoSensor):
         # v3.3.0: 与 SIM 一致——锐际纯油无车联网热点服务，业务失败（CONS.AUTH.0005
         # 等）语义修正为「未开通」，错误码保留 attributes。
         if payload.get("returnSuccess") is False:
-            code = payload.get("returnErrCode") or ""
-            if str(code).startswith("CONS."):
+            code = str(payload.get("returnErrCode") or "")
+            msg = str(payload.get("returnErrMsg") or "")
+            # v3.2.6: 错误码（402/CONS.SYS.0002）与错误描述（CONS.AUTH.0005）
+            # 都在业务失败时给出——任一命中即判定为「未开通该服务」；
+            # 401/402/403/404 归入同一语义（无权限/未开通/路由不存在）。
+            if code.startswith("CONS.") or msg.startswith("CONS.") or code in ("401", "402", "403", "404"):
                 return "车辆未开通该服务"
-            return f"查询失败（{code or payload.get('returnErrMsg') or '未知'}）"
+            return f"查询失败（{code or msg or '未知'}）"
         state = payload.get("wifiStatus")
         if state is None or state == "" or state == "Null":
             return None
