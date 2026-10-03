@@ -59,9 +59,12 @@ _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, lis
     # 远程控车开启（crccFlag=ON）才有意义
     ("central_lighting", "中央区灯光", "mdi:car-light-high", CMD_CENTRAL_LIGHTING,
      [["crccFlag"]], "usable", None),
-    ("va_init", "语音助手初始化", "mdi:assistant", CMD_VA_INIT, [["crccFlag"]], "on",
+    # v3.2.1: InitialVA/CancelVA 实为鸣笛通告通道（FORD_HONK，非语音助手——
+    # HAR 实证 cmdSpec VAType=4=声光共舞）。重命名为「声光寻车」避免误导；
+    # 日常鸣笛仍用「鸣笛寻车」开关（switch），此按钮为声光共舞专用触发。
+    ("va_init", "声光寻车触发（鸣笛+灯光）", "mdi:bullhorn", CMD_VA_INIT, [["crccFlag"]], "on",
      [{"key": "VAType", "value": "4"}, {"key": "Duration", "value": "15"}]),
-    ("va_cancel", "语音助手取消", "mdi:assistant", CMD_VA_CANCEL, [["crccFlag"]], "on",
+    ("va_cancel", "声光寻车取消", "mdi:bullhorn-outline", CMD_VA_CANCEL, [["crccFlag"]], "on",
      [{"key": "VAType", "value": "4"}]),
     # 固件/OTA 相关（firmwareUpgInProgress 字段存在即认为支持）
     ("ota_schedule", "OTA 激活排程", "mdi:update", CMD_OTA_SCHEDULE,
