@@ -875,19 +875,23 @@ class FordPassApi:
         duration: int = DEFAULT_HONK_DURATION,
         chirp_type: int = 3,
     ) -> dict[str, Any]:
-        """保存鸣笛寻车设置到福特账户云端（v3.1.4，UserPreferenceV2 真通道）。
+        """保存鸣笛寻车设置到福特账户云端（v3.2.2，字段对齐 App 官方协议）。
 
-        2026-10-02 逆向 libapp.so（blutter）还原并实机验证：
+        v3.1.4 UserPreferenceV2 真通道；v3.2.2 修正字段与值（HAR 实证
+        2026-10-03 福特派 6.16.0）——App 保存/读取用 AnnouncementType +
+        Duration（值=枚举数字字符串），旧槽位 vehicleAnnouncementSoundType/
+        vehicleAnnouncementDuration 仅历史残留、App 不读（此前写旧槽位
+        导致「保存设置无效」根因）：
         POST /api/cnxapi-pds/v1/user/preference-by-groups
         body: {preferenceGroups: [{groupName: "VehicleAnnouncementSetting",
-               userPreferences: [{preferenceType: "vehicleAnnouncementSoundType",
-                                  preferenceValue: "<chrip1|chirp2|chirpHonk|honk|panic>"},
-                                 {preferenceType: "vehicleAnnouncementDuration",
+               userPreferences: [{preferenceType: "AnnouncementType",
+                                  preferenceValue: "<0-4 枚举数字>"},
+                                 {preferenceType: "Duration",
                                   preferenceValue: "<5-20>"}]}], timestamp, sign}
         - 顶层不包 encryptedVin/xjw（DTO 拒绝未知字段，实测 400）
         - sign = compute_sign({preferenceGroups, timestamp})（R3 双重 +
           嵌套序列化：list→[a&b]、dict→{k=v}）——200 保存成功；
-          GET preference-list 回读确认已写入福特云端。
+          GET preference-list 回读确认（AnnouncementType/Duration 槽位）。
         旧 RCC profile-by-vin 通道（CHIRP_TYPE）已废弃（其 100400 sign 为
         R2 独立密钥体系；真实通道即本 UserPreferenceV2）。
         """
