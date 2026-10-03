@@ -631,6 +631,30 @@ class FordPassApi:
             except json.JSONDecodeError:
                 return {"raw": text}
 
+    async def va_command(
+        self,
+        vin: str,
+        command_type: str,
+        vatype: int = 4,
+        duration: int | None = None,
+    ) -> dict[str, Any]:
+        """send-command InitialVA / CancelVA — 鸣笛通告（Vehicle Announcement）。
+
+        v3.2.1: HAR 实证（2026-10-03，福特派 6.16.0）——App 的「鸣笛寻车
+        （声光共舞）」走 cn.api.mps.ford.com.cn send-command：
+          InitialVA: {"commandType":"InitialVA","cmdSpec":[{"key":"VAType",
+            "value":"4"},{"key":"Duration","value":"15"}]} → 200 + commandId=26
+          CancelVA:  {"commandType":"CancelVA","cmdSpec":[{"key":"VAType",
+            "value":"4"}]} → 200 + commandId=476
+        VAType = VehicleAnnouncementType 枚举（chrip1=0 / chirp2=1 /
+        chirpHonk=2 / honk=3 / panic=4）。类型 4（声光共舞=灯+喇叭）走此
+        通道——V5 /panic 端点在中国区网关实测 404。
+        """
+        cmd_spec: list[dict[str, Any]] = [{"key": "VAType", "value": str(vatype)}]
+        if duration is not None:
+            cmd_spec.append({"key": "Duration", "value": str(duration)})
+        return await self.send_command(vin, command_type, cmd_spec)
+
     async def panic_command(self, vin: str, duration: int = 10) -> dict[str, Any]:
         """POST /api/vehicles/v5/{vin}/panic/{paniconduration} — 声光共舞。
 
