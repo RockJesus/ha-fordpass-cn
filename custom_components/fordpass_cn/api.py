@@ -20,6 +20,7 @@ import json
 import math
 import re
 import time
+import uuid
 import urllib.parse
 import uuid
 from typing import Any
@@ -1227,8 +1228,14 @@ class FordPassApi:
         """同步 B2C 登录（requests），返回 authorization code。"""
         import requests  # noqa: F401  (Home Assistant 运行时自带)
 
+        # v3.3.0: UA/headers/参数对齐福特派 6.16.0 HAR 实测（2026-10-03）。
+        # 此前 UA 用 Android 15 V2284A 且 authorize 不带 consent 参数——
+        # B2C 风控策略更新后返回 567 拦截页（"B2C authorize failed"）。
+        # App 实证：WebView UA（Android 12 BRA-AL00）、x-requested-with
+        # com.ford.fordpasscn、sec-fetch-* 全家桶、authorize 带
+        # tnc_consent1_accepted=true&tnc_consent2_accepted=false。
         ua = (
-            "Mozilla/5.0 (Linux; Android 15; V2284A Build/V417IR; wv) "
+            "Mozilla/5.0 (Linux; Android 12; BRA-AL00 Build/V417IR; wv) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
             "Chrome/110.0.5481.154 Mobile Safari/537.36 channel/app"
         )
@@ -1243,16 +1250,24 @@ class FordPassApi:
             "ford_application_id": APPLICATION_ID,
             "language_code": "zh-CN",
             "tnc_accepted": "true",
-            # 注意：不带 tnc_consent1/2_accepted——实测纯 HTTP 客户端携带
-            # consent 参数会触发 B2C 风控 567 拦截；不带（仅 tnc_accepted=true）
-            # 与官方 WebView 登录成功路径等效（2026-09-29 抓包验证）
+            # v3.3.0: App 6.16.0 HAR 实证携带 consent 参数（此前 v2.7.6 实测
+            # 不带能过、带会被拦——服务端策略已反转，现在必须带）。
+            "tnc_consent1_accepted": "true",
+            "tnc_consent2_accepted": "false",
         }
         s = requests.Session()
         s.headers.update({
             "User-Agent": ua,
-            "Accept": "*/*",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Encoding": "gzip, deflate",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
             "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-User": "?1",
+            "Sec-Fetch-Dest": "document",
+            "X-Requested-With": "com.ford.fordpasscn",
         })
         # 1) authorize
         r = s.get(
@@ -1262,6 +1277,17 @@ class FordPassApi:
         )
         html = r.text
         if r.status_code != 200:
+            # v3.3.0: 567 = 腾讯云 EdgeOne WAF 拦截（login.ford.com.cn 前置
+            # EdgeOne 安全防护）。实测 2026-10-03 起纯 HTTP 客户端（requests/
+            # curl_cffi 全指纹/Chrome headless）均返回 567 拦截页——WAF 策略
+            # 变严，非代码问题；App WebView 在策略窗口内可登录。
+            if "EdgeOne" in html or 'id="statusCode">567' in html:
+                raise FordPassApiError(
+                    r.status_code,
+                    "B2C 登录被福特登录页安全防护（腾讯云 EdgeOne）拦截——"
+                    "当前为纯 HTTP 客户端无法通过 WAF，请改用短信验证码登录"
+                    "或稍后重试（App 登录不受影响）",
+                )
             raise FordPassApiError(r.status_code, f"B2C authorize failed: {html[:200]}")
         m_csrf = re.search(r'"csrf":\s*"([^"]+)"', html)
         csrf = m_csrf.group(1) if m_csrf else ""
@@ -1298,6 +1324,7 @@ class FordPassApi:
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Origin": B2C_AUTHORITY,
             "Referer": referer,
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
             "Sec-Fetch-Site": "same-origin",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Dest": "empty",
@@ -1322,6 +1349,12 @@ class FordPassApi:
             raise FordPassApiError(None, f"B2C credentials rejected: {text[:200]}")
 
         # 3) confirmed -> 302 Location carries ?code=
+        # v3.3.0: 对齐 App 6.16.0——带 diags（pageViewId 随机 UUID + pageId），
+        # headers 带 WebView x-requested-with / sec-fetch 导航头。
+        diags = json.dumps({
+            "pageViewId": str(uuid.uuid4()),
+            "pageId": "CombinedSigninAndSignup",
+        }, separators=(",", ":"))
         r3 = s.get(
             B2C_AUTHORITY + B2C_PATH_CONFIRMED,
             params={
@@ -1329,8 +1362,19 @@ class FordPassApi:
                 "csrf_token": csrf,
                 "tx": tx_qs,
                 "p": B2C_POLICY,
+                "diags": diags,
             },
-            headers={"User-Agent": ua},
+            headers={
+                "User-Agent": ua,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "X-Requested-With": "com.ford.fordpasscn",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-User": "?1",
+                "Sec-Fetch-Dest": "document",
+                "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            },
             timeout=30,
             allow_redirects=False,
         )
