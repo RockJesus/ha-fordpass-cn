@@ -988,22 +988,36 @@ class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
 
     def _format(self, data: dict) -> str | None:
         # 实测响应 data.data.values[].{mileage, operations[]}（v3.1.5 修正：
-        # 此前读 data.data / data.values 两层都错位，state 恒为 unknown）
+        # 此前读 data.data / data.values 两层都错位，state 恒为 unknown）。
+        # v3.3.0: 显示完整首档（该里程下所有项目）+ 档数，替代仅首项——
+        # HAR（2026-10-03）确认 App 保养计划页展示全部里程档的全部项目。
         payload = data.get("data") if isinstance(data, dict) else None
         items = payload.get("values") if isinstance(payload, dict) else None
         if not isinstance(items, list) or not items:
             return None
-        first = items[0]
-        if not isinstance(first, dict):
-            return str(items)
-        mileage = first.get("mileage")
-        ops = first.get("operations") or []
-        label = "保养计划"
-        if ops and isinstance(ops[0], dict):
-            label = str(ops[0].get("description") or label)
-        if mileage is not None:
-            return f"{label}（{mileage} 公里）"
-        return label
+        descs: list[str] = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            ops = [
+                str(o.get("description"))
+                for o in (it.get("operations") or [])
+                if isinstance(o, dict) and o.get("description")
+            ]
+            if not ops:
+                continue
+            mileage = it.get("mileage")
+            head = f"{mileage} 公里" if mileage is not None else "保养档"
+            descs.append(f"{head}：{'、'.join(ops)}")
+        if not descs:
+            return None
+        first = descs[0]
+        if len(items) > 1:
+            first += f"（共 {len(items)} 档）"
+        # HA state 有 255 字符上限；首档项目多时截断加省略号
+        if len(first) > 230:
+            first = first[:227] + "…"
+        return first
 
     def _summary(self, data: dict) -> dict:
         payload = data.get("data") if isinstance(data, dict) else None
@@ -1062,9 +1076,15 @@ class FordPassSimSensor(_ServiceInfoSensor):
         if not isinstance(data, dict):
             return None
         payload = data.get("data") if isinstance(data.get("data"), dict) else {}
-        # 服务端业务失败（实测 payload.returnSuccess false / CONS.SYS.0002）：如实显示
+        # 服务端业务失败（实测 payload.returnSuccess false / CONS.SYS.0002）：
+        # 锐际纯油车型无车联网 SIM 服务，App 无该功能入口（HAR 全量 1152 条
+        # 无 sim/info 请求）——v3.3.0 语义修正为「未开通」而非「查询失败」，
+        # 错误码保留在 attributes（_summary 一并带出）。
         if payload.get("returnSuccess") is False:
-            return f"查询失败（{payload.get('returnErrMsg') or payload.get('returnErrCode') or '未知'}）"
+            code = payload.get("returnErrCode") or ""
+            if str(code).startswith("CONS."):
+                return "车辆未开通该服务"
+            return f"查询失败（{code or payload.get('returnErrMsg') or '未知'}）"
         info = payload
         iccid = info.get("iccid") or info.get("simICCID")
         if iccid:
@@ -1076,7 +1096,8 @@ class FordPassSimSensor(_ServiceInfoSensor):
     def _summary(self, data: dict) -> dict:
         info = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), dict) else {}
         keep = {}
-        for k in ("iccid", "simICCID", "simStatus", "phoneNumber", "carrier", "operator", "status"):
+        for k in ("iccid", "simICCID", "simStatus", "phoneNumber", "carrier", "operator", "status",
+                  "returnSuccess", "returnErrCode", "returnErrMsg"):
             if info.get(k) is not None:
                 keep[k] = info[k]
         return keep
@@ -1092,8 +1113,13 @@ class FordPassWifiSensor(_ServiceInfoSensor):
         if not isinstance(data, dict):
             return None
         payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+        # v3.3.0: 与 SIM 一致——锐际纯油无车联网热点服务，业务失败（CONS.AUTH.0005
+        # 等）语义修正为「未开通」，错误码保留 attributes。
         if payload.get("returnSuccess") is False:
-            return f"查询失败（{payload.get('returnErrMsg') or payload.get('returnErrCode') or '未知'}）"
+            code = payload.get("returnErrCode") or ""
+            if str(code).startswith("CONS."):
+                return "车辆未开通该服务"
+            return f"查询失败（{code or payload.get('returnErrMsg') or '未知'}）"
         state = payload.get("wifiStatus")
         if state is None or state == "" or state == "Null":
             return None
@@ -1102,7 +1128,7 @@ class FordPassWifiSensor(_ServiceInfoSensor):
     def _summary(self, data: dict) -> dict:
         status = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), dict) else {}
         keep = {}
-        for k in ("ssid", "wifiStatus", "encryptedVin"):
+        for k in ("ssid", "wifiStatus", "encryptedVin", "returnSuccess", "returnErrCode", "returnErrMsg"):
             if status.get(k) not in (None, "", "Null"):
                 keep[k] = status[k]
         return keep
