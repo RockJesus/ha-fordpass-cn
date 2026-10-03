@@ -113,15 +113,16 @@ class FordPassHonkDurationSelect(_FordPassHonkSettingSelect):
         self._attr_unique_id = f"{coordinator.vin}-honk_duration"
         self._attr_name = "鸣笛持续时长"
         self._attr_device_info = coordinator.device_info
-        self._attr_options = [str(v) for v in HONK_DURATION_OPTIONS]
-        self._attr_current_option = str(
-            settings.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
+        self._attr_options = [f"{v} 秒" for v in HONK_DURATION_OPTIONS]
+        self._attr_current_option = (
+            f"{settings.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)} 秒"
         )
 
     async def async_select_option(self, option: str) -> None:
-        value = int(option)
+        # v3.2.4: 选项显示带「秒」单位（如 15 秒），持久化仍存纯数字
+        value = int(str(option).replace("秒", "").strip())
         self._persist(CONF_HONK_DURATION, value)
-        self._attr_current_option = str(value)
+        self._attr_current_option = f"{value} 秒"
         self.async_write_ha_state()
 
 
