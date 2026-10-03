@@ -243,24 +243,17 @@ class FordPassSaveHonkSettingsButton(ButtonEntity):
         return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
     def _settings(self) -> tuple[int, int]:
-        # v3.0.10: entry_id 优先从 coordinator 取（coordinator 构造时已保存）；
-        # 兜底遍历 hass.data[DOMAIN] 找到包含本 coordinator 的条目——
-        # 避免 coordinator 由其他路径构造（entry_id 缺失）时按钮崩溃。
-        settings: dict[str, Any] = {}
+        # v3.2.3: 读 config entry options——select 每次选择即 _persist 写入
+        # options（持久化权威），保存按钮与 select 显示 100% 同步。
+        # 此前读内存 honk_settings，重启后与 select 状态可能分裂
+        # （HA 实体恢复时序），导致保存按钮存默认值（v3.2.2 实测定罪）。
+        options: dict[str, Any] = {}
         entry_id = getattr(self.coordinator, "entry_id", None)
-        domain_data = self.coordinator.hass.data.get(DOMAIN, {})
-        if entry_id is not None and entry_id in domain_data:
-            settings = domain_data[entry_id].get("honk_settings", {})
-        else:
-            for _eid, payload in domain_data.items():
-                if (
-                    isinstance(payload, dict)
-                    and payload.get("coordinator") is self.coordinator
-                ):
-                    settings = payload.get("honk_settings", {})
-                    break
-        duration = int(settings.get(CONF_HONK_DURATION, 10) or 10)
-        chirp_name = settings.get(CONF_CHIRP_TYPE) or CHIRP_TYPE_OPTIONS[2]
+        if entry_id:
+            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
+            options = entry.options if entry else {}
+        duration = int(options.get(CONF_HONK_DURATION, 10) or 10)
+        chirp_name = options.get(CONF_CHIRP_TYPE) or CHIRP_TYPE_OPTIONS[2]
         if chirp_name in CHIRP_TYPE_OPTIONS:
             chirp_type = CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
         else:
