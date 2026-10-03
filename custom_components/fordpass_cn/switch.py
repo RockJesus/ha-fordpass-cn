@@ -32,6 +32,8 @@ from .const import (
     CMD_ENGINE_STOP,
     CMD_LIGHT_FIND_OFF,
     CMD_LIGHT_FIND_ON,
+    CMD_VA_CANCEL,
+    CMD_VA_INIT,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
     DOMAIN,
@@ -194,19 +196,75 @@ class FordPassHonkSwitch(SwitchEntity):
         chirp_name = settings.get(CONF_CHIRP_TYPE) or "汽笛长鸣"
         return duration, str(chirp_name)
 
+    @staticmethod
+    def _command_id(resp: Any) -> str | None:
+        """Extract commandId from the decrypted send-command response."""
+        if isinstance(resp, dict):
+            cid = resp.get("commandId")
+            if cid:
+                return str(cid)
+            inner = resp.get("data")
+            if isinstance(inner, dict) and inner.get("commandId"):
+                return str(inner["commandId"])
+        return None
+
+    async def _poll_cmd_status(self, command_type: str, command_id: str) -> None:
+        """send-command 轮询 command-execution-status（HAR：InitialVA=26/
+        CancelVA=476）——结果写入 announce_status 传感器，尽力而为。
+        """
+        self.coordinator.announce_status = {
+            "command_id": command_id, "status": "执行中", "command_type": command_type,
+        }
+        try:
+            done, result = await self.coordinator.api.wait_command_complete(
+                self.coordinator.vin, command_id, command_type
+            )
+            if done and isinstance(result, dict):
+                st = result.get("vehiclestatus", result)
+                st.setdefault("command_id", command_id)
+                st.setdefault("command_type", command_type)
+                self.coordinator.announce_status = st
+            else:
+                self.coordinator.announce_status = {
+                    "command_id": command_id,
+                    "status": "超时或未完成",
+                    "command_type": command_type,
+                    "error": "command-execution-status 轮询超时（鸣笛命令可能已执行完成）",
+                }
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("FordPass %s 状态轮询失败: %s", command_type, exc)
+            self.coordinator.announce_status = {
+                "command_id": command_id,
+                "status": "查询失败",
+                "command_type": command_type,
+                "error": str(exc),
+            }
+        self.coordinator.async_update_listeners()
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         # v3.0.8: 鸣笛参数来自设置实体——持续时长/鸣笛类型直达车机
         duration, chirp_name = self._settings()
         chirp_type = CHIRP_TO_TYPE.get(chirp_name, 2)  # 0-4，App 枚举
         try:
             if chirp_type == 4:
-                # 声光共舞：独立 panic 端点（灯+喇叭警报）
+                # v3.2.1: 声光共舞改走 send-command InitialVA（HAR 实证 200 +
+                # commandId=26）——App 的「鸣笛寻车」即此通道（VAType=4=panic
+                # 灯+喇叭）；V5 /panic 端点锐际实测 404，不再使用。
                 _LOGGER.info(
-                    "FordPass 声光共舞（panic）触发 duration=%ss", duration,
+                    "FordPass 声光共舞（InitialVA VAType=4）触发 duration=%ss", duration,
                 )
-                resp = await self.coordinator.api.panic_command(
-                    self.coordinator.vin, duration=duration
+                resp = await self.coordinator.api.va_command(
+                    self.coordinator.vin, CMD_VA_INIT, vatype=4, duration=duration
                 )
+                cid = self._command_id(resp)
+                if cid:
+                    _LOGGER.info(
+                        "FordPass 声光共舞已触发 commandId=%s（时长=%ss）",
+                        cid, duration,
+                    )
+                    self.coordinator.hass.async_create_task(
+                        self._poll_cmd_status(CMD_VA_INIT, cid)
+                    )
             else:
                 resp = await self.coordinator.api.honk_command(
                     self.coordinator.vin,
@@ -217,7 +275,9 @@ class FordPassHonkSwitch(SwitchEntity):
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 鸣笛寻车失败（类型=%s）: %s", chirp_name, exc)
             raise
-        if isinstance(resp, dict) and resp.get("commandId"):
+        # 类型 0-3（V5 honk 通道）：commandId 走 V5 announcestatus 轮询；
+        # 类型 4（InitialVA）已在分支内用 command-execution-status 轮询，跳过。
+        if chirp_type != 4 and isinstance(resp, dict) and resp.get("commandId"):
             _LOGGER.info(
                 "FordPass 鸣笛寻车已触发 commandId=%s（时长=%ss 类型=%s）",
                 resp["commandId"], duration, chirp_name,
@@ -260,11 +320,26 @@ class FordPassHonkSwitch(SwitchEntity):
         self.coordinator.async_update_listeners()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        # 真实停止通道：DELETE /api/vehicles/v5/{vin}/honk（与 App 取消鸣笛一致）
+        # 真实停止通道：类型 0-3 = DELETE /api/vehicles/v5/{vin}/honk（与 App
+        # 取消鸣笛一致）；类型 4（声光共舞）= send-command CancelVA（HAR 实证
+        # 200 + commandId=476，App 取消声光寻车即此通道）。
+        _, chirp_name = self._settings()
+        chirp_type = CHIRP_TO_TYPE.get(chirp_name, 2)
         try:
-            resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
+            if chirp_type == 4:
+                resp = await self.coordinator.api.va_command(
+                    self.coordinator.vin, CMD_VA_CANCEL, vatype=4
+                )
+                cid = self._command_id(resp)
+                if cid:
+                    _LOGGER.info("FordPass 声光共舞已取消 commandId=%s", cid)
+                    self.coordinator.hass.async_create_task(
+                        self._poll_cmd_status(CMD_VA_CANCEL, cid)
+                    )
+            else:
+                resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass 鸣笛寻车（DELETE 关）失败: %s", exc)
+            _LOGGER.warning("FordPass 鸣笛寻车（关）失败: %s", exc)
             raise
         if isinstance(resp, dict) and resp.get("commandId"):
             _LOGGER.info("FordPass 鸣笛寻车已停止 commandId=%s", resp["commandId"])
