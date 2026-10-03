@@ -32,8 +32,12 @@ PATH_CRCC_PROFILE = "/api/cnxapi-cds/crcc/v1/profile-by-vin"  # 旧 RCC 通道�
 PATH_USER_PREF_GROUPS = "/api/cnxapi-pds/v1/user/preference-by-groups"
 PATH_USER_PREF_LIST = "/api/cnxapi-pds/v1/user/preference-list"
 GROUP_VEHICLE_ANNOUNCEMENT = "VehicleAnnouncementSetting"
-PREF_SOUND_TYPE = "vehicleAnnouncementSoundType"
-PREF_DURATION = "vehicleAnnouncementDuration"
+# v3.2.2: 字段名对齐 App 官方协议（HAR 实证 2026-10-03）——App 保存/读取
+# 用 AnnouncementType + Duration（值=枚举数字字符串）；旧槽位
+# vehicleAnnouncementSoundType（枚举名）/vehicleAnnouncementDuration 仅历史
+# 残留，App 新逻辑不读取——此前集成写旧槽位导致「保存无效」根因。
+PREF_SOUND_TYPE = "AnnouncementType"
+PREF_DURATION = "Duration"
 # 持续时长选项（App 设置页滑块 5-20 秒，默认 10 秒）
 HONK_DURATION_OPTIONS = [5, 10, 15, 20]
 DEFAULT_HONK_DURATION = 10
@@ -41,13 +45,23 @@ DEFAULT_HONK_DURATION = 10
 CHIRP_TYPE_OPTIONS = ["雨落荷叶", "急浪拍岸", "汽笛长鸣", "空谷回音", "声光共舞"]
 DEFAULT_CHIRP_TYPE = "汽笛长鸣"  # App 设置页默认选中项
 # 中文类型 → VehicleAnnouncementType（App 反编译枚举：chrip1=0/chirp2=1/
-# chirpHonk=2/honk=3/panic=4）；「保存鸣笛设置」上传云端用此值
+# chirpHonk=2/honk=3/panic=4）；「保存鸣笛设置」上传云端的 AnnouncementType
+# 值为枚举数字字符串（HAR 实证：{"preferenceType":"AnnouncementType",
+# "preferenceValue":"2"}）
 CHIRP_TO_ANNOUNCE = {
-    "雨落荷叶": "chrip1",
-    "急浪拍岸": "chirp2",
-    "汽笛长鸣": "chirpHonk",
-    "空谷回音": "honk",
-    "声光共舞": "panic",
+    "雨落荷叶": "0",
+    "急浪拍岸": "1",
+    "汽笛长鸣": "2",
+    "空谷回音": "3",
+    "声光共舞": "4",
+}
+# 旧槽位 vehicleAnnouncementSoundType 历史值（枚举名）→ 中文（兼容回读）
+ANNOUNCE_ENUM_CN = {
+    "chrip1": "雨落荷叶",
+    "chirp2": "急浪拍岸",
+    "chirpHonk": "汽笛长鸣",
+    "honk": "空谷回音",
+    "panic": "声光共舞",
 }
 # 中文类型 → v5 honk 请求的 ChirpType 数字（0-4，与 App 枚举一致，v3.1.8）：
 # 0=chrip1 / 1=chirp2 / 2=chirpHonk / 3=honk / 4=panic。
