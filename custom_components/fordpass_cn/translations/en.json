@@ -1,0 +1,59 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "FordPass China Login",
+        "description": "Choose a login method: {login_modes}. If login fails, check the fordpass_cn entries in the Home Assistant log (Settings → System → Logs).",
+        "data": {
+          "login_mode": "Login method"
+        }
+      },
+      "phone": {
+        "title": "Phone Number Login",
+        "description": "Enter the phone number registered with FordPass China and we will send a SMS verification code.",
+        "data": {
+          "phone": "Phone number"
+        }
+      },
+      "code": {
+        "title": "Enter Verification Code",
+        "description": "The verification code has been sent to {phone}. Enter the 6-digit code.",
+        "data": {
+          "passcode": "SMS verification code"
+        }
+      },
+      "password": {
+        "title": "Username & Password Login",
+        "description": "Enter your FordPass China account (phone number) and password. The password is only used once to exchange for a token and is not saved.",
+        "data": {
+          "username": "Username (phone number)",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "bad_phone": "Please enter a valid 11-digit phone number",
+      "bad_username": "Please enter a valid 11-digit phone number (username)",
+      "passcode_failed": "Failed to send the verification code. Check that the phone number is registered with FordPass China, or retry later (see log)",
+      "missing_deps": "Missing dependencies (unicorn or pyelftools). Confirm they were installed automatically, or run pip install unicorn pyelftools on the HA host and restart",
+      "login_failed": "Login failed. Check that the verification code is correct (see log)",
+      "password_login_failed": "Login failed: the Ford login page is protected by Tencent EdgeOne which currently blocks plain HTTP clients. Use SMS code login or retry later (see log)",
+      "unknown": "Unknown error. Check the fordpass_cn entries in the Home Assistant log"
+    },
+    "abort": {
+      "already_configured": "This phone number is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FordPass China Options",
+        "data": {
+          "scan_interval": "Status refresh interval (minutes)",
+          "track_location": "Enable vehicle location tracking",
+          "coordinate_system": "Coordinate system (WGS-84: GPS raw coordinates for HA/OSM maps; GCJ-02: GCJ coordinates as-is for AMap/Tencent maps)"
+        }
+      }
+    }
+  }
+}

@@ -6,16 +6,15 @@
   ],
   "config_flow": true,
   "documentation": "https://github.com/RockJesus/ha-fordpass-cn",
-  "issue_tracker": "https://github.com/RockJesus/ha-fordpass-cn/issues",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/RockJesus/ha-fordpass-cn/issues",
+  "loggers": [
+    "custom_components.fordpass_cn"
+  ],
   "requirements": [
     "unicorn==2.1.4",
     "pyelftools==0.29"
   ],
-  "version": "3.3.0",
-  "homeassistant": "2024.6.0",
-  "loggers": [
-    "custom_components.fordpass_cn"
-  ]
+  "version": "3.3.1"
 }
