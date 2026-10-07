@@ -119,7 +119,52 @@ async def async_setup_entry(
         if getattr(coordinator, "car_id", None):
             buttons.append(FordPassImageButton(coordinator, "停车影像", "mdi:car-multiple", "parking"))
             buttons.append(FordPassImageButton(coordinator, "行车监控", "mdi:cctv", "traffic"))
+        # v3.3.7: 云端命令白名单驱动——车型专属按钮按各自白名单自动创建
+        # （电马遥控泊车、支持车窗升降的车型等；锐际白名单无则自动跳过）
+        wl = coordinator.command_whitelist
+        if isinstance(wl, list):
+            parking = [c for c in wl if "Parking" in c]
+            if parking:
+                buttons.append(_FordPassWlButton(
+                    coordinator, "parking", "遥控泊车", "mdi:car-shift-pattern",
+                    parking[0]))
+            window = [c for c in wl if "Window" in c and "Check" not in c]
+            if window:
+                buttons.append(_FordPassWlButton(
+                    coordinator, "window_close", "远程关窗", "mdi:car-door",
+                    window[0]))
     async_add_entities(buttons)
+
+
+class _FordPassWlButton(ButtonEntity):
+    """白名单驱动的通用按钮（v3.3.7，车型专属功能）。
+
+    仅在云端命令白名单包含对应命令时创建；按下发送匹配命令，
+    命令无参数（网关参数格式未知时按下返回错误即如实提示）。
+    """
+
+    def __init__(
+        self,
+        coordinator: FordPassCoordinator,
+        suffix: str,
+        label: str,
+        icon: str,
+        command: str,
+    ) -> None:
+        self.coordinator = coordinator
+        self._command = command
+        self._attr_unique_id = f"{coordinator.vin}-{suffix}"
+        self._attr_name = label
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = icon
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    async def async_press(self) -> None:
+        await self.coordinator.run_command(self._command)
 
 
 class FordPassButton(ButtonEntity):

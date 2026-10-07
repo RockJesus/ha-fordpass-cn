@@ -1193,6 +1193,64 @@ class FordPassApi:
         inner = data.get("data") if isinstance(data, dict) else None
         return inner if isinstance(inner, dict) else None
 
+    # --------------------------------------------------- 能力探测（v3.3.7）
+    async def probe_command_whitelist(self, vin: str) -> list[str] | None:
+        """探测 send-command 白名单（全车型能力驱动的权威来源）。
+
+        发送非法 commandType → 网关 HTTP 400，错误消息体枚举合法命令列表
+        （"commandType should be in (..., DoorLock, ...)"）。非法类型不产生
+        任何车辆动作（幂等安全），仅用于读取该账号/该车真正支持的命令集。
+        返回合法命令列表；探测失败返回 None（调用方不创建新实体）。
+        """
+        enc_vin, xjw = await asyncio.to_thread(
+            lambda: self.crypto.encrypt_field(vin)
+        )
+        body = {
+            "commandType": "FordPassWhitelistProbe",
+            "encryptedVin": enc_vin,
+            "xjw": xjw,
+        }
+        try:
+            await self._request("POST", PATH_SEND_COMMAND, body=body)
+        except FordPassApiError as exc:
+            msg = str(exc)
+            m = re.search(r"should be in\s*\(([^)]*)\)", msg)
+            if m:
+                cmds = [c.strip() for c in m.group(1).split(",") if c.strip()]
+                self._log.info(
+                    "FordPass command whitelist (%d): %s", len(cmds), ", ".join(cmds)
+                )
+                return cmds
+            self._log.debug(
+                "FordPass whitelist probe non-standard 400: %s", msg[:200]
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001 - 探测失败不阻塞集成
+            self._log.debug("FordPass whitelist probe failed: %s", exc)
+            return None
+        self._log.debug("FordPass whitelist probe unexpected 2xx (no whitelist)")
+        return None
+
+    async def probe_extra_endpoints(self, vin: str) -> None:
+        """探测新增 GET 端点响应结构（debug 日志，供后续版本解析接入）。
+
+        v3.3.7：maintenance-history / departuretimes retrieve 响应结构未知，
+        此方法仅打印响应供开发，不创建实体。
+        """
+        probes = {
+            "maintenance-history": PATH_MAINTENANCE_HISTORY,
+            "departuretimes-retrieve": PATH_DEPARTURE_TIMES_RETRIEVE,
+        }
+        for name, path in probes.items():
+            try:
+                data = await self._get_signed(path, vin)
+                self._log.debug(
+                    "FordPass probe %s -> %s",
+                    name, json.dumps(data, ensure_ascii=False)[:800],
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._log.debug("FordPass probe %s failed: %s", name, exc)
+
     # --------------------------------------------------------- b2c login
     async def password_login(
         self, username: str, password: str
