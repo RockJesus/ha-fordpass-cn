@@ -56,10 +56,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 最近一次成功拉取的时间（v2.7.8），暴露为传感器 last_poll 属性
         self.last_poll: datetime | None = None
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
-        # active_alerts 失败降级：连续失败 2 次后 1 小时内不再请求，
-        # 避免接口 404 时每轮都发无效请求并刷日志噪音（v2.7.5）。
-        self._alerts_fail = 0
-        self._alerts_hold_until: float | None = None
+        # v3.4.1: active_alerts 频率由 TTL 缓存控制（30 分钟）——取代旧
+        # "_alerts_fail/_alerts_hold_until 连续失败 2 次抑制 1h" 逻辑
+        # （TTL 命中天然抑制重试，失败保留最后已知状态）。
         # v3.0.10: 保存鸣笛设置按钮经由此定位 hass.data[DOMAIN][entry_id] 的
         # honk_settings（按钮 _settings 依赖 entry_id 取配置实时值）。
         self.entry_id = entry_id
@@ -79,6 +78,32 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         # v3.3.7: 云端 send-command 白名单（探测结果）——平台实体按此动态创建
         self.command_whitelist: list[str] | None = None
+        # v3.4.1: 慢变数据 TTL 缓存（key -> (expire_monotonic, data)）——
+        # 防止福特云限流：只有 vehicle-status 每轮拉取，其余按 TTL 命中
+        # 直接复用上次数据，不发请求；请求失败保留旧缓存（最后已知状态）。
+        self._cache: dict[str, tuple[float, Any]] = {}
+
+    def _cache_hit(self, key: str) -> tuple[bool, Any]:
+        ent = self._cache.get(key)
+        if ent and time.monotonic() < ent[0]:
+            return True, ent[1]
+        return False, None
+
+    async def _cached_fetch(self, key: str, ttl: float, coro) -> Any:
+        """TTL 缓存包装：命中直接返回旧值；失败保留旧值；成功写缓存。"""
+        hit, old = self._cache_hit(key)
+        if hit:
+            return old
+        try:
+            val = await coro
+        except Exception as exc:  # noqa: BLE001 - best effort，失败不阻塞刷新
+            self.logger.debug("FordPass %s fetch failed: %s", key, exc)
+            if old is not None:
+                return old
+            return None
+        if val is not None:
+            self._cache[key] = (time.monotonic() + ttl, val)
+        return val
 
     async def async_probe_capabilities(self) -> None:
         """探测云端命令白名单 + 新增 GET 端点结构（v3.3.7，尽力而为）。
@@ -205,90 +230,56 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except asyncio.TimeoutError as err:
             raise UpdateFailed("FordPass update timed out") from err
 
-        # Best-effort location (only when the user enabled tracking; the LBS
-        # gateway is a separate APIM endpoint and costs a remote round trip).
+        # ---- v3.4.1 防限流优化：以下均走 TTL 缓存，慢变数据命中即复用，
+        # 不发请求；请求失败保留旧缓存（最后已知状态），不阻塞主刷新。----
+        # Best-effort location（track_location 开启时；LBS 独立网关，
+        # 车停着坐标不变 → 15 分钟 TTL）
         if self.track_location:
-            try:
-                loc = await self.api.get_location(self.vin, self.coordinate_system)
-                if isinstance(loc, dict) and loc.get("lat"):
-                    data["location"] = loc
-                else:
-                    data["location"] = None
-            except Exception as exc:  # noqa: BLE001
-                self.logger.debug("FordPass location fetch failed: %s", exc)
+            loc = await self._cached_fetch(
+                "location", 900, self.api.get_location(self.vin, self.coordinate_system)
+            )
+            if isinstance(loc, dict) and loc.get("lat"):
+                data["location"] = loc
+            else:
                 data["location"] = None
-
-        # Vehicle health alerts (plaintext Chinese headlines) — best effort.
-        # 失败降级：连续失败 2 次 → 抑制 1 小时再试（v2.7.5）。
-        now = time.monotonic()
-        if self._alerts_hold_until is None or now >= self._alerts_hold_until:
-            try:
-                alerts = await self.api.get_active_alerts(self.vin)
-                data["active_alerts"] = alerts or []
-                self._alerts_fail = 0
-                self._alerts_hold_until = None
-            except Exception as exc:  # noqa: BLE001
-                self.logger.debug("FordPass active alerts fetch failed: %s", exc)
-                data["active_alerts"] = []
-                self._alerts_fail += 1
-                if self._alerts_fail >= 2:
-                    self._alerts_hold_until = now + 3600
-                    self._alerts_fail = 0
-                    self.logger.info(
-                        "FordPass active alerts failing; suppressing retries for 1h"
-                    )
-        else:
-            data["active_alerts"] = []
-        # v3.1.3: OTA 设置状态（尽力而为，与 alerts 同模式——失败不阻塞刷新）
-        try:
-            ota = await self.api.get_ota_setting(self.vin)
-            data["ota_setting"] = ota or None
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass OTA setting fetch failed: %s", exc)
-            data["ota_setting"] = None
-        # v3.1.4: 服务信息端点（保养计划/召回/SIM/WiFi；warranty 100502 暂不拉取）
-        for key, coro in (
-            ("maintenance_plan", self.api.get_maintenance_plan(self.vin)),
-            ("recall", self.api.get_recall(self.vin)),
-            ("sim_info", self.api.get_sim_info(self.vin)),
-            ("wifi_status", self.api.get_wifi_status(self.vin)),
+        # Vehicle health alerts（30 分钟 TTL；失败保留旧列表/清空，
+        # TTL 命中天然抑制重试——取代旧"连续失败 2 次抑制 1h"逻辑）
+        alerts = await self._cached_fetch(
+            "active_alerts", 1800, self.api.get_active_alerts(self.vin)
+        )
+        data["active_alerts"] = alerts if isinstance(alerts, list) else []
+        # OTA 设置状态（6 小时 TTL——OTA 排程配置几乎不变）
+        data["ota_setting"] = await self._cached_fetch(
+            "ota_setting", 21600, self.api.get_ota_setting(self.vin)
+        )
+        # 服务信息端点（保养计划 12h / 召回 24h / SIM 6h / WiFi 15min TTL）
+        for key, ttl, coro in (
+            ("maintenance_plan", 43200, self.api.get_maintenance_plan(self.vin)),
+            ("recall", 86400, self.api.get_recall(self.vin)),
+            ("sim_info", 21600, self.api.get_sim_info(self.vin)),
+            ("wifi_status", 900, self.api.get_wifi_status(self.vin)),
         ):
-            try:
-                data[key] = await coro
-            except Exception as exc:  # noqa: BLE001
-                self.logger.debug("FordPass %s fetch failed: %s", key, exc)
-                data[key] = None
-        # v3.1.4: 鸣笛设置云端查询（UserPreferenceV2，尽力而为）
-        try:
-            data["chirp_cloud"] = await self.api.get_chirp_preference()
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass chirp preference fetch failed: %s", exc)
-            data["chirp_cloud"] = None
-        # v3.1.7: 空调滤芯状态（GET /api/cnxapi-vds/v1/aar/status，尽力而为；
-        # 无 AAR 能力/接口失败的车型 data 置 None——实体不创建，不显示不可用）
-        try:
-            data["air_filter"] = await self.api.get_air_filter_status(self.vin)
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass air filter status fetch failed: %s", exc)
-            data["air_filter"] = None
-        # v3.1.9: 云端能力+服务信息（ccfeatures）与预测性诊断（prognostic），
-        # 均 200 实测；失败置 None——实体不创建，不显示不可用
-        for key, coro in (
-            ("ccfeatures", self.api.get_ccfeatures(self.vin)),
-            ("prognostic", self.api.get_prognostic(self.vin)),
+            data[key] = await self._cached_fetch(key, ttl, coro)
+        # 鸣笛设置云端查询（UserPreferenceV2，1 小时 TTL——用户改设置时
+        # select 已即时上云+本地写入，此查询仅作初始化同步）
+        data["chirp_cloud"] = await self._cached_fetch(
+            "chirp_preference", 3600, self.api.get_chirp_preference()
+        )
+        # 空调滤芯状态（6 小时 TTL——健康度变化慢）
+        data["air_filter"] = await self._cached_fetch(
+            "air_filter", 21600, self.api.get_air_filter_status(self.vin)
+        )
+        # 云端能力+服务信息（ccfeatures 24h TTL——出厂能力几乎永不变）
+        # 与预测性诊断（prognostic 6h TTL——机油寿命/剩余里程变化慢）
+        for key, ttl, coro in (
+            ("ccfeatures", 86400, self.api.get_ccfeatures(self.vin)),
+            ("prognostic", 21600, self.api.get_prognostic(self.vin)),
         ):
-            try:
-                data[key] = await coro
-            except Exception as exc:  # noqa: BLE001
-                self.logger.debug("FordPass %s fetch failed: %s", key, exc)
-                data[key] = None
-        # v3.1.17: 未读消息摘要（HAR 实测 200；无 encryptedVin，失败置 None——
-        # 实体不创建，不显示不可用）
-        try:
-            data["messages"] = await self.api.get_messages_summary()
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass messages summary fetch failed: %s", exc)
-            data["messages"] = None
+            data[key] = await self._cached_fetch(key, ttl, coro)
+        # 未读消息摘要（30 分钟 TTL）
+        data["messages"] = await self._cached_fetch(
+            "messages", 1800, self.api.get_messages_summary()
+        )
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
