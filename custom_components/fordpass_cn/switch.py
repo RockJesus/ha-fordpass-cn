@@ -61,6 +61,10 @@ async def async_setup_entry(
             switches.append(FordPassLightSwitch(coordinator))
             # 鸣笛寻车（v3.0.5 由按钮迁移为开关）
             switches.append(FordPassHonkSwitch(coordinator))
+            # v3.3.3: 声光寻车（鸣笛+灯光）开关——由 v3.2.1 的两个按钮
+            # （InitialVA/CancelVA）合并；开 = send-command InitialVA
+            # （VAType=4 + Duration，App 官方声光共舞通道），关 = CancelVA
+            switches.append(FordPassVAswitch(coordinator))
     async_add_entities(switches)
 
 
@@ -90,6 +94,133 @@ class FordPassEngineSwitch(SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.run_command(CMD_ENGINE_STOP)
+
+
+class FordPassVAswitch(SwitchEntity):
+    """声光寻车开关（v3.3.3）——由「声光寻车触发/取消」两按钮合并。
+
+    HAR 实证（2026-10-03，福特派 6.16.0）：App 的声光寻车（鸣笛+灯光
+    共舞，VAType=4=panic）走 send-command 通道：
+      - 开 = InitialVA  cmdSpec [{VAType:4}, {Duration:<秒>}] → 200+commandId=26
+      - 关 = CancelVA   cmdSpec [{VAType:4}]                → 200+commandId=476
+    触发后车机按 Duration 自动停止，开关同步自动复位（约 30 秒）。
+    若车型/车机对 CancelVA 无响应（取消无效），命令状态会如实写入
+    「鸣笛命令状态」传感器供诊断——为网关/车型行为，非参数错误。
+    """
+
+    _attr_assumed_state = True
+    _attr_icon = "mdi:lightbulb-on"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-va_switch"
+        self._attr_name = "声光寻车"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._state: bool = False
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def is_on(self) -> bool:
+        return self._state
+
+    def _duration(self) -> int:
+        """读取鸣笛持续时长设置（与鸣笛寻车同源：config entry options）。"""
+        options: dict = {}
+        entry_id = getattr(self.coordinator, "entry_id", None)
+        if entry_id:
+            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
+            options = entry.options if entry else {}
+        try:
+            return int(options.get(CONF_HONK_DURATION, 15) or 15)
+        except (TypeError, ValueError):
+            return 15
+
+    @staticmethod
+    def _command_id(resp: Any) -> str | None:
+        if isinstance(resp, dict):
+            cid = resp.get("commandId")
+            if cid:
+                return str(cid)
+            inner = resp.get("data")
+            if isinstance(inner, dict) and inner.get("commandId"):
+                return str(inner["commandId"])
+        return None
+
+    async def _poll_cmd_status(self, command_type: str, command_id: str) -> None:
+        """send-command 轮询 command-execution-status → 「鸣笛命令状态」传感器。"""
+        self.coordinator.announce_status = {
+            "command_id": command_id, "status": "执行中", "command_type": command_type,
+        }
+        try:
+            done, result = await self.coordinator.api.wait_command_complete(
+                self.coordinator.vin, command_id, command_type
+            )
+            if done and isinstance(result, dict):
+                st = result.get("vehiclestatus", result)
+                st.setdefault("command_id", command_id)
+                st.setdefault("command_type", command_type)
+                self.coordinator.announce_status = st
+            else:
+                self.coordinator.announce_status = {
+                    "command_id": command_id,
+                    "status": "超时或未完成",
+                    "command_type": command_type,
+                    "error": "command-execution-status 轮询超时（命令可能已执行完成）",
+                }
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("FordPass %s 状态轮询失败: %s", command_type, exc)
+            self.coordinator.announce_status = {
+                "command_id": command_id,
+                "status": "查询失败",
+                "command_type": command_type,
+                "error": str(exc),
+            }
+        self.coordinator.async_update_listeners()
+
+    async def _auto_off(self) -> None:
+        await asyncio.sleep(HONK_AUTO_OFF_SECONDS)
+        self._state = False
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        duration = self._duration()
+        try:
+            resp = await self.coordinator.api.va_command(
+                self.coordinator.vin, CMD_VA_INIT, vatype=4, duration=duration
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 声光寻车（开）失败: %s", exc)
+            raise
+        cid = self._command_id(resp)
+        if cid:
+            _LOGGER.info("FordPass 声光寻车已触发 commandId=%s（时长=%ss）", cid, duration)
+            self.coordinator.hass.async_create_task(
+                self._poll_cmd_status(CMD_VA_INIT, cid)
+            )
+        self._state = True
+        self.async_write_ha_state()
+        self.coordinator.hass.async_create_task(self._auto_off())
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        try:
+            resp = await self.coordinator.api.va_command(
+                self.coordinator.vin, CMD_VA_CANCEL, vatype=4
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 声光寻车（关）失败: %s", exc)
+            raise
+        cid = self._command_id(resp)
+        if cid:
+            _LOGGER.info("FordPass 声光寻车已取消 commandId=%s", cid)
+            self.coordinator.hass.async_create_task(
+                self._poll_cmd_status(CMD_VA_CANCEL, cid)
+            )
+        self._state = False
+        self.async_write_ha_state()
 
 
 class FordPassLightSwitch(SwitchEntity):
