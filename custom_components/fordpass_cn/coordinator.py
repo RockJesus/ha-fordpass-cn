@@ -81,11 +81,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             data = await self._last_store.async_load()
         except Exception as exc:  # noqa: BLE001
-            self._log.debug("FordPass load last data failed: %s", exc)
+            self.logger.debug("FordPass load last data failed: %s", exc)
             return
         if isinstance(data, dict) and data:
             self.async_set_updated_data(data)
-            self._log.info(
+            self.logger.info(
                 "FordPass restored last-known data for %s", self.vin[-6:]
             )
 
@@ -99,7 +99,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             await self._last_store.async_save(data)
         except Exception as exc:  # noqa: BLE001 - 持久化失败不影响运行
-            self._log.debug("FordPass persist last data failed: %s", exc)
+            self.logger.debug("FordPass persist last data failed: %s", exc)
     @property
     def vehicle_model(self) -> str:
         """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
