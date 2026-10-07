@@ -59,13 +59,9 @@ _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, lis
     # 远程控车开启（crccFlag=ON）才有意义
     ("central_lighting", "中央区灯光", "mdi:car-light-high", CMD_CENTRAL_LIGHTING,
      [["crccFlag"]], "usable", None),
-    # v3.2.1: InitialVA/CancelVA 实为鸣笛通告通道（FORD_HONK，非语音助手——
-    # HAR 实证 cmdSpec VAType=4=声光共舞）。重命名为「声光寻车」避免误导；
-    # 日常鸣笛仍用「鸣笛寻车」开关（switch），此按钮为声光共舞专用触发。
-    ("va_init", "声光寻车触发（鸣笛+灯光）", "mdi:bullhorn", CMD_VA_INIT, [["crccFlag"]], "on",
-     [{"key": "VAType", "value": "4"}, {"key": "Duration", "value": "15"}]),
-    ("va_cancel", "声光寻车取消", "mdi:bullhorn-outline", CMD_VA_CANCEL, [["crccFlag"]], "on",
-     [{"key": "VAType", "value": "4"}]),
+    # v3.3.3: 声光寻车（InitialVA/CancelVA）已由 v3.2.1 的两个按钮合并为
+    # switch「声光寻车」（见 switch.py FordPassVAswitch）——此处不再创建
+    # 按钮，避免重复入口；命令通道与 cmdSpec 完全一致。
     # 固件/OTA 相关（firmwareUpgInProgress 字段存在即认为支持）
     ("ota_schedule", "OTA 激活排程", "mdi:update", CMD_OTA_SCHEDULE,
      [["firmwareUpgInProgress"]], "usable", None),

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 import time
 from typing import Any
 
@@ -558,10 +559,12 @@ def _ts_to_local(v):
 
 
 def _window_state(v):
-    """车窗位置（v3.1.8）：字符串枚举→中文；数值（0-100 百分比）→百分比。
+    """车窗位置（v3.1.8 + v3.3.3）：字符串枚举→中文；数值→百分比。
 
-    锐际实测云端返回字符串（Fully_Closed 等，无百分比数字）；部分车型
-    可能返回数值（0=关闭、100=全开）——数值时显示「未关闭 N%」。
+    锐际实测云端返回字符串枚举（Fully_Closed / BetFully_10PercentOpen /
+    BetFully_50PercentOpen 等，无纯数字）；部分车型可能返回数值
+    （0=关闭、100=全开）。v3.3.3：新增解析枚举内嵌百分比数字——
+    BetFully_10PercentOpen →「未关闭 10%」（与数值型显示格式一致）。
     """
     if isinstance(v, str):
         s = v.strip().lower().replace("_", " ")
@@ -573,6 +576,11 @@ def _window_state(v):
             return "未关闭（部分开启）"
         if s in ("unknown", "not supported", "not_supported", "null"):
             return None
+        # v3.3.3: BetFully_10PercentOpen / BetFully_50PercentOpen 等枚举
+        # 内嵌百分比 →「未关闭 N%」（与数值型显示格式统一）
+        m = re.search(r"(\d+)\s*percent", s)
+        if m:
+            return f"未关闭 {int(m.group(1))}%"
         return f"未关闭（{v}）"
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         pct = int(v)
@@ -1166,7 +1174,14 @@ class FordPassMessageSensor(_ServiceInfoSensor):
             has = int(red) != 0
         except (TypeError, ValueError):
             has = bool(red)
-        return "有未读消息" if has else "无未读消息"
+        # v3.3.3: 有未读时状态直接显示最新消息主题 readMessageSubject
+        # （App 首页消息卡显示的标题），无未读显示「无未读消息」。
+        if not has:
+            return "无未读消息"
+        subject = summary.get("readMessageSubject")
+        if subject:
+            return str(subject)
+        return "有未读消息"
 
     def _summary(self, data: dict) -> dict:
         payload = data.get("data") if isinstance(data, dict) else None

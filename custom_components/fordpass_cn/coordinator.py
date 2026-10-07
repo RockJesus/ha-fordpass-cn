@@ -9,6 +9,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FordPassApi, FordPassApiError
@@ -64,6 +65,41 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v3.1.13: 最近一次鸣笛命令状态（鸣笛开关触发后轮询
         # announcestatus/{commandId} 写入；「鸣笛命令状态」传感器读取）
         self.announce_status: dict[str, Any] | None = None
+        # v3.3.3: 最后已知数据持久化（HA Store）——重启/重载后先恢复
+        # 再后台刷新，实体直接显示最后可用状态，不出现 unavailable/
+        # unknown 中间态（需求：刷新失败保留最后已知状态）。
+        self._last_store: Store | None = None
+        if entry_id:
+            self._last_store = Store(
+                hass, 1, f"{DOMAIN}.{entry_id}.{vin[-6:]}.last_data"
+            )
+
+    async def async_load_last_data(self) -> None:
+        """Restore last-known data before first refresh (v3.3.3)."""
+        if self._last_store is None:
+            return
+        try:
+            data = await self._last_store.async_load()
+        except Exception as exc:  # noqa: BLE001
+            self._log.debug("FordPass load last data failed: %s", exc)
+            return
+        if isinstance(data, dict) and data:
+            self.async_set_updated_data(data)
+            self._log.info(
+                "FordPass restored last-known data for %s", self.vin[-6:]
+            )
+
+    def async_set_updated_data(self, data: dict[str, Any]) -> None:
+        """Persist the fresh snapshot, then push to entities (v3.3.3)."""
+        super().async_set_updated_data(data)
+        if self._last_store is not None:
+            self.hass.async_create_task(self._async_persist_last_data(data))
+
+    async def _async_persist_last_data(self, data: dict[str, Any]) -> None:
+        try:
+            await self._last_store.async_save(data)
+        except Exception as exc:  # noqa: BLE001 - 持久化失败不影响运行
+            self._log.debug("FordPass persist last data failed: %s", exc)
     @property
     def vehicle_model(self) -> str:
         """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
