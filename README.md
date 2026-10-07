@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.3.2**：**修复 HAOS 集成 0 实体与轮询报错**——① 所有请求显式超时 60s（HA 默认 aiohttp session timeout 仅 ~10s，福特网关尤其 ForceRefresh 后立即拉取 vehicle-status 时偶发慢响应被截断，coordinator 每轮刷 `FordPass update timed out` ERROR 且数据取不到，实体创建被卡）；② 修复后配合 HAOS 重装（HACS 全量替换），确认 83 个已注册实体（锁/开关/按钮/传感器）恢复创建，0 unavailable
 - **v3.3.1**：**严格按照 HA 官方集成发布规范修复（为申请加入 HACS 默认仓库）**
   - `manifest.json`：移除官方规范不存在的 `homeassistant` 键（自定义集成最低版本由 `hacs.json` 的 `homeassistant` 键声明）；键序对齐官方（`domain`、`name` 在前，其余键按字母序）
   - `hacs.json`：移除 HACS Action 校验不接受的 `domains` / `iot_class` 键
