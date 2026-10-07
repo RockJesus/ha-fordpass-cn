@@ -386,6 +386,7 @@ class FordPassLocationSensor(SensorEntity):
         self._attr_has_entity_name = False
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
+        self._last_known: str | None = None  # v3.4.3: 最后已知地址，LBS 失败时兜底
 
     @property
     def available(self) -> bool:
@@ -416,14 +417,17 @@ class FordPassLocationSensor(SensorEntity):
         data = self.coordinator.data or {}
         loc = data.get("location")
         if not loc or not isinstance(loc, dict):
-            return "定位不可用"
+            # v3.4.3: LBS 偶发无数据时保留最后已知地址，不回落"定位不可用"
+            return self._last_known or "定位不可用"
         address = loc.get("address")
         if address:
+            self._last_known = address
             return address
         lat, lon = loc.get("lat"), loc.get("lon")
         if lat and lon:
+            self._last_known = f"{lat}, {lon}"
             return f"{lat}, {lon}"
-        return "定位不可用"
+        return self._last_known or "定位不可用"
 
 
 class FordPassSensor(SensorEntity):
