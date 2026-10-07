@@ -1232,10 +1232,11 @@ class FordPassApi:
         return None
 
     async def probe_extra_endpoints(self, vin: str) -> None:
-        """探测新增 GET 端点响应结构（debug 日志，供后续版本解析接入）。
+        """探测新增 GET 端点响应结构（INFO 日志，供后续版本解析接入）。
 
-        v3.3.7：maintenance-history / departuretimes retrieve 响应结构未知，
-        此方法仅打印响应供开发，不创建实体。
+        v3.3.7: maintenance-history / departuretimes retrieve 响应结构未知，
+        此方法仅打印响应供开发（v3.3.8 起 INFO 级，HAOS 日志可直接查看），
+        不创建实体。
         """
         probes = {
             "maintenance-history": PATH_MAINTENANCE_HISTORY,
@@ -1244,12 +1245,12 @@ class FordPassApi:
         for name, path in probes.items():
             try:
                 data = await self._get_signed(path, vin)
-                self._log.debug(
+                self._log.info(
                     "FordPass probe %s -> %s",
                     name, json.dumps(data, ensure_ascii=False)[:800],
                 )
             except Exception as exc:  # noqa: BLE001
-                self._log.debug("FordPass probe %s failed: %s", name, exc)
+                self._log.info("FordPass probe %s failed: %s", name, exc)
 
     # --------------------------------------------------------- b2c login
     async def password_login(
