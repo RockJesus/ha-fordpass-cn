@@ -120,7 +120,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise RuntimeError("No usable vehicles found on this FordPass account")
 
     for coordinator in coordinators:
-        await coordinator.async_config_entry_first_refresh()
+        # v3.3.3: 先恢复最后已知数据（实体立即有值，不显示 unavailable/
+        # unknown 中间态），再后台刷新；云端暂不可达时首次刷新失败
+        # 不阻塞集成加载——实体用最后数据创建，轮询恢复后自动更新。
+        await coordinator.async_load_last_data()
+        try:
+            await coordinator.async_config_entry_first_refresh()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "fordpass_cn 首次刷新失败（保留最后已知状态，后台自动重试）: %s",
+                exc,
+            )
+            # 立即再触发一次刷新（失败会按 update_interval 重新调度），
+            # 云端恢复后数据自动更新、实体保留最后已知状态。
+            await coordinator.async_request_refresh()
 
     # v2.10.0: 全车型兼容检测日志——基于 vehicle-status 数据判定车型能力，
     # 与实体创建保持一致（无效字段/不支持功能不创建实体）。

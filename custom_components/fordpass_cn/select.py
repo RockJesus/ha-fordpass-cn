@@ -20,6 +20,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
 from .const import (
+    ANNOUNCE_ENUM_CN,
+    CHIRP_TO_ANNOUNCE,
     CHIRP_TYPE_OPTIONS,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
@@ -31,6 +33,29 @@ from .const import (
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _cloud_pref(coordinator: FordPassCoordinator) -> tuple[str | None, str | None]:
+    """读云端鸣笛设置（v3.3.3）：返回 (类型中文名, 持续时长数字字符串) 或 None。
+
+    数据源 coordinator.data["chirp_cloud"]（GET preference-list 回读）：
+    新槽位 AnnouncementType（"0"-"4" 枚举数字）/ Duration（"5"-"20"），
+    旧槽位 vehicleAnnouncementSoundType（枚举名）仅兜底。
+    """
+    pref = (coordinator.data or {}).get("chirp_cloud") or {}
+    if not isinstance(pref, dict):
+        return None, None
+    sound = pref.get("AnnouncementType") or pref.get("vehicleAnnouncementSoundType")
+    duration = pref.get("Duration") or pref.get("vehicleAnnouncementDuration")
+    if sound is None and duration is None:
+        return None, None
+    type_cn = next(
+        (cn for cn, en in CHIRP_TO_ANNOUNCE.items() if en == str(sound)),
+        None,
+    )
+    if type_cn is None:
+        type_cn = ANNOUNCE_ENUM_CN.get(str(sound), None)
+    return type_cn, (str(duration) if duration is not None else None)
 
 
 async def async_setup_entry(
@@ -66,7 +91,12 @@ async def async_setup_entry(
 
 
 class _FordPassHonkSettingSelect(SelectEntity):
-    """Base class: persist option to config entry options + memory settings."""
+    """Base class: persist option to config entry options + memory settings.
+
+    v3.3.3: 监听 coordinator 数据更新——「鸣笛设置云端状态」回读的
+    AnnouncementType/Duration 变化时自动同步到本 select（App/其他设备
+    改动后，HA 侧显示与持久化设置自动跟随云端）。
+    """
 
     _attr_has_entity_name = False
     _attr_assumed_state = True
@@ -82,6 +112,36 @@ class _FordPassHonkSettingSelect(SelectEntity):
         self.entry = entry
         self.coordinator = coordinator
         self._settings = settings
+        # v3.3.3: 云端同步监听（coordinator 每次数据更新后回调）
+        self._cloud_unsub = self.coordinator.async_add_listener(self._on_cloud_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """卸载时注销云端同步监听（防止 reload 后重复回调）。"""
+        if self._cloud_unsub is not None:
+            self._cloud_unsub()
+            self._cloud_unsub = None
+
+    def _on_cloud_update(self) -> None:
+        """云端设置变化 → 同步本地 select（幂等：与当前值不同才更新）。"""
+        type_cn, duration = _cloud_pref(self.coordinator)
+        if duration is not None:
+            try:
+                dv = int(duration)
+            except (TypeError, ValueError):
+                dv = None
+            if dv is not None and dv in HONK_DURATION_OPTIONS and isinstance(
+                self, FordPassHonkDurationSelect
+            ):
+                cur = f"{dv} 秒"
+                if self._attr_current_option != cur:
+                    self._attr_current_option = cur
+                    self._persist(CONF_HONK_DURATION, dv)
+                    self.async_write_ha_state()
+        if type_cn is not None and isinstance(self, FordPassChirpTypeSelect):
+            if type_cn in CHIRP_TYPE_OPTIONS and self._attr_current_option != type_cn:
+                self._attr_current_option = type_cn
+                self._persist(CONF_CHIRP_TYPE, type_cn)
+                self.async_write_ha_state()
 
     @property
     def available(self) -> bool:

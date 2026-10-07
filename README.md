@@ -69,6 +69,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.3.3**：**5 项体验修复**——①「鸣笛设置云端状态」自动同步到「鸣笛持续时长 / 鸣笛类型」（云端 AnnouncementType/Duration 变化时 select 自动跟随并持久化，App/其他设备改动 HA 立即同步）；②「声光寻车触发（鸣笛+灯光）」「声光寻车取消」两按钮合并为 switch「声光寻车」（开 = send-command InitialVA（VAType=4+设置时长）、关 = CancelVA，与 App 官方通道逐字一致；命令执行结果写入「鸣笛命令状态」传感器——若车型/车机对取消命令无响应属网关行为，可查该传感器诊断）；③「未读消息」状态改显示最新消息主题 `readMessageSubject`；④ 车窗百分比枚举解析（`BetFully_10PercentOpen` →「未关闭 10%」，与数值型显示统一）；⑤ **最后已知状态持久化**（HA Store）——重启/重载后实体直接用最后可用数据创建，不再闪「不可用/未知」，首次刷新失败不阻塞加载（后台自动重试，云端恢复后更新）。注：远程关闭车窗——中国区 send-command 网关白名单（2026-09-29 服务器返回的 14 项权威清单）无任何车窗命令，App 亦无远程关窗入口，暂无法接入；后续若网关开放将补上
 - **v3.3.2**：**修复 HAOS 集成 0 实体与轮询报错**——① 所有请求显式超时 60s（HA 默认 aiohttp session timeout 仅 ~10s，福特网关尤其 ForceRefresh 后立即拉取 vehicle-status 时偶发慢响应被截断，coordinator 每轮刷 `FordPass update timed out` ERROR 且数据取不到，实体创建被卡）；② 修复后配合 HAOS 重装（HACS 全量替换），确认 83 个已注册实体（锁/开关/按钮/传感器）恢复创建，0 unavailable
 - **v3.3.1**：**严格按照 HA 官方集成发布规范修复（为申请加入 HACS 默认仓库）**
   - `manifest.json`：移除官方规范不存在的 `homeassistant` 键（自定义集成最低版本由 `hacs.json` 的 `homeassistant` 键声明）；键序对齐官方（`domain`、`name` 在前，其余键按字母序）
