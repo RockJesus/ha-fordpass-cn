@@ -89,13 +89,18 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return True, ent[1]
         return False, None
 
-    async def _cached_fetch(self, key: str, ttl: float, coro) -> Any:
-        """TTL 缓存包装：命中直接返回旧值；失败保留旧值；成功写缓存。"""
+    async def _cached_fetch(self, key: str, ttl: float, factory) -> Any:
+        """TTL 缓存包装：命中直接返回旧值；失败保留旧值；成功写缓存。
+
+        v3.4.2: ``factory`` 为协程工厂（如 ``lambda: api.get_x(vin)``）——
+        只有 TTL 未命中（真正要发请求）时才创建协程并 await，避免
+        TTL 命中时产生 "coroutine was never awaited" RuntimeWarning。
+        """
         hit, old = self._cache_hit(key)
         if hit:
             return old
         try:
-            val = await coro
+            val = await factory()
         except Exception as exc:  # noqa: BLE001 - best effort，失败不阻塞刷新
             self.logger.debug("FordPass %s fetch failed: %s", key, exc)
             if old is not None:
@@ -231,12 +236,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed("FordPass update timed out") from err
 
         # ---- v3.4.1 防限流优化：以下均走 TTL 缓存，慢变数据命中即复用，
-        # 不发请求；请求失败保留旧缓存（最后已知状态），不阻塞主刷新。----
+        # 不发请求；请求失败保留旧缓存（最后已知状态），不阻塞主刷新。
+        # （v3.4.2: 传协程工厂，TTL 命中时不创建协程，杜绝 RuntimeWarning）
         # Best-effort location（track_location 开启时；LBS 独立网关，
         # 车停着坐标不变 → 15 分钟 TTL）
         if self.track_location:
             loc = await self._cached_fetch(
-                "location", 900, self.api.get_location(self.vin, self.coordinate_system)
+                "location", 900,
+                lambda: self.api.get_location(self.vin, self.coordinate_system),
             )
             if isinstance(loc, dict) and loc.get("lat"):
                 data["location"] = loc
@@ -245,40 +252,40 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Vehicle health alerts（30 分钟 TTL；失败保留旧列表/清空，
         # TTL 命中天然抑制重试——取代旧"连续失败 2 次抑制 1h"逻辑）
         alerts = await self._cached_fetch(
-            "active_alerts", 1800, self.api.get_active_alerts(self.vin)
+            "active_alerts", 1800, lambda: self.api.get_active_alerts(self.vin)
         )
         data["active_alerts"] = alerts if isinstance(alerts, list) else []
         # OTA 设置状态（6 小时 TTL——OTA 排程配置几乎不变）
         data["ota_setting"] = await self._cached_fetch(
-            "ota_setting", 21600, self.api.get_ota_setting(self.vin)
+            "ota_setting", 21600, lambda: self.api.get_ota_setting(self.vin)
         )
         # 服务信息端点（保养计划 12h / 召回 24h / SIM 6h / WiFi 15min TTL）
-        for key, ttl, coro in (
-            ("maintenance_plan", 43200, self.api.get_maintenance_plan(self.vin)),
-            ("recall", 86400, self.api.get_recall(self.vin)),
-            ("sim_info", 21600, self.api.get_sim_info(self.vin)),
-            ("wifi_status", 900, self.api.get_wifi_status(self.vin)),
+        for key, ttl, factory in (
+            ("maintenance_plan", 43200, lambda: self.api.get_maintenance_plan(self.vin)),
+            ("recall", 86400, lambda: self.api.get_recall(self.vin)),
+            ("sim_info", 21600, lambda: self.api.get_sim_info(self.vin)),
+            ("wifi_status", 900, lambda: self.api.get_wifi_status(self.vin)),
         ):
-            data[key] = await self._cached_fetch(key, ttl, coro)
+            data[key] = await self._cached_fetch(key, ttl, factory)
         # 鸣笛设置云端查询（UserPreferenceV2，1 小时 TTL——用户改设置时
         # select 已即时上云+本地写入，此查询仅作初始化同步）
         data["chirp_cloud"] = await self._cached_fetch(
-            "chirp_preference", 3600, self.api.get_chirp_preference()
+            "chirp_preference", 3600, lambda: self.api.get_chirp_preference()
         )
         # 空调滤芯状态（6 小时 TTL——健康度变化慢）
         data["air_filter"] = await self._cached_fetch(
-            "air_filter", 21600, self.api.get_air_filter_status(self.vin)
+            "air_filter", 21600, lambda: self.api.get_air_filter_status(self.vin)
         )
         # 云端能力+服务信息（ccfeatures 24h TTL——出厂能力几乎永不变）
         # 与预测性诊断（prognostic 6h TTL——机油寿命/剩余里程变化慢）
-        for key, ttl, coro in (
-            ("ccfeatures", 86400, self.api.get_ccfeatures(self.vin)),
-            ("prognostic", 21600, self.api.get_prognostic(self.vin)),
+        for key, ttl, factory in (
+            ("ccfeatures", 86400, lambda: self.api.get_ccfeatures(self.vin)),
+            ("prognostic", 21600, lambda: self.api.get_prognostic(self.vin)),
         ):
-            data[key] = await self._cached_fetch(key, ttl, coro)
+            data[key] = await self._cached_fetch(key, ttl, factory)
         # 未读消息摘要（30 分钟 TTL）
         data["messages"] = await self._cached_fetch(
-            "messages", 1800, self.api.get_messages_summary()
+            "messages", 1800, lambda: self.api.get_messages_summary()
         )
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
