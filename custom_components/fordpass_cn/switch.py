@@ -103,7 +103,8 @@ class FordPassVAswitch(SwitchEntity):
     共舞，VAType=4=panic）走 send-command 通道：
       - 开 = InitialVA  cmdSpec [{VAType:4}, {Duration:<秒>}] → 200+commandId=26
       - 关 = CancelVA   cmdSpec [{VAType:4}]                → 200+commandId=476
-    触发后车机按 Duration 自动停止，开关同步自动复位（约 30 秒）。
+    触发后车机按 Duration 自动停止，开关同步按设置时长自动复位
+    （v3.3.6: 跟随「鸣笛持续时长」设置，不再固定 30 秒）。
     若车型/车机对 CancelVA 无响应（取消无效），命令状态会如实写入
     「鸣笛命令状态」传感器供诊断——为网关/车型行为，非参数错误。
     """
@@ -181,8 +182,9 @@ class FordPassVAswitch(SwitchEntity):
             }
         self.coordinator.async_update_listeners()
 
-    async def _auto_off(self) -> None:
-        await asyncio.sleep(HONK_AUTO_OFF_SECONDS)
+    async def _auto_off(self, duration: int | None = None) -> None:
+        """按本次触发时长自动复位；时长缺失/非法时回退 HONK_AUTO_OFF_SECONDS。"""
+        await asyncio.sleep(duration if isinstance(duration, int) and duration > 0 else HONK_AUTO_OFF_SECONDS)
         self._state = False
         self.async_write_ha_state()
 
@@ -203,7 +205,7 @@ class FordPassVAswitch(SwitchEntity):
             )
         self._state = True
         self.async_write_ha_state()
-        self.coordinator.hass.async_create_task(self._auto_off())
+        self.coordinator.hass.async_create_task(self._auto_off(duration))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         try:
@@ -277,7 +279,8 @@ class FordPassHonkSwitch(SwitchEntity):
     - 开 = POST /api/vehicles/v5/{vin}/honk（body: ChirpOrHonkDuration/
       IntervalBetweenRequests/ChirpType，明文 JSON）——FordHonkCommand
     - 关 = DELETE /api/vehicles/v5/{vin}/honk（无 body）——FordHonkCancelCommand
-    开关在触发后仍按 HONK_AUTO_OFF_SECONDS 自动复位（车辆鸣笛约 30 秒自停）。
+    开关在触发后按本次「鸣笛持续时长」自动复位（v3.3.6: 跟随设置时长
+    而非固定 30 秒；时长缺失时回退 HONK_AUTO_OFF_SECONDS）。
 
     v3.1.8: ChirpType 改为 App 枚举 0-4（此前 1-5 差一错位——类型设置无效
     的根因）；「声光共舞」=4 走独立 panic 端点（POST /panic/{duration}，
@@ -303,8 +306,9 @@ class FordPassHonkSwitch(SwitchEntity):
     def is_on(self) -> bool:
         return self._state
 
-    async def _auto_off(self) -> None:
-        await asyncio.sleep(HONK_AUTO_OFF_SECONDS)
+    async def _auto_off(self, duration: int | None = None) -> None:
+        """按本次触发时长自动复位；时长缺失/非法时回退 HONK_AUTO_OFF_SECONDS。"""
+        await asyncio.sleep(duration if isinstance(duration, int) and duration > 0 else HONK_AUTO_OFF_SECONDS)
         self._state = False
         self.async_write_ha_state()
 
@@ -423,8 +427,8 @@ class FordPassHonkSwitch(SwitchEntity):
             )
         self._state = True
         self.async_write_ha_state()
-        # 鸣笛 30 秒自动结束，开关同步复位
-        self.coordinator.hass.async_create_task(self._auto_off())
+        # 按本次触发时长自动结束，开关同步复位（v3.3.6: 跟随设置时长而非固定 30s）
+        self.coordinator.hass.async_create_task(self._auto_off(duration))
 
     async def _poll_announce(self, vin: str, command_id: str) -> None:
         """轮询 v5 announcestatus/{commandId}（2s/5s/10s 三次，尽力而为）。
