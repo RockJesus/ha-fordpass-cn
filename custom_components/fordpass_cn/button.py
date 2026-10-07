@@ -15,6 +15,7 @@ v3.0.8: 新增「保存鸣笛设置」按钮——把持续时长/鸣笛类型�
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -53,9 +54,9 @@ _LOGGER = logging.getLogger(__name__)
 # 曾因锐际网关 228205/402 临时移除）——全车型支持策略：登录后按车型能力判断
 # 创建，云端不支持的车型按下会返回网关明确报错，如实提示。
 _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, list[dict[str, str]] | None]] = [
-    # 通用命令——所有车型都有（实测 200 + commandId）
-    ("refresh", "手动拉取最新状态", "mdi:refresh", CMD_REFRESH_STATUS, None, None, None),
-    ("auto_refresh", "请求车机刷新状态", "mdi:refresh-auto", CMD_AUTO_REFRESH, None, None, None),
+    # v3.3.4: 原「手动拉取最新状态」+「请求车机刷新状态」两按钮已合并为
+    # 「手动刷新车辆状态」（见 FordPassManualRefreshButton：先请求车机上报
+    # 云端，延时 3 秒后拉取最新状态）——此处不再创建独立按钮。
     # 远程控车开启（crccFlag=ON）才有意义
     ("central_lighting", "中央区灯光", "mdi:car-light-high", CMD_CENTRAL_LIGHTING,
      [["crccFlag"]], "usable", None),
@@ -101,9 +102,11 @@ async def async_setup_entry(
             for key, label, icon, command, paths, check, cmd_spec in _BUTTONS
             if _capability_ok(status, paths, check)
         )
-        # v3.0.8: 保存鸣笛设置（与鸣笛开关同为远程控车能力 crccFlag）
-        if capability.usable(status, [["crccFlag"]]):
-            buttons.append(FordPassSaveHonkSettingsButton(coordinator))
+        # v3.3.4: 「手动刷新车辆状态」——所有车型都有（合并原
+        # 「请求车机刷新状态」「手动拉取最新状态」两按钮）
+        buttons.append(FordPassManualRefreshButton(coordinator))
+        # v3.3.4: 「保存鸣笛设置」按钮已删除——鸣笛类型/时长 select
+        # 选择后即时上传云端（见 select.py 云端同步），无需手动保存。
         # v3.1.7: 空调滤芯重置（AAR 能力车型——vehicle-status 无关，按
         # coordinator 已拉取的 air_filter 数据创建，无该数据的车型不创建）
         air_filter = coordinator.data.get("air_filter")
@@ -213,24 +216,24 @@ class FordPassButton(ButtonEntity):
                 _LOGGER.warning("FordPass refresh after %s failed: %s", self._command, exc)
 
 
-class FordPassSaveHonkSettingsButton(ButtonEntity):
-    """保存鸣笛设置（v3.1.4）。
+class FordPassManualRefreshButton(ButtonEntity):
+    """手动刷新车辆状态（v3.3.4）——合并 v3.0.3 的两个刷新按钮。
 
-    按下即把 select 实体的「持续时长 / 鸣笛类型」保存：
-    1) 本地持久化：config entry options（select 变化时已实时写入，
-       此处再次确认，保证按钮点击时使用最新值）；
-    2) 上传福特账户云端：UserPreferenceV2
-       POST /api/cnxapi-pds/v1/user/preference-by-groups
-       （VehicleAnnouncementSetting 组，2026-10-02 逆向还原 + 实机 200
-       保存成功并回读确认——不再走旧 RCC profile-by-vin 通道）。
+    与 App「下拉刷新车辆状态」时序一致，顺序执行：
+      1) send-command AutoRefresh —— 请求车机把最新状态上报云端；
+      2) 延时 3 秒（车机上报 + 云端落盘需要时间）；
+      3) send-command ForceRefresh —— 拉取云端最新车辆状态，
+         并立即 force_refresh 更新实体（fast UI feedback）。
+    旧「请求车机刷新状态」「手动拉取最新状态」两按钮已删除（实体
+    注册表残留按需求 5 清理，不显示 unavailable）。
     """
 
-    _attr_icon = "mdi:content-save"
+    _attr_icon = "mdi:refresh"
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-save_honk_settings"
-        self._attr_name = "保存鸣笛设置"
+        self._attr_unique_id = f"{coordinator.vin}-manual_refresh"
+        self._attr_name = "手动刷新车辆状态"
         self._attr_has_entity_name = False
         self._attr_device_info = coordinator.device_info
 
@@ -238,50 +241,28 @@ class FordPassSaveHonkSettingsButton(ButtonEntity):
     def available(self) -> bool:
         return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
 
-    def _settings(self) -> tuple[int, int]:
-        # v3.2.3: 读 config entry options——select 每次选择即 _persist 写入
-        # options（持久化权威），保存按钮与 select 显示 100% 同步。
-        # 此前读内存 honk_settings，重启后与 select 状态可能分裂
-        # （HA 实体恢复时序），导致保存按钮存默认值（v3.2.2 实测定罪）。
-        options: dict[str, Any] = {}
-        entry_id = getattr(self.coordinator, "entry_id", None)
-        if entry_id:
-            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
-            options = entry.options if entry else {}
-        duration = int(options.get(CONF_HONK_DURATION, 10) or 10)
-        chirp_name = options.get(CONF_CHIRP_TYPE) or CHIRP_TYPE_OPTIONS[2]
-        if chirp_name in CHIRP_TYPE_OPTIONS:
-            chirp_type = CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
-        else:
-            chirp_type = 3
-        return duration, chirp_type
-
     async def async_press(self) -> None:
-        duration, chirp_type = self._settings()
-        _LOGGER.info(
-            "FordPass 保存鸣笛设置：时长=%ss 类型=%s(ChirpType=%s)",
-            duration, CHIRP_TYPE_OPTIONS[chirp_type - 1], chirp_type,
-        )
+        vin = self.coordinator.vin
+        # 1) 请求车机刷新状态（上报云端）
         try:
-            resp = await self.coordinator.api.save_honk_settings(
-                self.coordinator.vin,
-                duration=duration,
-                chirp_type=chirp_type,
-            )
-            if isinstance(resp, dict) and resp.get("cloud") is False:
-                _LOGGER.warning(
-                    "FordPass 鸣笛设置已本地保存；账户云端持久化失败：%s",
-                    resp.get("error"),
-                )
-            else:
-                _LOGGER.info(
-                    "FordPass 鸣笛设置已保存上传福特云端（类型=%s 时长=%ss）",
-                    (resp or {}).get("announce") if isinstance(resp, dict) else "?",
-                    (resp or {}).get("duration") if isinstance(resp, dict) else duration,
-                )
+            await self.coordinator.api.send_command(vin, CMD_AUTO_REFRESH)
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass 保存鸣笛设置失败（本地设置仍生效）: %s", exc)
+            _LOGGER.warning("FordPass 请求车机刷新状态失败: %s", exc)
             raise
+        # 2) 延时 3 秒（车机上报 + 云端落盘）
+        await asyncio.sleep(3)
+        # 3) 手动拉取最新状态（ForceRefresh）+ 立即刷新实体
+        try:
+            resp = await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 手动拉取最新状态失败: %s", exc)
+            raise
+        try:
+            await self.coordinator.force_refresh()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 手动刷新后数据拉取失败: %s", exc)
+        _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA）")
+        return
 
 
 class FordPassAirFilterResetButton(ButtonEntity):

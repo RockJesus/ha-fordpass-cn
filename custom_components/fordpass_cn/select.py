@@ -143,6 +143,51 @@ class _FordPassHonkSettingSelect(SelectEntity):
                 self._persist(CONF_CHIRP_TYPE, type_cn)
                 self.async_write_ha_state()
 
+    async def _save_cloud(self) -> None:
+        """把当前鸣笛设置即时上传福特账户云端（v3.3.4）。
+
+        类型/时长 select 任一改动即上传（与 App 保存操作逐字一致——
+        UserPreferenceV2 preference-by-groups），成功后回读云端
+        preference 更新 chirp_cloud（「鸣笛设置云端状态」传感器），
+        实现 App / HA / 云端三方同步；「保存鸣笛设置」按钮已删除。
+        """
+        options: dict[str, Any] = {}
+        entry_id = getattr(self.coordinator, "entry_id", None)
+        if entry_id:
+            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
+            options = entry.options if entry else {}
+        duration = int(
+            options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
+            or DEFAULT_HONK_DURATION
+        )
+        chirp_name = options.get(CONF_CHIRP_TYPE) or DEFAULT_CHIRP_TYPE
+        if chirp_name in CHIRP_TYPE_OPTIONS:
+            chirp_type = CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
+        else:
+            chirp_type = 3
+        try:
+            await self.coordinator.api.save_honk_settings(
+                self.coordinator.vin, duration=duration, chirp_type=chirp_type
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "FordPass 鸣笛设置云端保存失败（本地设置仍生效）: %s", exc
+            )
+            raise
+        _LOGGER.info(
+            "FordPass 鸣笛设置已即时上传云端（类型=%s 时长=%ss）",
+            CHIRP_TYPE_OPTIONS[chirp_type - 1], duration,
+        )
+        # 回读云端 preference → 更新 chirp_cloud（「鸣笛设置云端状态」同步）
+        try:
+            pref = await self.coordinator.api.get_chirp_preference()
+            if isinstance(pref, dict) and pref:
+                data = dict(self.coordinator.data or {})
+                data["chirp_cloud"] = pref
+                self.coordinator.async_set_updated_data(data)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("FordPass 鸣笛设置云端回读失败: %s", exc)
+
     @property
     def available(self) -> bool:
         return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
@@ -184,6 +229,8 @@ class FordPassHonkDurationSelect(_FordPassHonkSettingSelect):
         self._persist(CONF_HONK_DURATION, value)
         self._attr_current_option = f"{value} 秒"
         self.async_write_ha_state()
+        # v3.3.4: 选择后即时上传福特账户云端（App/HA/云端三方同步）
+        await self._save_cloud()
 
 
 class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
@@ -211,3 +258,5 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
         self._persist(CONF_CHIRP_TYPE, option)
         self._attr_current_option = option
         self.async_write_ha_state()
+        # v3.3.4: 选择后即时上传福特账户云端（App/HA/云端三方同步）
+        await self._save_cloud()
