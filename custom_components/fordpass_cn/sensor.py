@@ -91,7 +91,8 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),
         FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
         FordPassSensor(coordinator, "odometer", "总里程", UnitOfLength.KILOMETERS, None, "mdi:counter", ["odometer"]),
-        FordPassSensor(coordinator, "oil_life", "机油寿命", "%", None, "mdi:oil", ["oil", "oilLifeActual"]),
+        # v3.3.9: 机油寿命仅保留 prognostic 版（FordPassOilLifeSensor，含归零月份/
+        # 剩余公里属性）；原 oil_life（oil.oilLifeActual）重复实体已删除。
         FordPassSensor(coordinator, "battery_voltage", "蓄电池电压", "V", SensorDeviceClass.VOLTAGE, "mdi:car-battery", ["battery", "batteryStatusActual"]),
         FordPassSensor(coordinator, "lf_tire", "左前轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "leftFrontTirePressure"], round_value=True),
         FordPassSensor(coordinator, "rf_tire", "右前轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "rightFrontTirePressure"], round_value=True),
@@ -116,6 +117,8 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
+    # v3.3.9: 车辆信息（jointVenture+localMarketValue+modelYear+vehicleType+fuelType）
+    sensors.append(FordPassVehicleInfoSensor(coordinator))
     sensors.append(FordPassLocationSensor(coordinator))
 
     # ===== A 组：车辆状态（车门 / 点火 / 车窗） =====
@@ -169,7 +172,13 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         FordPassSensor(coordinator, "life_cycle_mode", "电池生命周期模式", None, None, "mdi:car-battery", ["lifeCycMode"],
                        enum_map={"Normal": "标准模式", "Life_Cycle_Mode": "长寿命模式", "Deep_Discharge": "深度放电"}),
         FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
-                       transform=lambda v: "不可用" if isinstance(v, str) and "NotAvailable" in v else v),
+                       # v3.3.9: PwPckOffTqNotAvailable=外出中（车未泊车、停车扭矩不可用）；
+                       # Available/「不可用」=已泊车。其余原样显示。
+                       transform=lambda v: (
+                           "外出中" if isinstance(v, str) and "NotAvailable" in v
+                           else "已泊车" if isinstance(v, str) and ("Available" in v or v == "不可用")
+                           else v
+                       )),
     ]
 
     # ===== D 组：各车型可选字段（纯电/混动/柴油/拖车/车内环境等，v2.9.0） =====
@@ -196,12 +205,6 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         # 远程空调 / 混动模式
         FordPassSensor(coordinator, "pre_cond_status", "远程空调状态", None, None, "mdi:air-conditioner", ["preCondStatusDsply"], enum_map=_precond_map, skip_if_missing=True),
         FordPassSensor(coordinator, "hybrid_mode", "驱动模式", None, None, "mdi:car-electric", ["hybridModeStatus"], enum_map=_hybrid_map, skip_if_missing=True),
-        # 柴油（领裕/撼路者柴油版等）
-        FordPassSensor(coordinator, "diesel_urea", "尿素液位", "%", None, "mdi:water-percent", ["dieselSystemStatus", "exhaustFluidLevel"], skip_if_missing=True),
-        FordPassSensor(coordinator, "diesel_urea_range", "尿素续航", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["dieselSystemStatus", "ureaRange"], skip_if_missing=True),
-        FordPassSensor(coordinator, "diesel_metric", "柴油系统状态", None, None, "mdi:engine", ["dieselSystemStatus", "metricType"], enum_map=_diesel_metric_map, skip_if_missing=True),
-        FordPassSensor(coordinator, "diesel_filter_soot", "颗粒滤清器积碳", None, None, "mdi:filter", ["dieselSystemStatus", "filterSoot"], skip_if_missing=True),
-        FordPassSensor(coordinator, "diesel_filter_regeneration", "滤清器再生状态", None, None, "mdi:autorenew", ["dieselSystemStatus", "filterRegenerationStatus"], enum_map=_diesel_metric_map, skip_if_missing=True),
         # 六胎车型（皮卡/拖车）内胎与双后轮
         FordPassSensor(coordinator, "inner_lr_tire", "内左后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "innerLeftRearTirePressure"], round_value=True, skip_if_missing=True),
         FordPassSensor(coordinator, "inner_rr_tire", "内右后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "innerRightRearTirePressure"], round_value=True, skip_if_missing=True),
@@ -220,6 +223,18 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                                  "Tilt": "倾斜", "Partially_Open": "部分开启", "Vent": "通风",
                                  "Unknown": "未知"}, skip_if_missing=True),
     ]
+
+    # v3.3.9: 柴油实体（领裕/撼路者柴油版等）——仅柴油燃料车型（fuelType=D）
+    # 才创建；汽油车即使云端返回 dieselSystemStatus 字段也跳过（锐际曾显示
+    # 「柴油系统状态=激活」属误创建）。
+    if coordinator.is_diesel:
+        sensors += [
+            FordPassSensor(coordinator, "diesel_urea", "尿素液位", "%", None, "mdi:water-percent", ["dieselSystemStatus", "exhaustFluidLevel"], skip_if_missing=True),
+            FordPassSensor(coordinator, "diesel_urea_range", "尿素续航", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["dieselSystemStatus", "ureaRange"], skip_if_missing=True),
+            FordPassSensor(coordinator, "diesel_metric", "柴油系统状态", None, None, "mdi:engine", ["dieselSystemStatus", "metricType"], enum_map=_diesel_metric_map, skip_if_missing=True),
+            FordPassSensor(coordinator, "diesel_filter_soot", "颗粒滤清器积碳", None, None, "mdi:filter", ["dieselSystemStatus", "filterSoot"], skip_if_missing=True),
+            FordPassSensor(coordinator, "diesel_filter_regeneration", "滤清器再生状态", None, None, "mdi:autorenew", ["dieselSystemStatus", "filterRegenerationStatus"], enum_map=_diesel_metric_map, skip_if_missing=True),
+        ]
 
     # v2.9.0: 创建期过滤——数据无效（null/Not_Supported/...）的实体不创建，
     # 任何车型登录后只出现有真实数据的实体，不再显示一屏 unknown。
@@ -264,7 +279,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         prog_payload = prog.get("data") if isinstance(prog.get("data"), dict) else None
         if isinstance(prog_payload, dict):
             sensors.append(FordPassOilLifeSensor(coordinator))
-            sensors.append(FordPassRangeSensor(coordinator))
+            # v3.3.9: 剩余可行驶里程仅在 remainingKMs 有值时创建
+            # （锐际 prognostic 曾返回无该字段 → 实体恒 unknown，不创建）
+            if prog_payload.get("remainingKMs") is not None:
+                sensors.append(FordPassRangeSensor(coordinator))
             sensors.append(FordPassSlowLeakSensor(coordinator))
             sensors.append(FordPassDiagnosticSensor(coordinator))
     # v3.1.17: 未读消息（GET /api/cnxapi-message/app/messages/summary，
@@ -276,6 +294,53 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         if isinstance(msg_payload, dict) and isinstance(msg_payload.get("summary"), dict):
             sensors.append(FordPassMessageSensor(coordinator))
     return sensors
+
+
+class FordPassVehicleInfoSensor(SensorEntity):
+    """车辆信息（v3.3.9）：jointVenture+localMarketValue+modelYear+vehicleType+fuelType。
+
+    数据源 /v5/vehicles/list 明文字段（HAR 2026-10-03 实测）：CAF/锐际
+    Escape/2020/SYNC +/G。值=「长安福特 · 锐际 Escape · 2020 · SYNC + · 汽油」，
+    各字段同时放入 attributes 供自动化使用。
+    """
+
+    _JOINT_VENTURE = {
+        "CAF": "长安福特", "JMC": "江铃福特", "LMC": "林肯中国",
+        "CHANA": "长安", "FORD": "福特中国", "Ford": "福特中国",
+    }
+    _FUEL_TYPE = {
+        "G": "汽油", "D": "柴油", "E": "纯电", "BEV": "纯电",
+        "H": "混动", "HEV": "混动", "P": "插混", "PHEV": "插混", "MHEV": "轻混",
+    }
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-vehicle_info"
+        self._attr_name = "车辆信息"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:car-info"
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def native_value(self) -> str:
+        info = self.coordinator.vehicle_info or {}
+        jv = self._JOINT_VENTURE.get(info.get("jointVenture"), info.get("jointVenture"))
+        fuel = self._FUEL_TYPE.get(info.get("fuelType"), info.get("fuelType"))
+        parts = [jv, info.get("localMarketValue"), info.get("modelYear"),
+                 info.get("vehicleType"), fuel]
+        return " · ".join(str(p) for p in parts if p) or "暂无"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        info = self.coordinator.vehicle_info or {}
+        return {k: info.get(k) for k in (
+            "jointVenture", "localMarketValue", "modelYear", "vehicleType",
+            "fuelType", "warrantyStartDate",
+        )}
 
 
 class FordPassVehicleAttrSensor(SensorEntity):

@@ -107,10 +107,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             vehicle.get("encryptedLicenseplate") or vehicle.get("licenseplate") or None
         )
         nickname = vehicle.get("encryptedNickName") or vehicle.get("nickName") or None
-        vehicle_image_url = vehicle.get("vehicleImageUrl") or vehicle.get("imageUrl") or None
+        # v3.3.9: 拆开两张车型图——vehicleImageUrl=侧视（45view）、imageUrl=俯视
+        # （birdview，HAR 2026-10-03 实测字段；两字段各自独立创建图片实体）
+        vehicle_image_url = vehicle.get("vehicleImageUrl") or None
+        vehicle_overlook_url = vehicle.get("imageUrl") or None
+        # v3.3.9: 车辆信息（jointVenture/localMarketValue/modelYear/vehicleType/
+        # fuelType——vehicles/list 明文字段，HAR 实测；「车辆信息」传感器读取）
+        vehicle_info = {
+            k: vehicle.get(k)
+            for k in (
+                "jointVenture", "localMarketValue", "modelYear", "vehicleType",
+                "fuelType", "warrantyStartDate",
+            )
+        }
         coordinator = FordPassCoordinator(
             hass, api, vin, interval, _vehicle_label(vehicle), license_plate,
-            track_location, nickname, vehicle_image_url, coordinate_system,
+            track_location, nickname, vehicle_image_url, vehicle_overlook_url,
+            vehicle_info, coordinate_system,
             entry_id=entry.entry_id,
             car_id=vehicle.get("encryptedCarId") or None,
         )
