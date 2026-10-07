@@ -306,8 +306,16 @@ class FordPassApi:
             params["sign"] = compute_sign(params)
             kwargs = {"params": params}
         self._log.debug("FordPass %s %s payload=%s", method, url, kwargs)
+        # v3.3.2: 显式超时 60s——HA 默认 aiohttp session timeout 仅 ~10s，
+        # 福特网关（尤其 ForceRefresh 后立即拉取 vehicle-status）偶发慢响应
+        # 会被截断抛 asyncio.TimeoutError → coordinator 每轮刷
+        # "FordPass update timed out" ERROR 且数据取不到。
         async with self._session.request(
-            method, url, headers=self._headers(headers), **kwargs
+            method,
+            url,
+            headers=self._headers(headers),
+            timeout=aiohttp.ClientTimeout(total=60),
+            **kwargs,
         ) as resp:
             try:
                 text = await resp.text()
