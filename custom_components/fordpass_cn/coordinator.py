@@ -32,6 +32,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         track_location: bool = True,
         nickname: str | None = None,
         vehicle_image_url: str | None = None,
+        vehicle_overlook_url: str | None = None,
+        vehicle_info: dict[str, Any] | None = None,
         coordinate_system: str = COORDINATE_WGS84,
         entry_id: str | None = None,
         car_id: str | None = None,
@@ -48,6 +50,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.nickname = nickname
         self.track_location = track_location
         self.vehicle_image_url = vehicle_image_url
+        self.vehicle_overlook_url = vehicle_overlook_url
+        self.vehicle_info = vehicle_info or {}
         self.coordinate_system = coordinate_system
         # 最近一次成功拉取的时间（v2.7.8），暴露为传感器 last_poll 属性
         self.last_poll: datetime | None = None
@@ -123,6 +127,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def vehicle_model(self) -> str:
         """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
         return self._vehicle_name
+
+    @property
+    def is_diesel(self) -> bool:
+        """燃料类型是否为柴油（v3.3.9）——汽油车不创建柴油系统实体。"""
+        return str(self.vehicle_info.get("fuelType") or "").upper() == "D"
 
     @property
     def device_info(self) -> dict[str, Any]:

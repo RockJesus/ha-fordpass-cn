@@ -1,8 +1,9 @@
-"""Image platform: vehicle model picture (e.g. 锐际 Escape render).
+"""Image platform: vehicle model pictures (侧视车型图 + 俯视车型图).
 
-The picture (vehicleImageUrl from /v5/vehicles/list) is downloaded once and
-persisted to ``/config/www/fordpass_cn/<vin>.png`` so it survives restarts and
-never needs to be re-downloaded (or lost).  The entity's state shows the model
+The pictures (vehicleImageUrl=侧视45view / imageUrl=俯视birdview from
+/v5/vehicles/list, HAR 2026-10-03 实测) are downloaded once and persisted to
+``/config/www/fordpass_cn/<vin>[.overlook].png`` so they survive restarts and
+never need to be re-downloaded (or lost).  The entity's state shows the model
 name (e.g. 锐际 Escape) for readability — the picture itself is rendered by the
 frontend from the image proxy.
 """
@@ -25,8 +26,8 @@ from .coordinator import FordPassCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-def _local_path(hass: HomeAssistant, vin: str) -> str:
-    return os.path.join(hass.config.path("www"), "fordpass_cn", f"{vin}.png")
+def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
+    return os.path.join(hass.config.path("www"), "fordpass_cn", f"{vin}{suffix}.png")
 
 
 def _read_local(path: str) -> bytes | None:
@@ -54,18 +55,31 @@ def _persist_sync(path: str, data: bytes) -> None:
 
 
 class FordPassVehicleImage(ImageEntity):
-    """Vehicle model picture, persisted locally and never deleted."""
+    """Vehicle model picture, persisted locally and never deleted.
 
-    def __init__(self, hass: HomeAssistant, coordinator: FordPassCoordinator) -> None:
+    v3.3.9: kind 参数化——"side"=侧视车型图（vehicleImageUrl，原名车辆图片，
+    unique_id 保持 {vin}-vehicle_image 不丢实体）；"overlook"=俯视车型图
+    （imageUrl，unique_id {vin}-vehicle_overlook_image）。
+    """
+
+    def __init__(self, hass: HomeAssistant, coordinator: FordPassCoordinator, kind: str) -> None:
         super().__init__(hass)
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-vehicle_image"
-        self._attr_name = "车辆图片"
+        if kind == "overlook":
+            self._attr_unique_id = f"{coordinator.vin}-vehicle_overlook_image"
+            self._attr_name = "俯视车型图"
+            self._url_key = "vehicle_overlook_url"
+            self._persist_suffix = "_overlook"
+        else:
+            self._attr_unique_id = f"{coordinator.vin}-vehicle_image"
+            self._attr_name = "侧视车型图"
+            self._url_key = "vehicle_image_url"
+            self._persist_suffix = ""
         self._attr_has_entity_name = False
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:car"
         self._attr_content_type = "image/png"
-        self._persist_path = _local_path(hass, coordinator.vin)
+        self._persist_path = _local_path(hass, coordinator.vin, self._persist_suffix)
         self._image_bytes: bytes | None = None
 
     @property
@@ -86,7 +100,7 @@ class FordPassVehicleImage(ImageEntity):
     def extra_state_attributes(self) -> dict[str, object]:
         return {
             "vehicle_model": self.coordinator.vehicle_model,
-            "image_url": self.coordinator.vehicle_image_url or "",
+            "image_url": getattr(self.coordinator, self._url_key, None) or "",
             "image_path": self._persist_path,
         }
 
@@ -103,7 +117,7 @@ class FordPassVehicleImage(ImageEntity):
         if local:
             self._image_bytes = local
             return local
-        url = self.coordinator.vehicle_image_url
+        url = getattr(self.coordinator, self._url_key, None)
         if not url:
             return None
         session = async_get_clientsession(self.hass)
@@ -132,12 +146,14 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     # v3.1.6: 多 VIN——每辆车独立创建图片实体（有车辆图片 URL 才创建）
+    # v3.3.9: 侧视（vehicleImageUrl）+ 俯视（imageUrl）分别创建，互不影响
     payload = hass.data[DOMAIN][entry.entry_id]
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     entities = [
-        FordPassVehicleImage(hass, coordinator)
+        FordPassVehicleImage(hass, coordinator, kind)
         for coordinator in coordinators
-        if coordinator.vehicle_image_url
+        for kind, attr in (("side", "vehicle_image_url"), ("overlook", "vehicle_overlook_url"))
+        if getattr(coordinator, attr, None)
     ]
     if entities:
         async_add_entities(entities)
