@@ -65,7 +65,96 @@ async def async_setup_entry(
             # （InitialVA/CancelVA）合并；开 = send-command InitialVA
             # （VAType=4 + Duration，App 官方声光共舞通道），关 = CancelVA
             switches.append(FordPassVAswitch(coordinator))
+        # v3.3.7: 云端命令白名单驱动——车型专属开关按各自白名单自动创建
+        # （电马哨兵/充电、猛禽/领裕车载冰箱等；锐际白名单无则自动跳过）
+        wl = coordinator.command_whitelist
+        if isinstance(wl, list):
+            if _wl_matches(wl, "Sentry"):
+                switches.append(_FordPassWlSwitch(
+                    coordinator, "sentry", "哨兵模式", "mdi:shield-car",
+                    *_wl_pair(wl, "Sentry")))
+            if _wl_matches(wl, "Charge"):
+                switches.append(_FordPassWlSwitch(
+                    coordinator, "charge", "立即充电", "mdi:ev-station",
+                    *_wl_pair(wl, "Charge")))
+            if _wl_matches(wl, "Fridge"):
+                switches.append(_FordPassWlSwitch(
+                    coordinator, "fridge", "车载冰箱", "mdi:fridge",
+                    *_wl_pair(wl, "Fridge")))
     async_add_entities(switches)
+
+
+def _wl_matches(wl: list[str] | None, *kws: str) -> list[str]:
+    """白名单中匹配任一关键字的命令列表。"""
+    if not wl:
+        return []
+    return [c for c in wl if any(k in c for k in kws)]
+
+
+def _wl_pair(cmds: list[str], *kws: str) -> tuple[str | None, str | None]:
+    """尽力返回 (on_cmd, off_cmd)：含 ON/Start/Enable 视为开、OFF/Stop/Disable 视为关；
+    无法区分时开=首个、关=末个（命令参数未知时按下报错即如实提示车型是否支持）。"""
+    matched = _wl_matches(cmds, *kws)
+    if not matched:
+        return None, None
+    on = next((c for c in matched if any(k in c for k in ("ON", "Start", "Enable"))), None)
+    off = next((c for c in matched if any(k in c for k in ("OFF", "Stop", "Disable"))), None)
+    if on is None:
+        on = matched[0]
+    if off is None:
+        off = matched[-1]
+    return on, off
+
+
+class _FordPassWlSwitch(SwitchEntity):
+    """白名单驱动的通用开关（v3.3.7，车型专属功能）。
+
+    仅在云端命令白名单包含对应命令时创建；开/关分别发送匹配命令，
+    命令无参数（网关参数格式未知时按下返回错误即如实提示）。
+    """
+
+    _attr_assumed_state = True
+
+    def __init__(
+        self,
+        coordinator: FordPassCoordinator,
+        suffix: str,
+        name: str,
+        icon: str,
+        on_cmd: str | None,
+        off_cmd: str | None,
+    ) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-{suffix}"
+        self._attr_name = name
+        self._attr_has_entity_name = False
+        self._attr_icon = icon
+        self._attr_device_info = coordinator.device_info
+        self._on_cmd = on_cmd
+        self._off_cmd = off_cmd
+        self._state: bool = False
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def is_on(self) -> bool:
+        return self._state
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if not self._on_cmd:
+            raise RuntimeError(f"{self._attr_name}：该车型云端不支持开启命令")
+        await self.coordinator.run_command(self._on_cmd)
+        self._state = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        if not self._off_cmd:
+            raise RuntimeError(f"{self._attr_name}：该车型云端不支持关闭命令")
+        await self.coordinator.run_command(self._off_cmd)
+        self._state = False
+        self.async_write_ha_state()
 
 
 class FordPassEngineSwitch(SwitchEntity):

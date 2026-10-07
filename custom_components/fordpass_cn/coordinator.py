@@ -73,6 +73,25 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._last_store = Store(
                 hass, 1, f"{DOMAIN}.{entry_id}.{vin[-6:]}.last_data"
             )
+        # v3.3.7: 云端 send-command 白名单（探测结果）——平台实体按此动态创建
+        self.command_whitelist: list[str] | None = None
+
+    async def async_probe_capabilities(self) -> None:
+        """探测云端命令白名单 + 新增 GET 端点结构（v3.3.7，尽力而为）。
+
+        setup 阶段调用一次：成功后 command_whitelist 供各平台按命令创建
+        实体（全车型自动适配）；失败保持 None，平台不创建新增实体
+        （现有实体不受影响）。探测均为只读/幂等，不触发任何车辆动作。
+        """
+        try:
+            self.command_whitelist = await self.api.probe_command_whitelist(self.vin)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass capability probe failed: %s", exc)
+            self.command_whitelist = None
+        try:
+            await self.api.probe_extra_endpoints(self.vin)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
 
     async def async_load_last_data(self) -> None:
         """Restore last-known data before first refresh (v3.3.3)."""
