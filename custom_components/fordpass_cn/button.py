@@ -294,8 +294,9 @@ class FordPassManualRefreshButton(ButtonEntity):
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 请求车机刷新状态失败: %s", exc)
             raise
-        # 2) 延时 3 秒（车机上报 + 云端落盘）
-        await asyncio.sleep(3)
+        # 2) 延时 30 秒（v3.3.10：车机上报 + 云端落盘需要时间，实测 3 秒过短
+        # 常拉到旧数据；30 秒与 App 下拉刷新节奏一致）
+        await asyncio.sleep(30)
         # 3) 手动拉取最新状态（ForceRefresh）+ 立即刷新实体
         try:
             resp = await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)

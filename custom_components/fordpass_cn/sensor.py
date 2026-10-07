@@ -172,11 +172,11 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         FordPassSensor(coordinator, "life_cycle_mode", "电池生命周期模式", None, None, "mdi:car-battery", ["lifeCycMode"],
                        enum_map={"Normal": "标准模式", "Life_Cycle_Mode": "长寿命模式", "Deep_Discharge": "深度放电"}),
         FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
-                       # v3.3.9: PwPckOffTqNotAvailable=外出中（车未泊车、停车扭矩不可用）；
-                       # Available/「不可用」=已泊车。其余原样显示。
+                       # v3.3.10: 映射修正——PwPckOffTqNotAvailable（停车扭矩不可用=
+                       # 已驻车熄火）=已泊车；PwPckOffTqAvailable/「不可用」=外出中。
                        transform=lambda v: (
-                           "外出中" if isinstance(v, str) and "NotAvailable" in v
-                           else "已泊车" if isinstance(v, str) and ("Available" in v or v == "不可用")
+                           "已泊车" if isinstance(v, str) and "NotAvailable" in v
+                           else "外出中" if isinstance(v, str) and ("Available" in v or v == "不可用")
                            else v
                        )),
     ]
@@ -943,7 +943,11 @@ class FordPassCloudProbeSensor(SensorEntity):
 
 
 class FordPassOilLifeSensor(_ServiceInfoSensor):
-    """机油寿命（v3.1.9）：prognostic.data.iolm（%）。"""
+    """机油寿命（v3.1.9）：prognostic.data.iolm（%）。
+
+    v3.3.10: 值 = 百分比 + 归零年月份 + 剩余公里（如「40% · 归零 2028-03 ·
+    剩余 12000 km」）；各字段仍同步进属性供自动化使用。
+    """
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "prognostic", "机油寿命", "mdi:oil")
@@ -953,7 +957,12 @@ class FordPassOilLifeSensor(_ServiceInfoSensor):
         iolm = payload.get("iolm") if isinstance(payload, dict) else None
         if iolm is None:
             return None
-        return f"{int(iolm)}%"
+        parts = [f"{int(iolm)}%"]
+        if payload.get("dateOnZero"):
+            parts.append(f"归零 {payload['dateOnZero']}")
+        if payload.get("remainingKMs") is not None:
+            parts.append(f"剩余 {int(payload['remainingKMs'])} km")
+        return " · ".join(parts)
 
     def _summary(self, data: dict) -> dict:
         payload = data.get("data") if isinstance(data, dict) else None
