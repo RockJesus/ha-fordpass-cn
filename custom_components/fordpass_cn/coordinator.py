@@ -247,6 +247,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if isinstance(loc, dict) and loc.get("lat"):
                 data["location"] = loc
+            elif (self.data or {}).get("location"):
+                # v3.4.3: LBS 偶发失败时保留上一轮有效坐标，
+                # 避免 device_tracker / 定位传感器丢位置（保留最后已知状态）
+                data["location"] = (self.data or {}).get("location")
             else:
                 data["location"] = None
         # Vehicle health alerts（30 分钟 TTL；失败保留旧列表/清空，
