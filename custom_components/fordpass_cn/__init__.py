@@ -124,6 +124,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # unknown 中间态），再后台刷新；云端暂不可达时首次刷新失败
         # 不阻塞集成加载——实体用最后数据创建，轮询恢复后自动更新。
         await coordinator.async_load_last_data()
+        # v3.3.7: 探测云端命令白名单（全车型实体动态创建依据）——失败不阻塞
+        try:
+            await coordinator.async_probe_capabilities()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("fordpass_cn capability probe skipped: %s", exc)
         try:
             await coordinator.async_config_entry_first_refresh()
         except Exception as exc:  # noqa: BLE001

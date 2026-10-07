@@ -130,6 +130,8 @@ PATH_OTA_SETTING = "/api/alert/v1/ota/setting-info"
 # 无 appKey（maintenance/recall 早期版本带 appKey 参与签名；headers 修正后
 # 无 appKey 亦 200）。warranty 已过验签但服务端 100502（参数校验，待 App 抓包）。
 PATH_MAINTENANCE_PLAN = "/api/cnxapi-cds/v1/maintenance-plan"
+PATH_MAINTENANCE_HISTORY = "/api/cnxapi-cds/v1/maintenance-history"   # v3.3.7 探测
+PATH_DEPARTURE_TIMES_RETRIEVE = "/api/cevs/v2/departuretimes/retrieve"  # v3.3.7 探测
 PATH_RECALL = "/api/cnxapi-vds/v1/vehicles/recall"
 PATH_SIM_INFO = "/api/cnxapi-cds/v1/vehicle/sim/info"
 PATH_WIFI_STATUS = "/api/cnxapi-cds/v1/vehicle/wifi/status"
