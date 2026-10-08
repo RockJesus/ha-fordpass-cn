@@ -257,6 +257,15 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     chirp_cloud = coordinator.data.get("chirp_cloud")
     if isinstance(chirp_cloud, dict) and chirp_cloud:
         sensors.append(FordPassChirpCloudSensor(coordinator))
+    # v3.4.5: 家充桩管理（smartwallbox 探测数据驱动——非家充桩车型不创建）。
+    # 数据源 coordinator.smartwallbox = api.probe_smartwallbox()（登录后一次
+    # + 24h TTL 缓存，端点见 const.py smartwallbox 段）。有探测数据才创建，
+    # 全车型自动适配（纯油/无家充桩车型探测 404 无数据 → 0 实体）。
+    if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
+        sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_binding", "家充桩数量", "count"))
+        sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_binding", "默认充电桩", "default"))
+        sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "最近充电记录", "record"))
+        sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "家充桩充电状态", "status"))
     # v3.1.7: 空调滤芯状态（AAR 能力车型；无 airFilter 字段的车型不创建，
     # 保证其他用户登录各自车型时不出现不支持的实体）
     air_filter = coordinator.data.get("air_filter")
@@ -1381,3 +1390,145 @@ class FordPassAnnounceStatusSensor(SensorEntity):
             else None
         )
         return attrs
+
+def _swb_find(node, key: str):
+    """递归宽松提取 smartwallbox 响应字段（key 大小写不敏感，v3.4.5）。
+
+    家充桩端点响应结构（binding v5 / records v2r 等）各车型/版本存在差异，
+    用递归 + 大小写不敏感匹配提取字段，避免依赖固定 JSON 路径。
+    """
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if str(k).lower() == key.lower():
+                return v
+            r = _swb_find(v, key)
+            if r is not None:
+                return r
+    elif isinstance(node, list):
+        for item in node:
+            r = _swb_find(item, key)
+            if r is not None:
+                return r
+    return None
+
+
+def _swb_list(node):
+    """递归找第一个充电桩（wallbox/charger）对象列表（v3.4.5）。"""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if isinstance(v, list) and v and all(isinstance(x, dict) for x in v) and any(
+                str(kk).lower() in ("wallboxid", "wallbox", "chargerid", "serialnumber",
+                                    "serialno", "equipmentid")
+                for x in v for kk in x
+            ):
+                return v
+            r = _swb_list(v)
+            if r is not None:
+                return r
+    elif isinstance(node, list):
+        for item in node:
+            r = _swb_list(item)
+            if r is not None:
+                return r
+    return None
+
+
+class FordPassSmartWallboxSensor(SensorEntity):
+    """家充桩管理（smartwallbox）摘要传感器（v3.4.5）。
+
+    数据源 coordinator.smartwallbox（api.probe_smartwallbox 探测结果，
+    登录后一次 + 24h TTL 缓存，见 coordinator.async_probe_capabilities）。
+    探测成功才创建（非家充桩车型探测无数据 → 0 实体）；字段宽松提取，
+    缺失显示友好中文；永远可用（v3.1.2 规则，不显示 unavailable）。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
+        self.coordinator = coordinator
+        self._key = key
+        self._kind = kind
+        self._attr_unique_id = f"{coordinator.vin}-{key}-{kind}"
+        self._attr_name = label
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    def _probe(self) -> dict | None:
+        swb = self.coordinator.smartwallbox or {}
+        ent = swb.get(self._key)
+        if isinstance(ent, dict):
+            data = ent.get("data")
+            if isinstance(data, dict):
+                return data
+        return None
+
+    @property
+    def native_value(self) -> str | None:
+        data = self._probe()
+        if data is None:
+            return None
+        try:
+            if self._kind == "count":
+                boxes = _swb_list(data)
+                return f"{len(boxes)} 个充电桩" if boxes else "未绑定充电桩"
+            if self._kind == "default":
+                boxes = _swb_list(data) or []
+                if not boxes:
+                    return "未绑定充电桩"
+                default = next(
+                    (b for b in boxes if str(_swb_find(b, "isDefault")).lower() in ("true", "1")
+                     or _swb_find(b, "default") is True),
+                    boxes[0],
+                )
+                brand = _swb_find(default, "brandName")
+                model = _swb_find(default, "modelName")
+                sn = _swb_find(default, "serialNumber") or _swb_find(default, "serialNo")
+                mac = _swb_find(default, "macAddress")
+                parts = [str(x) for x in (brand, model) if x]
+                name = " ".join(parts) if parts else "家充桩"
+                if sn:
+                    name += f"（SN {sn}）"
+                elif mac:
+                    name += f"（{mac}）"
+                return name
+            if self._kind == "record":
+                dur = _swb_find(data, "chargeDuration")
+                if dur is not None:
+                    return f"充电时长 {dur}"
+                rec = _swb_find(data, "recordId")
+                if rec is not None:
+                    return f"记录 {rec}"
+                return "暂无充电记录"
+            if self._kind == "status":
+                st = _swb_find(data, "chargingStatus") or _swb_find(data, "chargerStatus")
+                if isinstance(st, str):
+                    return {
+                        "Charging": "充电中", "NotCharging": "未充电",
+                        "FullyCharged": "已充满", "Complete": "已完成",
+                        "Charged": "已充满", "Discharging": "放电中",
+                        "0": "未充电", "1": "充电中",
+                    }.get(st, st)
+                return "未知"
+        except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
+            return "解析失败"
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self._probe()
+        attrs: dict = {}
+        if isinstance(data, dict):
+            for k, v in list(data.items())[:12]:
+                if isinstance(v, (str, int, float, bool)) or v is None:
+                    attrs[str(k)] = v
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+

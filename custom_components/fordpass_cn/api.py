@@ -1348,6 +1348,47 @@ class FordPassApi:
             except Exception as exc:  # noqa: BLE001
                 self._log.info("FordPass probe %s failed: %s", name, exc)
 
+    async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
+        """探测家充桩管理（smartwallbox）端点结构（只读/幂等，v3.4.5）。
+
+        6.16.0 APK libapp.so 字符串逆向端点（2026-10-08，请求细节待 HAR
+        校准）：GET binding/v5（绑定桩列表）、config/common/query/v2（通用
+        配置）、records/single/list/v2r（最近充电记录）。对每个端点尝试
+        带 encryptedVin/xjw 与不带两种形态；全部为只读查询，不触发任何
+        车辆/充电桩动作。返回探测摘要供实体按"探测到数据才创建"接入
+        （全车型能力驱动——非家充桩车型 404/参数校验失败，不创建实体）。
+        """
+        result: dict[str, Any] = {}
+        probes = {
+            "wallbox_binding": PATH_SMARTWALLBOX_BINDING,
+            "wallbox_config": PATH_SMARTWALLBOX_CONFIG,
+            "wallbox_records": PATH_SMARTWALLBOX_RECORDS,
+        }
+        for name, path in probes.items():
+            for signed in (True, False):
+                try:
+                    if signed:
+                        data = await self._get_signed(path, vin)
+                    else:
+                        data = await self._request("GET", path)
+                except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                    self._log.debug(
+                        "FordPass smartwallbox %s (signed=%s) failed: %s",
+                        name, signed, exc,
+                    )
+                    continue
+                if isinstance(data, dict):
+                    result[name] = {"signed": signed, "data": data}
+                    self._log.info(
+                        "FordPass smartwallbox probe %s -> %s",
+                        name, json.dumps(data, ensure_ascii=False)[:800],
+                    )
+                    break
+                if data is not None:
+                    result[name] = {"signed": signed, "raw": str(data)[:200]}
+                    break
+        return result or None
+
     # --------------------------------------------------------- b2c login
     async def password_login(
         self, username: str, password: str
