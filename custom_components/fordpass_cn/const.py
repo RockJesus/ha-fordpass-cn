@@ -77,6 +77,17 @@ CHIRP_TO_TYPE = {
 # 保存到 config entry options 的键
 CONF_HONK_DURATION = "honk_duration"
 CONF_CHIRP_TYPE = "chirp_type"
+# v3.4.5: 远程空调目标温度（EV/插混 preconditioning 专属，全车型能力驱动）
+# 创建条件=vehicle-status preCondStatusDsply 有值（锐际纯油无 -> 不创建）。
+# 云端偏好通道候选（与鸣笛设置同构）：组名 RemoteClimateSetting +
+# preferenceType TargetTemp，按 App 命名风格推断（未实测），待电马/插混 HAR 校准。
+GROUP_REMOTE_CLIMATE = "RemoteClimateSetting"
+PREF_TARGET_TEMP = "TargetTemp"
+CONF_REMOTE_TEMP = "remote_target_temp"
+# 目标温度选项（摄氏度，候选范围 16-30，默认 24，与 App Auto=22 相近）
+REMOTE_CLIMATE_TEMP_OPTIONS = list(range(16, 31))
+DEFAULT_REMOTE_TEMP = 24
+
 
 # LBS (vehicle location) gateway — recovered from the app's Dart AOT code and
 # verified against 26 live captures (x-sign 26/26).

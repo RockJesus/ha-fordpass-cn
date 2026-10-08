@@ -43,6 +43,7 @@ from .const import (
     CLIENT_TYPE,
     DEFAULT_CHIRP_TYPE,
     DEFAULT_HONK_DURATION,
+    GROUP_REMOTE_CLIMATE,
     GROUP_VEHICLE_ANNOUNCEMENT,
     LBS_APP_ID,
     LBS_APP_KEY,
@@ -83,7 +84,9 @@ from .const import (
     PATH_WIFI_STATUS,
     PAYLOAD_KEY,
     PREF_DURATION,
+    PREF_DURATION,
     PREF_SOUND_TYPE,
+    PREF_TARGET_TEMP,
     SECRET_KEY,
     TOUCH_POINT,
     V5_BASE_URL,
@@ -234,6 +237,47 @@ def compute_lbs_sign(body: dict[str, Any], timestamp_ms: int) -> str:
     raw = f"{LBS_APP_KEY}{biz}{ts}{LBS_PAYLOAD_KEY}{LBS_APP_KEY[:5]}{ts[8:]}"
     digest = hashlib.sha256(raw.encode("utf-8")).digest()
     return base64.b64encode(digest).decode("ascii").upper()
+
+
+
+_IMAGE_URL_KEYS = (
+    "imageUrl", "picUrl", "photoUrl", "pictureUrl", "thumbnailUrl", "url",
+    "downloadUrl", "image", "photo", "thumbnail",
+)
+
+
+def extract_remote_image_url(payload: Any) -> str | None:
+    """递归兼容提取远程影像（停车图/行车监控）响应里的图片 URL（v3.4.4）。
+
+    PDS 停车影像/行车监控响应结构随车型/云端版本变化，做宽松提取：
+    - 直接是字符串且以 http 开头 → 视为 URL
+    - dict/list 递归查找常见图片字段（imageUrl/picUrl/photoUrl/...），取第一个
+      非空 http(s) 值；单张与列表（含嵌套 data[]）均兼容。
+    找不到返回 None（实体显示「暂无影像」并保留最后一张）。
+    """
+    if isinstance(payload, str):
+        s = payload.strip()
+        return s if s.lower().startswith(("http://", "https://")) else None
+    if isinstance(payload, dict):
+        for key in _IMAGE_URL_KEYS:
+            val = payload.get(key)
+            if val is None:
+                continue
+            hit = extract_remote_image_url(val)
+            if hit:
+                return hit
+        # 遍历其余值，兼容自定义字段名
+        for val in payload.values():
+            hit = extract_remote_image_url(val)
+            if hit:
+                return hit
+        return None
+    if isinstance(payload, list):
+        for item in payload:
+            hit = extract_remote_image_url(item)
+            if hit:
+                return hit
+    return None
 
 
 class FordPassApiError(Exception):
@@ -922,6 +966,58 @@ class FordPassApi:
         if isinstance(data, dict) and data.get("status") not in (None, 200):
             raise FordPassApiError(data.get("errorCode"), data.get("error"))
         return {"cloud": True, "announce": announce, "duration": duration}
+
+    async def save_remote_climate_target_temp(self, temp: int) -> dict[str, Any]:
+        """保存远程空调目标温度到福特账户云端（v3.4.5，候选通道）。
+
+        与鸣笛设置同构（UserPreferenceV2 preference-by-groups）：
+        POST /api/cnxapi-pds/v1/user/preference-by-groups
+        body: {preferenceGroups: [{groupName: "RemoteClimateSetting",
+               userPreferences: [{preferenceType: "TargetTemp",
+                                  preferenceValue: "<摄氏度整数字符串>"}]}],
+              timestamp, sign}
+        顶层不包 encryptedVin/xjw（DTO 拒绝未知字段）；sign 由 _request 自动
+        附加（R3 双重 + 嵌套序列化，与鸣笛保存同一实现）。组名/类型为按
+        App 命名风格推断的候选值，待电马/插混账号 HAR 实测校准——保存失败
+        只记日志，不影响实体可用性（实体恒可用）。
+        """
+        groups = [
+            {
+                "groupName": GROUP_REMOTE_CLIMATE,
+                "userPreferences": [
+                    {"preferenceType": PREF_TARGET_TEMP, "preferenceValue": str(temp)},
+                ],
+            }
+        ]
+        body = {"preferenceGroups": groups}
+        data = await self._request("POST", PATH_USER_PREF_GROUPS, body=body)
+        if isinstance(data, dict) and data.get("status") not in (None, 200):
+            raise FordPassApiError(data.get("errorCode"), data.get("error"))
+        return {"cloud": True, "target_temp": temp}
+
+    async def get_remote_climate_preference(self) -> dict[str, Any]:
+        """读取福特账户云端的远程空调目标温度（v3.4.5，候选组名）。
+
+        GET /api/cnxapi-pds/v1/user/preference-list?timestamp=&sign=（与鸣笛
+        设置同一查询通道）。返回 {preferenceType: preferenceValue} 或 {}。
+        """
+        try:
+            data = await self._request("GET", PATH_USER_PREF_LIST, query={})
+        except FordPassApiError:
+            return {}
+        payload = data.get("data", {}) if isinstance(data, dict) else {}
+        groups = payload.get("groups") if isinstance(payload, dict) else None
+        if not isinstance(groups, list):
+            return {}
+        for group in groups:
+            if isinstance(group, dict) and group.get("groupName") == GROUP_REMOTE_CLIMATE:
+                prefs = group.get("userPreferences") or []
+                out: dict[str, str] = {}
+                for pref in prefs:
+                    if isinstance(pref, dict):
+                        out[pref.get("preferenceType")] = pref.get("preferenceValue")
+                return out
+        return {}
 
     async def get_chirp_preference(self) -> dict[str, Any]:
         """读取福特账户云端的鸣笛寻车设置（v3.1.4，UserPreferenceV2 查询）。
