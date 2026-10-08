@@ -1327,26 +1327,40 @@ class FordPassApi:
         self._log.debug("FordPass whitelist probe unexpected 2xx (no whitelist)")
         return None
 
-    async def probe_extra_endpoints(self, vin: str) -> None:
-        """探测新增 GET 端点响应结构（INFO 日志，供后续版本解析接入）。
+    async def probe_extra_endpoints(self, vin: str) -> dict[str, Any] | None:
+        """探测只读 GET 端点响应并返回结果供实体创建（v3.4.6）。
 
-        v3.3.7: maintenance-history / departuretimes retrieve 响应结构未知，
-        此方法仅打印响应供开发（v3.3.8 起 INFO 级，HAOS 日志可直接查看），
-        不创建实体。
+        v3.3.7 起探测 maintenance-history / departuretimes retrieve 仅打日志；
+        v3.4.6 改为**返回探测结果**（coordinator 缓存 24h），sensor 按
+        "探测到数据才创建"接入实体。全部只读/幂等 GET，不触发任何车辆
+        动作；非能力车型/无数据端点返回空，不创建实体（全车型适配）。
+        端点来源：6.16.0 APK libapp.so 字符串逆向（2026-10-08）+ 既有探测。
         """
         probes = {
             "maintenance-history": PATH_MAINTENANCE_HISTORY,
-            "departuretimes-retrieve": PATH_DEPARTURE_TIMES_RETRIEVE,
+            "departuretimes": PATH_DEPARTURE_TIMES_RETRIEVE,
+            "chargelogs": PATH_CHARGELOGS_RETRIEVE,
+            "ota_versions": PATH_OTA_VERSIONS,
+            "ota_detail": PATH_OTA_DETAIL,
+            "ota_search_details": PATH_OTA_SEARCH_DETAILS,
+            "ota_new_status": PATH_OTA_NEW_STATUS,
         }
+        result: dict[str, Any] = {}
         for name, path in probes.items():
             try:
                 data = await self._get_signed(path, vin)
+            except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                self._log.debug("FordPass probe %s failed: %s", name, exc)
+                continue
+            if isinstance(data, dict) and data:
+                result[name] = data
                 self._log.info(
                     "FordPass probe %s -> %s",
-                    name, json.dumps(data, ensure_ascii=False)[:800],
+                    name, json.dumps(data, ensure_ascii=False)[:600],
                 )
-            except Exception as exc:  # noqa: BLE001
-                self._log.info("FordPass probe %s failed: %s", name, exc)
+            else:
+                self._log.info("FordPass probe %s -> (empty)", name)
+        return result or None
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
         """探测家充桩管理（smartwallbox）端点结构（只读/幂等，v3.4.5）。
