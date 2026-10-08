@@ -40,6 +40,7 @@ from .const import (
     CONF_HONK_DURATION,
     DOMAIN,
 )
+from .api import extract_remote_image_url
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -391,6 +392,8 @@ class FordPassImageButton(ButtonEntity):
             "kind": self._kind,
             "car_id": car_id,
             "resp": resp if isinstance(resp, dict) else {"raw": str(resp)[:2000]},
+            # v3.4.4: 同步提取图片 URL，供「停车影像图/行车监控图」image 实体展示
+            "image_url": extract_remote_image_url(resp),
         }
         self.coordinator.async_update_listeners()
         _LOGGER.info("FordPass %s 查询完成: %s", self._kind, str(resp)[:2000])
