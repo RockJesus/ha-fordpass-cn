@@ -3,7 +3,5 @@
   "content_in_root": false,
   "render_readme": true,
   "country": "CN",
-  "homeassistant": "2024.6.0",
-  "zip_release": true,
-  "filename": "fordpass_ha_3.4.7.zip"
+  "homeassistant": "2024.6.0"
 }
