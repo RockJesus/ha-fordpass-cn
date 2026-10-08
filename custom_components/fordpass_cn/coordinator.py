@@ -80,6 +80,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.command_whitelist: list[str] | None = None
         # v3.4.5: 家充桩管理探测结果（None=无该功能/未探测成功）
         self.smartwallbox: dict[str, Any] | None = None
+        # v3.4.6: 只读探测结果（OTA 详情/预约出发/充电日志等，None=无数据）
+        self.extra_probes: dict[str, Any] | None = None
         # v3.4.1: 慢变数据 TTL 缓存（key -> (expire_monotonic, data)）——
         # 防止福特云限流：只有 vehicle-status 每轮拉取，其余按 TTL 命中
         # 直接复用上次数据，不发请求；请求失败保留旧缓存（最后已知状态）。
@@ -125,7 +127,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.debug("FordPass capability probe failed: %s", exc)
             self.command_whitelist = None
         try:
-            await self.api.probe_extra_endpoints(self.vin)
+            self.extra_probes = await self._cached_fetch(
+                "extra_probes", 86400,
+                lambda: self.api.probe_extra_endpoints(self.vin),
+            )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
         # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + 24h TTL
