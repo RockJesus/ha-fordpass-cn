@@ -25,10 +25,14 @@ from .const import (
     CHIRP_TYPE_OPTIONS,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
+    CONF_REMOTE_TEMP,
     DEFAULT_CHIRP_TYPE,
     DEFAULT_HONK_DURATION,
+    DEFAULT_REMOTE_TEMP,
     DOMAIN,
     HONK_DURATION_OPTIONS,
+    PREF_TARGET_TEMP,
+    REMOTE_CLIMATE_TEMP_OPTIONS,
 )
 from .coordinator import FordPassCoordinator
 
@@ -86,6 +90,12 @@ async def async_setup_entry(
             )
             entities.append(
                 FordPassChirpTypeSelect(hass, entry, coordinator, settings)
+            )
+        # v3.4.5: 远程空调目标温度（EV/插混 preconditioning 专属）——
+        # vehicle-status preCondStatusDsply 有值才创建（锐际纯油无 → 不创建，0 unavailable）
+        if capability.usable(status, [["preCondStatusDsply"]]):
+            entities.append(
+                FordPassRemoteTempSelect(hass, entry, coordinator)
             )
     async_add_entities(entities)
 
@@ -260,3 +270,82 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
         self.async_write_ha_state()
         # v3.3.4: 选择后即时上传福特账户云端（App/HA/云端三方同步）
         await self._save_cloud()
+
+def _cloud_temp(coordinator: FordPassCoordinator) -> int | None:
+    """读云端远程空调目标温度（v3.4.5，候选组 RemoteClimateSetting）。"""
+    pref = (coordinator.data or {}).get("remote_climate_cloud") or {}
+    if not isinstance(pref, dict):
+        return None
+    raw = pref.get(PREF_TARGET_TEMP)
+    if raw is None:
+        return None
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
+    """远程空调目标温度（v3.4.5，EV/插混 preconditioning 专属）。
+
+    创建条件=vehicle-status preCondStatusDsply 有值（锐际纯油无 → 不创建）。
+    选项 16-30°C（候选范围，默认 24）；选择后即时上传福特账户云端
+    （RemoteClimateSetting/TargetTemp 候选偏好通道，与鸣笛设置同构），
+    回读云端 preference 更新 remote_climate_cloud，实现 App/HA/云端同步。
+    通道为按 App 命名风格推断的候选值，待电马/插混账号 HAR 实测校准——
+    保存失败仅记日志，实体恒可用。
+    """
+
+    _attr_icon = "mdi:thermometer"
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        coordinator: FordPassCoordinator,
+    ) -> None:
+        settings = {CONF_REMOTE_TEMP: int(
+            entry.options.get(CONF_REMOTE_TEMP, DEFAULT_REMOTE_TEMP)
+        )}
+        super().__init__(hass, entry, coordinator, settings)
+        self._attr_unique_id = f"{coordinator.vin}-remote_temp"
+        self._attr_name = "远程空调目标温度"
+        self._attr_device_info = coordinator.device_info
+        self._attr_options = [f"{v} °C" for v in REMOTE_CLIMATE_TEMP_OPTIONS]
+        self._attr_current_option = f"{settings.get(CONF_REMOTE_TEMP, DEFAULT_REMOTE_TEMP)} °C"
+
+    def _on_cloud_update(self) -> None:
+        """云端温度变化 → 同步本地 select（幂等）。"""
+        temp = _cloud_temp(self.coordinator)
+        if temp is not None and temp in REMOTE_CLIMATE_TEMP_OPTIONS:
+            cur = f"{temp} °C"
+            if self._attr_current_option != cur:
+                self._attr_current_option = cur
+                self._persist(CONF_REMOTE_TEMP, temp)
+                self.async_write_ha_state()
+
+    async def async_select_option(self, option: str) -> None:
+        value = int(str(option).replace("°C", "").strip())
+        self._persist(CONF_REMOTE_TEMP, value)
+        self._attr_current_option = f"{value} °C"
+        self.async_write_ha_state()
+        # v3.4.5: 选择后即时上传福特账户云端（App/HA/云端三方同步）
+        try:
+            await self.coordinator.api.save_remote_climate_target_temp(value)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "FordPass 远程空调目标温度云端保存失败（本地设置仍生效，通道待 EV 车型实测）: %s", exc,
+            )
+            raise
+        _LOGGER.info(
+            "FordPass 远程空调目标温度已即时上传云端（%s°C，候选通道 RemoteClimateSetting/TargetTemp）", value,
+        )
+        # 回读云端 preference → 更新 remote_climate_cloud（云端同步）
+        try:
+            pref = await self.coordinator.api.get_remote_climate_preference()
+            if isinstance(pref, dict) and pref:
+                data = dict(self.coordinator.data or {})
+                data["remote_climate_cloud"] = pref
+                self.coordinator.async_set_updated_data(data)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("FordPass 远程空调目标温度云端回读失败: %s", exc)
