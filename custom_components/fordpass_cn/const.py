@@ -163,6 +163,25 @@ PATH_PROGNOSTIC = "/api/cnxapi-cds/prognostic/v1/list"
 # unReadCategoryId/unReadCategoryDescription/readMessageSubject} + data.categories[]
 PATH_MESSAGES_SUMMARY = "/api/cnxapi-message/app/messages/summary"
 
+# 家充桩管理（smartwallbox 智能壁挂充电桩，6.16.0 APK libapp.so 字符串逆向
+# 2026-10-08）：福特派 App「家充桩管理」对应云端 smartwallbox 服务（能力位
+# 0x8 privateChargingService / 0xA WallBoxAutoAuth 车型），端点均为
+# /api/smartwallbox/processor/... 家族：
+#   查询（只读/幂等，探测接入）：
+#     GET /api/smartwallbox/processor/binding/v5            绑定桩列表（含默认桩）
+#     GET /api/smartwallbox/processor/charging/status/wallboxId/v2
+#                                                          按桩查充电状态（wallboxId 路径占位）
+#     GET /api/smartwallbox/processor/charging/records/single/list/v2r  最近充电记录
+#     GET /api/smartwallbox/processor/config/common/query/v2            通用配置查询
+#   写操作（需 HAR 确认 body 后接入，绝不自动调用）：
+#     /api/smartwallbox/processor/binding/updateDefaultWallbox/v2 设置默认桩
+#     /api/smartwallbox/processor/charging/start/v2              开始充电
+#     /api/smartwallbox/processor/sharing/share/v3 / unshare/v2  桩共享
+PATH_SMARTWALLBOX_BINDING = "/api/smartwallbox/processor/binding/v5"
+PATH_SMARTWALLBOX_CHG_STATUS = "/api/smartwallbox/processor/charging/status/wallboxId/v2"
+PATH_SMARTWALLBOX_RECORDS = "/api/smartwallbox/processor/charging/records/single/list/v2r"
+PATH_SMARTWALLBOX_CONFIG = "/api/smartwallbox/processor/config/common/query/v2"
+
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
 #   1. GET  authorize            -> HTML form + cookies (x-ms-cpim-csrf) + x-request-id

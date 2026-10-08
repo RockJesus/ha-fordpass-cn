@@ -78,6 +78,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         # v3.3.7: 云端 send-command 白名单（探测结果）——平台实体按此动态创建
         self.command_whitelist: list[str] | None = None
+        # v3.4.5: 家充桩管理探测结果（None=无该功能/未探测成功）
+        self.smartwallbox: dict[str, Any] | None = None
         # v3.4.1: 慢变数据 TTL 缓存（key -> (expire_monotonic, data)）——
         # 防止福特云限流：只有 vehicle-status 每轮拉取，其余按 TTL 命中
         # 直接复用上次数据，不发请求；请求失败保留旧缓存（最后已知状态）。
@@ -126,6 +128,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.api.probe_extra_endpoints(self.vin)
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
+        # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + 24h TTL
+        # 缓存（探测类请求绝不进入常规轮询，防福特云限流）；探测结果供
+        # sensor 按"探测到数据才创建"接入。失败/非家充桩车型保持 None。
+        self.smartwallbox = await self._cached_fetch(
+            "smartwallbox", 86400,
+            lambda: self.api.probe_smartwallbox(self.vin),
+        )
 
     async def async_load_last_data(self) -> None:
         """Restore last-known data before first refresh (v3.3.3)."""
