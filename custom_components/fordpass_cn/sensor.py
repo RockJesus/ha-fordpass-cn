@@ -266,6 +266,20 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_binding", "默认充电桩", "default"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "最近充电记录", "record"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "家充桩充电状态", "status"))
+    # v3.4.6: 只读探测实体（OTA 新版本/详情、预约出发、充电日志）——探测
+    # 到数据才创建，非能力车型/无数据不创建（全车型适配，0 unavailable）。
+    _ep = coordinator.extra_probes
+    if isinstance(_ep, dict) and _ep:
+        for _k, _lbl, _kind in (
+            ("ota_new_status", "OTA 新版本状态", "ota_status"),
+            ("ota_versions", "OTA 版本", "ota_version"),
+            ("ota_search_details", "OTA 更新详情", "ota_detail"),
+            ("ota_detail", "OTA 详情", "ota_detail"),
+            ("departuretimes", "预约出发", "departure"),
+            ("chargelogs", "充电日志", "chargelog"),
+        ):
+            if _ep.get(_k):
+                sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
     # v3.1.7: 空调滤芯状态（AAR 能力车型；无 airFilter 字段的车型不创建，
     # 保证其他用户登录各自车型时不出现不支持的实体）
     air_filter = coordinator.data.get("air_filter")
@@ -1520,6 +1534,107 @@ class FordPassSmartWallboxSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         data = self._probe()
+        attrs: dict = {}
+        if isinstance(data, dict):
+            for k, v in list(data.items())[:12]:
+                if isinstance(v, (str, int, float, bool)) or v is None:
+                    attrs[str(k)] = v
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+class FordPassProbeSensor(SensorEntity):
+    """只读探测端点摘要传感器（v3.4.6，探测数据驱动创建）。
+
+    数据源 coordinator.extra_probes = api.probe_extra_endpoints()（登录后
+    一次 + 24h TTL 缓存，全部只读/幂等 GET）：OTA 版本/详情/新状态、
+    预约出发（departuretimes/retrieve）、充电日志（chargelogs/retrieve）。
+    探测到数据才创建；字段宽松递归提取（_swb_find），缺失显示友好中文；
+    永远可用（v3.1.2 规则，不显示 unavailable）。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:update"
+
+    def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
+        self.coordinator = coordinator
+        self._key = key
+        self._kind = kind
+        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_name = label
+        self._attr_device_info = coordinator.device_info
+        if kind in ("departure", "chargelog"):
+            self._attr_icon = "mdi:calendar-clock"
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    def _data(self) -> dict | None:
+        ep = self.coordinator.extra_probes or {}
+        data = ep.get(self._key)
+        return data if isinstance(data, dict) else None
+
+    @property
+    def native_value(self) -> str | None:
+        data = self._data()
+        if data is None:
+            return None
+        try:
+            if self._kind == "ota_version":
+                ver = (_swb_find(data, "version") or _swb_find(data, "otaVersion")
+                       or _swb_find(data, "versionNumber") or _swb_find(data, "targetVersion"))
+                if ver is not None:
+                    return str(ver)
+                return "暂无 OTA 版本信息"
+            if self._kind == "ota_detail":
+                ver = (_swb_find(data, "targetVersion") or _swb_find(data, "otaVersion")
+                       or _swb_find(data, "version"))
+                desc = _swb_find(data, "description") or _swb_find(data, "content")
+                parts = [str(x) for x in (ver, desc) if x]
+                return " / ".join(parts) if parts else "暂无 OTA 更新详情"
+            if self._kind == "ota_status":
+                st = (_swb_find(data, "status") or _swb_find(data, "newOtaStatus")
+                      or _swb_find(data, "otaStatus"))
+                if isinstance(st, str):
+                    return {
+                        "Available": "有可用更新", "NotAvailable": "无可用更新",
+                        "Downloading": "下载中", "Installing": "安装中",
+                        "Installed": "已安装", "Failed": "安装失败",
+                    }.get(st, st)
+                if st is not None:
+                    return str(st)
+                return "暂无新 OTA"
+            if self._kind == "departure":
+                t = (_swb_find(data, "departureTime") or _swb_find(data, "nextDeparture")
+                     or _swb_find(data, "departureTimes"))
+                if t is not None:
+                    return str(t)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 个预约出发任务"
+                return "未设置预约出发"
+            if self._kind == "chargelog":
+                dur = _swb_find(data, "chargeDuration")
+                if dur is not None:
+                    return f"充电时长 {dur}"
+                t = _swb_find(data, "chargeStartTime") or _swb_find(data, "startTime")
+                if t is not None:
+                    return f"最近充电 {t}"
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条充电记录"
+                return "暂无充电日志"
+        except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
+            return "解析失败"
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self._data()
         attrs: dict = {}
         if isinstance(data, dict):
             for k, v in list(data.items())[:12]:

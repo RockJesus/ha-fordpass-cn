@@ -182,6 +182,20 @@ PATH_SMARTWALLBOX_CHG_STATUS = "/api/smartwallbox/processor/charging/status/wall
 PATH_SMARTWALLBOX_RECORDS = "/api/smartwallbox/processor/charging/records/single/list/v2r"
 PATH_SMARTWALLBOX_CONFIG = "/api/smartwallbox/processor/config/common/query/v2"
 
+# OTA 版本/详情（6.16.0 APK 逆向，2026-10-08，只读 GET 探测接入 v3.4.6）：
+#   alert/ota/versions             OTA 版本列表
+#   alert/ota/detail               OTA 详情（当前/目标版本等）
+#   alert/search-ota-details        OTA 更新详情
+#   alert/search-new-ota-status    新 OTA 状态
+PATH_OTA_VERSIONS = "/api/alert/v1/ota/versions"
+PATH_OTA_DETAIL = "/api/alert/v1/ota/detail"
+PATH_OTA_SEARCH_DETAILS = "/api/alert/v1/search-ota-details"
+PATH_OTA_NEW_STATUS = "/api/alert/v1/search-new-ota-status"
+# 充电日志（6.16.0 APK 逆向，2026-10-08，只读 GET）：cevs/v2/chargelogs/retrieve
+PATH_CHARGELOGS_RETRIEVE = "/api/cevs/v2/chargelogs/retrieve"
+# 家充桩充电过程日志（只读 GET，并入 smartwallbox 探测族 v3.4.6）
+PATH_SMARTWALLBOX_PROCESS_LOG = "/api/smartwallbox/processor/charging/records/process/log/v3"
+
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
 #   1. GET  authorize            -> HTML form + cookies (x-ms-cpim-csrf) + x-request-id
