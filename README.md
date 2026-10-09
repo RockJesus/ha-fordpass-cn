@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.1**：**接入保养历史（账号认证车主）**——v3.3.7 起探测的 `maintenance-history` 端点此前因账号非车主被网关业务拒绝（`User not vehicle owner`）无数据不创建；账号认证车主后探测有数据即创建「保养历史」传感器（通用解析：记录条数+最近一条日期/项目摘要，真实结构从 probe 日志精解析下版对齐）；顺带修复 device_list 分支同款 `dict.fromkeys` 切片坑；版本号十进制 +1（3.7.0→3.7.1）
 - **v3.7.0**：**去重授权状态实体**——「授权状态」（vehicle-status authorization）与「车辆用户授权状态」（user_auth 探测端点）语义重复，移除前者保留后者（信息更全：authorizationStatus+role+ownerMobile）；旧条目由 setup 清理段自动移除；版本号十进制进位（3.6.9→3.7.0，段内 10 两位数不合规）
 - **v3.6.9**：**修复车辆清单「解析失败」**——v3.6.8 用 vehicles_list 兜底激活了 uservehicles 解析分支（v3.6.2 起从未执行过），`dict.fromkeys(models)[:6]` 对 dict 切片抛 `KeyError: slice` → 被 except 捕获显示「解析失败」；改 `list(dict.fromkeys(models))[:6]`；版本号十进制 +1（3.6.8→3.6.9）
 - **v3.6.8**：**v3.6.7 修正版强制发布**——v3.6.7 首版误把 uservehicles 兜底加在 smartwallbox 传感器、且同版本号二次发布 HACS 不重拉包（update 实体同版本判定已最新），车辆清单仍 unknown；v3.6.7 修正版（extra_probes 探测传感器 native_value 用 vehicles_list 兜底）以 v3.6.8 新版本号重新发布确保落盘；版本号十进制 +1（3.6.7→3.6.8）

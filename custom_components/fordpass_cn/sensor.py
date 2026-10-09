@@ -317,6 +317,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("video_file", "行车记录视频", "video"),
             ("messages_page", "最新消息", "messages"),
             ("ota_reddot", "OTA 更新提醒", "ota_reddot"),
+            # v3.7.1: 保养历史（maintenance-history）——v3.3.7 起探测，
+            # 此前账号非车主时网关业务拒绝（User not vehicle owner）无数据
+            # 不创建；账号认证车主后探测有数据即创建（全车型自动适配）。
+            ("maintenance-history", "保养历史", "maintenance"),
             # v3.5.1: 账号级只读端点补全（探测到数据才创建）
             ("uservehicles", "车辆清单", "uservehicles"),
             ("messages_v2", "消息中心 v2", "messages_v2"),
@@ -1852,9 +1856,32 @@ class FordPassProbeSensor(SensorEntity):
                         if nm is not None:
                             names.append(str(nm))
                     if names:
-                        return f"{len(lst)} 个设备：{'、'.join(dict.fromkeys(names)[:6])}"
+                        return f"{len(lst)} 个设备：{'、'.join(list(dict.fromkeys(names))[:6])}"
                     return f"{len(lst)} 个设备"
                 return "暂无设备列表"
+            # v3.7.1: 保养历史（maintenance-history，账号认证车主后可探测）。
+            # 响应结构各车型有差异（list / {data:[...]} / {records:[...]}），
+            # 通用解析：递归取第一条记录摘要 + 总条数；真实结构在
+            # FordPass probe 日志输出后下版精解析对齐。
+            if self._kind == "maintenance":
+                lst = _swb_list(data)
+                if lst is None:
+                    for _v in data.values():
+                        if isinstance(_v, list) and _v:
+                            lst = _v
+                            break
+                if lst:
+                    first = lst[0] if isinstance(lst[0], dict) else {}
+                    when = (_swb_find(first, "maintenanceDate") or _swb_find(first, "date")
+                            or _swb_find(first, "serviceDate") or _swb_find(first, "time"))
+                    what = (_swb_find(first, "description") or _swb_find(first, "item")
+                            or _swb_find(first, "taskName") or _swb_find(first, "content")
+                            or _swb_find(first, "workItem"))
+                    parts = [str(x) for x in (when, what) if x]
+                    if parts:
+                        return f"{len(lst)} 条记录，最近：{' '.join(parts)}"
+                    return f"{len(lst)} 条保养记录"
+                return "暂无保养记录"
             # ---- v3.6.2: 待开发清单补全（mcm 消息中心 v3 / 用户级红点）----
             if self._kind == "mcm_messages":
                 lst = _swb_list(data)
