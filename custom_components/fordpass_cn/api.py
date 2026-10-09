@@ -1459,7 +1459,13 @@ class FordPassApi:
             self._log.debug("FordPass probe %s wbk_%s failed: %s", name, vname, exc)
             return
         if isinstance(data, dict) and data:
-            if _is_err_resp(data):
+            # v3.7.22: 内联业务错误判断（_is_err_resp 是 probe_extra_endpoints
+            # 内的嵌套函数，模块级 helper 引用会 NameError）
+            is_err = (
+                "errorCode" in data or "error" in data
+                or str(data.get("status")) not in ("0", "200", "None")
+            )
+            if is_err:
                 self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
                 self._log.info(
                     "FordPass probe %s wbk_%s -> (rejected: %s)",
@@ -1512,7 +1518,7 @@ class FordPassApi:
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
         payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
         plaintext_ok = vname in ("plaintext", "plaintext_xjw")
-        wbk_ok = vname in ("wbk_plain", "wbk_shared", "wbk_cevs_plain", "wbk_cevs_shared")
+        wbk_ok = vname in ("wbk_plain", "wbk_shared", "wbk_cevs_plain", "wbk_cevs_shared", "wbk_cevs_ev")
         if vname not in payloads and not plaintext_ok and not wbk_ok:
             self.cevs_diag["variant_error"] = f"unknown variant {vname}"
             return
@@ -1550,8 +1556,13 @@ class FordPassApi:
                         enc, xjw2 = await asyncio.to_thread(
                             lambda: self.crypto.encrypt_field(vin, iv),
                         )
-                    b["vin"] = enc
-                    b["xjw"] = xjw2
+                    # v3.7.22: wbk_cevs_ev 用 encryptedVin 字段名（vcs 域通用）
+                    if vname == "wbk_cevs_ev":
+                        b["encryptedVin"] = enc
+                        b["xjw"] = xjw2
+                    else:
+                        b["vin"] = enc
+                        b["xjw"] = xjw2
                     data = await self._request("POST", path, b, raw_body=True)
                 except Exception as exc:  # noqa: BLE001
                     self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
@@ -1767,16 +1778,18 @@ class FordPassApi:
             _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
             cevs_crypto = FordPassCrypto.get(scene="cevs")
             for name, path, body in (
-                ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
-                ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
-                ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
+                ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"encryptedVin": None}),
+                ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"encryptedVin": None, "xjw": xjw_now}),
+                ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"encryptedVin": None}),
             ):
                 try:
                     b = dict(body)
                     enc, xjw2 = await asyncio.to_thread(
                         lambda: cevs_crypto.encrypt_field(vin, bytes.fromhex(xjw_now)),
                     )
-                    b["vin"] = enc
+                    # v3.7.22: cevs/vcs 域字段名为 encryptedVin（vcs 通用）；
+                    # 此前用 "vin" 报 Arguments not valid or missing
+                    b["encryptedVin"] = enc
                     b["xjw"] = xjw2
                     await self._probe_cevs_variant_wbk(name, path, b, "wbk_cevs_shared")
                 except Exception as exc:  # noqa: BLE001

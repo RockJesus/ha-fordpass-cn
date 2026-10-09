@@ -15,6 +15,7 @@ probe_cevs_variant:
             - wbk_shared
             - wbk_cevs_plain
             - wbk_cevs_shared
+            - wbk_cevs_ev
             - plaintext
             - plaintext_xjw
             - k1_plain
