@@ -1359,13 +1359,18 @@ class FordPassApi:
             "video_file": PATH_VIDEO_FILE,
             "messages_page": PATH_MESSAGES_PAGE,
             "ota_reddot": PATH_OTA_REDDOT,
-            # v3.5.1: 账号级只读端点补全（全车型/多账号适配）
+            # v3.5.1: 车辆级端点（search-vehicle-device-list 按车辆签名）
+            "device_list": PATH_DEVICE_LIST,
+        }
+        # v3.5.1: 账号级端点——仅 timestamp+sign 签名，不带 encryptedVin/xjw
+        # （同 messages/summary 抓包实证；带车辆参数会被网关拒绝 → 探测空）
+        account_probes = {
             "uservehicles": PATH_USER_VEHICLES,
             "messages_v2": PATH_MESSAGES_V2_PAGE,
             "share_list": PATH_SHARE_LIST,
-            "device_list": PATH_DEVICE_LIST,
         }
         result: dict[str, Any] = {}
+        # 车辆级端点：带 encryptedVin/xjw 签名
         for name, path in probes.items():
             try:
                 data = await self._get_signed(path, vin)
@@ -1380,6 +1385,30 @@ class FordPassApi:
                 )
             else:
                 self._log.info("FordPass probe %s -> (empty)", name)
+        # 账号级探测结果 api 实例级缓存（v3.5.2）：多 VIN 账号每车一个
+        # coordinator 并发探测时仅首车发网络请求，其余车直接复用——
+        # 符合风控"探测类请求只在登录后执行一次并缓存"（防福特云限流）
+        account_cache = getattr(self, "_account_probe_cache", None)
+        if account_cache is not None:
+            result.update(account_cache)
+        else:
+            account_res: dict[str, Any] = {}
+            for name, path in account_probes.items():
+                try:
+                    data = await self._request("GET", path)
+                except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                    self._log.debug("FordPass probe %s failed: %s", name, exc)
+                    continue
+                if isinstance(data, dict) and data:
+                    account_res[name] = data
+                    self._log.info(
+                        "FordPass probe %s -> %s",
+                        name, json.dumps(data, ensure_ascii=False)[:600],
+                    )
+                else:
+                    self._log.info("FordPass probe %s -> (empty)", name)
+            self._account_probe_cache = dict(account_res)
+            result.update(account_res)
         return result or None
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
