@@ -1428,21 +1428,21 @@ class FordPassApi:
 
     @staticmethod
     def _cevs_variant_payloads(vin: str, xjw: str) -> list[tuple[str, bytes]]:
-        """cevs 加密链变体 payload（v3.7.9/3.7.10）。"""
+        """cevs 加密链变体 payload（v3.7.14：3 公钥 × 2 payload 形态）。
+
+        vname = k{1,2,3}_{plain,vinxjw}：
+          k1 = libapp.so PKCS#1 2048；k2 = rsa_feed_back 2048；k3 = cnesl_prod 4096
+          plain   = RSA(VIN)（payload 仅 VIN 明文）
+          vinxjw  = RSA(VIN + xjw)（组合串，混合加密标准形态）
+        """
         variants: list[tuple[str, bytes]] = [
-            ("plain", vin.encode("utf-8")),
-            ("json_vin", json.dumps({"vin": vin}, separators=(",", ":")).encode("utf-8")),
-            ("json_vin_xjw", json.dumps({"vin": vin, "xjw": xjw}, separators=(",", ":")).encode("utf-8")),
+            (f"k1_plain", vin.encode("utf-8")),
+            (f"k2_plain", vin.encode("utf-8")),
+            (f"k3_plain", vin.encode("utf-8")),
+            (f"k1_vinxjw", (vin + xjw).encode("utf-8")),
+            (f"k2_vinxjw", (vin + xjw).encode("utf-8")),
+            (f"k3_vinxjw", (vin + xjw).encode("utf-8")),
         ]
-        try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-            xjw_bytes = bytes.fromhex(xjw)
-            pad = 16 - (len(vin.encode("utf-8")) % 16)
-            plain_aes = vin.encode("utf-8") + bytes([pad]) * pad
-            ct_aes = Cipher(algorithms.AES(xjw_bytes), modes.ECB()).encryptor().update(plain_aes)
-            variants.append(("aes_ecb", ct_aes))
-        except Exception:
-            pass
         return variants
 
     async def _probe_cevs_variant_once(
@@ -1479,8 +1479,10 @@ class FordPassApi:
     async def probe_cevs_variant(self, vin: str, vname: str) -> None:
         """手动触发 cevs 指定变体探测（service 调用，3 请求/次，防风控降级）。
 
-        v3.7.13: 明文变体 plaintext / plaintext_xjw（raw_body 裸发明文 VIN，
-        此前 v3.6.x 明文报 Impossible modulus 是带外层签名版本，raw 明文未测）。
+        v3.7.14: 变体 k{1,2,3}_{plain,vinxjw}——k1=libapp2048 / k2=feed_back2048 /
+        k3=cnesl4096，plain=RSA(VIN)、vinxjw=RSA(VIN+xjw)；**只对 vname 指定公钥发
+        1 次**（3 请求/次，保持风控安全）。departuretimes/commandstatus body 也
+        补 xjw（DTO 可能要求 {vin,xjw}）。plaintext 系列沿用 v3.7.13。
         """
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
         payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
@@ -1488,22 +1490,28 @@ class FordPassApi:
         if vname not in payloads and not plaintext_ok:
             self.cevs_diag["variant_error"] = f"unknown variant {vname}"
             return
+        pems: list[str] = [None]
+        if not plaintext_ok:
+            try:
+                kidx = int(vname.split("_")[0][1:]) - 1
+                pems = [CEVS_RSA_PUBKEYS[kidx]]
+            except Exception:
+                self.cevs_diag["variant_error"] = f"bad variant {vname}"
+                return
         for name, path, body in (
             ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
             ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
             ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
-            for pem in CEVS_RSA_PUBKEYS:
+            b = dict(body)
+            b["xjw"] = xjw_now  # 三端点统一补 xjw（DTO {vin,xjw} 假设）
+            for pem in pems:
                 if plaintext_ok:
-                    b = dict(body)
                     b["vin"] = vin
-                    if vname == "plaintext_xjw":
-                        b["xjw"] = xjw_now
+                    key = f"{name}_rsa_{vname}"
                     try:
                         data = await self._request("POST", path, b, raw_body=True)
-                        key = f"{name}_rsa_{vname}"
                     except Exception as exc:  # noqa: BLE001
-                        key = f"{name}_rsa_{vname}"
                         self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
                         self._log.debug(
                             "FordPass probe %s rsa_%s failed: %s", name, vname, exc,
@@ -1518,7 +1526,7 @@ class FordPassApi:
                         self.cevs_diag[key] = "ok(empty)"
                 else:
                     await self._probe_cevs_variant_once(
-                        name, path, body, vname, payloads[vname], pem,
+                        name, path, b, vname, payloads[vname], pem,
                     )
 
     async def probe_extra_endpoints(self, vin: str) -> dict[str, Any] | None:
