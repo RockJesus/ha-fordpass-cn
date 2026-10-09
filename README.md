@@ -72,6 +72,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.6.0**：**await async_remove 修复残留实体删除**——v3.5.8/9 清理逻辑未 await `reg.async_remove`（协程未运行），旧 sensor（双后轮 value=0）始终残留 unavailable；改为 `await` 后 setup 时真正移除不再创建的旧实体，实体不再显示不可用；版本号十进制进位（3.5.9→3.6.0）
 - **v3.5.9**：**修复残留清理 API 签名**——v3.5.8 的清理逻辑 `async_entries_for_domain` 误传 ConfigEntry（应传 domain 字符串）导致 TypeError、旧实体未删；修正后 setup 时显式移除不再创建的旧 sensor（双后轮 value=0），实体不显示不可用；版本号十进制 +1（3.5.8→3.5.9）
 - **v3.5.8**：**升级残留实体清理**——新版不再创建的旧 sensor（如双后轮 value=0 非该能力车型）在 registry 中残留会一直 unavailable，现于 setup 时按 unique_id 显式移除（保留用户手动禁用的实体），实体状态不再显示不可用；版本号十进制 +1（3.5.7→3.5.8）
 - **v3.5.7**：**POST body 按端点收窄（clientType 仅 uservehicles）+ 双后轮 0 不建实体**——v3.5.6 日志实证多数端点报 `Unrecognized field "clientType"`（DTO 不接受通用字段）→ POST body 只补 encryptedVin/xjw，clientType/appVersion 仅 uservehicles（该端点已通 200，返回 "Vehicle already registered"=车辆注册端点非清单）；ota_reddot body 只要 xjw（不接受 encryptedVin）；share_list 去掉 clientType 后预期通；双后轮 sensor 值为 0（非双后轮车型）不再创建（拖车灯光检测按钮本就按值 1 才建）；departuretimes/chargelogs 报 `Impossible modulus`（加密层校验，待 HAR 校准）；版本号十进制 +1（3.5.6→3.5.7）
