@@ -48,9 +48,10 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 |---|---|---|
 | device_tracker | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
 | image | 车辆图片 | 车型渲染图（如「锐际 Escape」） |
+| image | 3D 车型图 | v3.5.0，`GET vds/v1/vehicle/search-3d-vehicle-model-url`，探测到 modelUrl 才创建（全车型自动适配） |
 | lock | 车门锁 / 后备箱锁 / 前备箱锁 | 上锁 / 解锁；后备箱锁（TrunkUnlock，解锁弹开 / 随全车锁定，按车型尾门能力创建）；前备箱锁（v3.3.7，电马等车型——按云端命令白名单自动创建） |
-| button | 手动刷新车辆状态 / 中央区灯光 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 / 遥控泊车 / 远程关窗 | 手动刷新（请求车机上报→延时拉取最新状态）；中央区灯光/辅助设置/OTA 激活排程按车型能力创建（云端不支持的车型按下返回网关明确报错）；重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`）；拖车灯光检测（双后轮皮卡）；遥控泊车（v3.3.7，电马选装）、远程关窗（v3.3.7，支持车窗升降车型）——均按云端命令白名单自动创建 |
-| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 / 声光寻车 / 哨兵模式 / 立即充电 / 车载冰箱 | 远程启动/熄火；灯光寻车（ZoneLightingON/OFF，按车型能力创建）；鸣笛寻车（类型 0-3：开 = `POST /api/vehicles/v5/{vin}/honk`、关 = `DELETE` 同路径；类型「声光共舞」：开 = `send-command InitialVA`（cmdSpec VAType=4 + Duration）、关 = `send-command CancelVA`——HAR 实证 App 官方声光寻车通道，灯+喇叭同响）；鸣笛时长与类型按设置生效；哨兵模式（电马）、立即充电/停止（纯电/插混）、车载冰箱（猛禽/领裕）——v3.3.7 起按云端命令白名单自动创建，车型支持即出现 |
+| button | 手动刷新车辆状态 / 中央区灯光 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 / 遥控泊车 / 远程关窗 / 标记消息已读 / 开始行车记录 / 停止行车记录 | 手动刷新（请求车机上报→延时拉取最新状态）；中央区灯光/辅助设置/OTA 激活排程按车型能力创建（云端不支持的车型按下返回网关明确报错）；重置空调滤芯（`PUT /api/cnxapi-vds/v1/aar/status`）；拖车灯光检测（双后轮皮卡）；遥控泊车（v3.3.7，电马选装）、远程关窗（v3.3.7，支持车窗升降车型）——均按云端命令白名单自动创建；标记消息已读（v3.5.0，`POST messages/read`，有消息中心的车创建）；行车记录录制启停（v3.5.0，`POST pds/v1/start|stop-video-recording`，带记录仪硬件的车创建） |
+| switch | 远程启动 / 灯光寻车 / 鸣笛寻车 / 声光寻车 / 哨兵模式 / 立即充电 / 车载冰箱 / 预约充电 | 远程启动/熄火；灯光寻车（ZoneLightingON/OFF，按车型能力创建）；鸣笛寻车（类型 0-3：开 = `POST /api/vehicles/v5/{vin}/honk`、关 = `DELETE` 同路径；类型「声光共舞」：开 = `send-command InitialVA`（cmdSpec VAType=4 + Duration）、关 = `send-command CancelVA`——HAR 实证 App 官方声光寻车通道，灯+喇叭同响）；鸣笛时长与类型按设置生效；哨兵模式（电马）、立即充电/停止（纯电/插混）、车载冰箱（猛禽/领裕）——v3.3.7 起按云端命令白名单自动创建；预约充电（v3.5.0，`POST departuretimes/toggleon|off`，预约出发数据探测到才创建） |
 | select | 鸣笛持续时长 / 鸣笛类型 | 鸣笛寻车设置：持续时长 5/10/15/20 秒；鸣笛类型 雨落荷叶/急浪拍岸/汽笛长鸣/空谷回音/声光共舞（选择即保存，鸣笛时参数直达车机） |
 | sensor | 车辆状态 | 门锁、报警、燃油、胎压、里程、车牌、自动熄火倒计时、车窗（未关闭显示程度/百分比）等 |
 | sensor | 车辆异常警示 | 真实告警接口（胎压监测系统警告等），无异常显示「无异常」 |
@@ -59,6 +60,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 | sensor | 车辆服务信息 | 云端能力位图 + 救援/客服/售后电话 + 电子说明书地址（v3.1.9，`GET /api/cnxapi-vds/v2/vehicles/ccfeatures`，实测 200；App 用于判断每辆车支持哪些功能的权威云端清单） |
 | sensor | 机油寿命 / 剩余可行驶里程 / 慢漏气胎 / 预测性诊断 | 预测性诊断（v3.1.9，`GET /api/cnxapi-cds/prognostic/v1/list`，实测 200）：机油寿命百分比、按寿命剩余里程、慢漏气胎标识、诊断提示（featureType=OL 机油寿命族） |
 | sensor | 鸣笛设置云端状态 | 福特账户云端 VehicleAnnouncementSetting 回读（类型 + 时长），App/其他设备改动可同步感知 |
+| sensor | 车辆在线状态 / 车辆设备信息 / 车辆用户授权状态 / SRS 安全档案 / 传感器影子 / 行车记录视频 / 最新消息 / OTA 更新提醒 | v3.5.0，APK 6.16.0 端点补全（`onlinernr` / `pds/v1/device` / `search-vehicle-user-auth-status` / `search-srs-profile` / `sensor/shadow` / `search-video-file-url` / `messages/page` / `vehicle-reddot-status`）——登录后一次性探测，探测到数据才创建（全车型自动适配） |
 
 > 实体创建全部数据驱动：登录后按本车云端能力与车辆数据判断（多 VIN 账号下
 > 每辆车独立创建自己支持的实体组），不支持的命令按下会返回网关明确报错，
@@ -69,7 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
-- **v3.4.9**：**修复发布物缺失根目录 `icon.png`**——v3.4.8 发布后根目录 icon.png 只推了 main 未进 tag 发布物（HACS archive 下载的是 tag 源码包，缺该文件）；本版把根 `icon.png`（128×128，HACS 列表图标规范尺寸）纳入发布物，修复 HACS 商店列表图标不显示；版本号十进制 +1（3.4.8→3.4.9）
+- **v3.5.0**：**APK 6.16.0 端点补全接入**（逆向 2026-10-09）——新增 3D 车型图（image）、车辆在线状态/车辆设备信息/车辆用户授权状态/SRS 安全档案/传感器影子/行车记录视频/最新消息/OTA 更新提醒（sensor）、标记消息已读/行车记录录制启停（button）、预约充电（switch）共 15 类新实体；全部登录后一次性探测、探测到数据才创建（全车型自动适配，非能力车型 0 不创建）；版本号十进制 +1（3.4.9→3.5.0）
 **修复 HACS 下载（关键）**——移除 `hacs.json` 的 `zip_release` 配置，恢复 archive 源码包下载模式：实测 v3.4.3（archive 模式）在这台 HAOS 可正常下载加载，v3.4.4+（release asset 模式）全部下载失败不加载实体（asset 下载通道不通）；回归 archive 后 HACS 更新恢复可用；版本号十进制 +1（3.4.7→3.4.8）
 **全车型兼容性征集启动**——新增 GitHub issue 模板「车型兼容性报告」（`.github/ISSUE_TEMPLATE/ford-model-compatibility.md`，标签 `compatibility`）：车主提交车型/年款/实体缺失项/控制实测/脱敏日志即可参与全车型适配（**无需提供 VIN、账号密码、精确位置**，登录与操作均在车主本人设备完成）；本版为文档与模板更新，无代码功能变更；版本号十进制 +1（3.4.6→3.4.7）
 **接入高价值只读端点（OTA 详情/预约出发/充电日志，探测数据驱动）**——登录后一次只读幂等探测（24h TTL 缓存，不进入常规轮询，防福特云限流）：① **OTA 版本/更新详情**（alert 族 ota/versions、ota/detail、search-ota-details、search-new-ota-status——APK 6.16.0 逆向）→ 新增「OTA 新版本状态」「OTA 版本」「OTA 更新详情」实体（最新版本号/更新内容/状态）；② **预约出发**（cevs departuretimes/retrieve，v3.3.7 已探测，本次解析为「预约出发」实体——下次出发时间/任务数）；③ **充电日志**（cevs chargelogs/retrieve）→ 「充电日志」实体；④ 家充桩探测族并入 charging/records/process/log/v3（充电过程日志，只读）。全部探测到数据才创建，非能力车型/无数据 0 实体（全车型适配，0 unavailable）；**写操作端点**（家充桩开始/停止充电、设默认桩、预约出发保存/开关、远程录像）请求参数需 HAR 校准，待抓包后下版接入（不编造参数）；版本号十进制 +1（3.4.5→3.4.6）

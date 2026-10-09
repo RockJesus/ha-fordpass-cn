@@ -1344,6 +1344,17 @@ class FordPassApi:
             "ota_detail": PATH_OTA_DETAIL,
             "ota_search_details": PATH_OTA_SEARCH_DETAILS,
             "ota_new_status": PATH_OTA_NEW_STATUS,
+            # v3.5.0: APK 6.16.0 补全端点（全部只读/幂等 GET，不触发车辆动作）
+            "onlinernr": PATH_ONLINENR,
+            "3d_model": PATH_3D_MODEL,
+            "schedule_departure": PATH_SCHEDULE_DEPARTURE,
+            "pds_device": PATH_PDS_DEVICE,
+            "user_auth": PATH_USER_AUTH_STATUS,
+            "srs_profile": PATH_SRS_PROFILE,
+            "sensor_shadow": PATH_SENSOR_SHADOW,
+            "video_file": PATH_VIDEO_FILE,
+            "messages_page": PATH_MESSAGES_PAGE,
+            "ota_reddot": PATH_OTA_REDDOT,
         }
         result: dict[str, Any] = {}
         for name, path in probes.items():
@@ -1402,6 +1413,61 @@ class FordPassApi:
                     result[name] = {"signed": signed, "raw": str(data)[:200]}
                     break
         return result or None
+
+    # ------------------------------------------------ v3.5.0 新增命令/查询
+    async def mark_messages_read(
+        self, category_id: str | None = None, message_id: str | None = None
+    ) -> dict[str, Any]:
+        """标记消息已读：POST /api/cnxapi-message/app/messages/read（v3.5.0）。
+
+        6.16.0 APK 端点（2026-10-09 逆向），请求体随 App 版本/消息分类可能
+        有 categoryId/messageId 两种形态；按调用方传入参数构造，无参数时
+        提交空分类标记（服务端按当前未读处理）。失败抛 FordPassApiError
+        由按钮实体统一 catch 上报，不产生车辆动作。
+        """
+        body: dict[str, Any] = {}
+        if category_id:
+            body["categoryId"] = category_id
+        if message_id:
+            body["messageId"] = message_id
+        return await self._request("POST", PATH_MESSAGES_READ, body)
+
+    async def departure_toggle(
+        self, vin: str, enable: bool, task_id: str | None = None
+    ) -> dict[str, Any]:
+        """预约充电/预约出发启停：POST cevs/v2/departuretimes/toggleon|off。
+
+        v3.5.0：task_id（departureTimesColumUpdateId）存在时带上，服务端按
+        具体任务切换；缺失时按默认任务切换。全部为计划任务开关，不涉及
+        门锁/发动机等即时安全动作。
+        """
+        enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        body: dict[str, Any] = {"encryptedVin": enc_vin, "xjw": xjw}
+        if task_id:
+            body["departureTimesColumUpdateId"] = task_id
+        return await self._request(
+            "POST",
+            PATH_DEPARTURE_TOGGLE_ON if enable else PATH_DEPARTURE_TOGGLE_OFF,
+            body,
+        )
+
+    async def start_video_recording(self, vin: str) -> dict[str, Any]:
+        """开始行车记录仪录制：POST pds/v1/start-video-recording（v3.5.0）。
+
+        带 encryptedVin/xjw（与 send_command 同族加密）；App 在远程监控页
+        调用，仅对带行车记录仪硬件的车型有效（无硬件车型服务端拒绝）。
+        """
+        enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        return await self._request(
+            "POST", PATH_VIDEO_START, {"encryptedVin": enc_vin, "xjw": xjw}
+        )
+
+    async def stop_video_recording(self, vin: str) -> dict[str, Any]:
+        """停止行车记录仪录制：POST pds/v1/stop-video-recording（v3.5.0）。"""
+        enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        return await self._request(
+            "POST", PATH_VIDEO_STOP, {"encryptedVin": enc_vin, "xjw": xjw}
+        )
 
     # --------------------------------------------------------- b2c login
     async def password_login(
