@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.12**：**services.yaml 补齐**——probe_cevs_variant 服务缺 services.yaml 致 HA 报 `Failed to load services.yaml`、服务未真正注册（v3.7.10/11 调用 200 但 handler 未执行）；补齐服务描述文件；版本号十进制 +1（3.7.11→3.7.12）
 - **v3.7.11**：**诊断同步修复**——coordinator.cevs_diag 由拷贝改为直接引用 api 对象，probe_cevs_variant 服务写入后诊断传感器立即可见（v3.7.10 service 已触发但 sensor 不更新）；版本号十进制 +1（3.7.10→3.7.11）
 - **v3.7.10**：**cevs 探测防降级 + 手动变体测试**——v3.7.9 单次 12 请求（3 端点×4 变体）触发福特云风控静默降级（全部 200+空 body）；v3.7.10 初始探测只发 plain 单变体（3 请求），新增 `fordpass_cn.probe_cevs_variant` 服务（variant 参数：plain/json_vin/json_vin_xjw/aes_ecb）人工逐个触发，诊断传感器自读区分服务器解密层行为；版本号十进制 +1（3.7.9→3.7.10）
 - **v3.7.9**：**cevs 域加密链变体探测**——APK assets 发现 CNESL/VCS 4096 位公钥（v3.7.8 已换，仍 bad key → 公钥非关键）；v3.7.9 探测枚举 4 种加密变体（纯 VIN / JSON{"vin"} / JSON{"vin","xjw"} / AES-ECB(vin,key=xjw)），诊断传感器自读区分服务器解密层真实行为，命中变体即确定 cevs 请求加密形态；版本号十进制 +1（3.7.8→3.7.9）
