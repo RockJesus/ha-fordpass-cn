@@ -343,6 +343,10 @@ class FordPassApi:
         self._lbs_token_expiry: float | None = None
         self._retrying = False
         self.on_token_refresh = None
+        # v3.7.6: cevs 域探测诊断（预约出发/充电）——每个端点探测结果
+        # 存这里（ok/rejected/failed + 摘要），coordinator 暴露给诊断
+        # 传感器，HA 侧可直接读取（无需导出日志）。
+        self.cevs_diag: dict[str, str] = {}
 
     @property
     def crypto(self) -> FordPassCrypto:
@@ -1591,22 +1595,33 @@ class FordPassApi:
                         "POST", path, b, raw_body=True,
                     )
                 except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                    self.cevs_diag[f"{name}_rsa_k{idx + 1}"] = (
+                        f"failed: {str(exc)[:200]}"
+                    )
                     self._log.debug(
                         "FordPass probe %s rsa_k%d failed: %s", name, idx + 1, exc,
                     )
                     continue
                 if isinstance(data, dict) and data:
                     if _is_err_resp(data):
+                        self.cevs_diag[f"{name}_rsa_k{idx + 1}"] = (
+                            f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
+                        )
                         self._log.info(
                             "FordPass probe %s rsa_k%d -> (rejected: %s)",
                             name, idx + 1, json.dumps(data, ensure_ascii=False)[:200],
                         )
                         continue
                     result[f"{name}_rsa_k{idx + 1}"] = data
+                    self.cevs_diag[f"{name}_rsa_k{idx + 1}"] = (
+                        f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
+                    )
                     self._log.info(
                         "FordPass probe %s rsa_k%d -> %s",
                         name, idx + 1, json.dumps(data, ensure_ascii=False)[:600],
                     )
+                else:
+                    self.cevs_diag[f"{name}_rsa_k{idx + 1}"] = "ok(empty)"
         return result or None
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
