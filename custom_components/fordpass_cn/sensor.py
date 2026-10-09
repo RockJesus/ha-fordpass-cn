@@ -1540,13 +1540,6 @@ class FordPassSmartWallboxSensor(SensorEntity):
     @property
     def native_value(self) -> str | None:
         data = self._probe()
-        if data is None and self._kind == "uservehicles":
-            # v3.6.7: uservehicles 是注册端点（rejected 无 probe 数据），
-            # 实体创建仅凭 vehicles_list——刷新同样必须用 vehicles_list 兜底，
-            # 否则 _probe() 恒 None → 状态永远 unknown。
-            vl = getattr(self.coordinator, "vehicles_list", None) or []
-            if vl:
-                data = {"list": vl}
         if data is None:
             return None
         try:
@@ -1645,6 +1638,13 @@ class FordPassProbeSensor(SensorEntity):
     @property
     def native_value(self) -> str | None:
         data = self._data()
+        if data is None and self._kind == "uservehicles":
+            # v3.6.7: uservehicles 是注册端点（rejected 不在 extra_probes），
+            # 创建/刷新都以 coordinator.vehicles_list（v5/vehicles/list）为准——
+            # 否则 _data() 恒 None → 状态永远 unknown。
+            vl = getattr(self.coordinator, "vehicles_list", None) or []
+            if vl:
+                data = {"list": vl}
         if data is None:
             return None
         try:
