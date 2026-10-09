@@ -58,9 +58,11 @@ from .const import (
     PATH_COMMAND_STATUS,
     PATH_CRCC_PROFILE,
     PATH_CVFEATURES,
+    PATH_DEVICE_LIST,
     PATH_GENERATE_PASSCODE,
     PATH_MAINTENANCE_PLAN,
     PATH_MESSAGES_SUMMARY,
+    PATH_MESSAGES_V2_PAGE,
     PATH_MONITOR_TRAFFIC,
     PATH_OTA_SETTING,
     PATH_PARKING_IMAGE,
@@ -71,10 +73,12 @@ from .const import (
     PATH_REFRESH_TOKEN,
     PATH_REVOKE_TOKEN,
     PATH_SEND_COMMAND,
+    PATH_SHARE_LIST,
     PATH_SIM_INFO,
     PATH_THIRD_PARTY_TOKEN,
     PATH_USER_PREF_GROUPS,
     PATH_USER_PREF_LIST,
+    PATH_USER_VEHICLES,
     PATH_V5_ANNOUNCE_STATUS,
     PATH_VEHICLES_LIST,
     PATH_VEHICLE_STATUS,
@@ -1355,6 +1359,11 @@ class FordPassApi:
             "video_file": PATH_VIDEO_FILE,
             "messages_page": PATH_MESSAGES_PAGE,
             "ota_reddot": PATH_OTA_REDDOT,
+            # v3.5.1: 账号级只读端点补全（全车型/多账号适配）
+            "uservehicles": PATH_USER_VEHICLES,
+            "messages_v2": PATH_MESSAGES_V2_PAGE,
+            "share_list": PATH_SHARE_LIST,
+            "device_list": PATH_DEVICE_LIST,
         }
         result: dict[str, Any] = {}
         for name, path in probes.items():

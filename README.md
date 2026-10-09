@@ -61,6 +61,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 | sensor | 机油寿命 / 剩余可行驶里程 / 慢漏气胎 / 预测性诊断 | 预测性诊断（v3.1.9，`GET /api/cnxapi-cds/prognostic/v1/list`，实测 200）：机油寿命百分比、按寿命剩余里程、慢漏气胎标识、诊断提示（featureType=OL 机油寿命族） |
 | sensor | 鸣笛设置云端状态 | 福特账户云端 VehicleAnnouncementSetting 回读（类型 + 时长），App/其他设备改动可同步感知 |
 | sensor | 车辆在线状态 / 车辆设备信息 / 车辆用户授权状态 / SRS 安全档案 / 传感器影子 / 行车记录视频 / 最新消息 / OTA 更新提醒 | v3.5.0，APK 6.16.0 端点补全（`onlinernr` / `pds/v1/device` / `search-vehicle-user-auth-status` / `search-srs-profile` / `sensor/shadow` / `search-video-file-url` / `messages/page` / `vehicle-reddot-status`）——登录后一次性探测，探测到数据才创建（全车型自动适配） |
+| sensor | 车辆清单 / 消息中心 v2 / 车辆共享列表 / 车辆设备列表 | v3.5.1，账号级只读端点补全（`vds/v5/uservehicles` 完整车辆清单 / `messages/v2/page` / `search-vehicle-share-list` 共享状态 / `search-vehicle-device-list`）——探测到数据才创建 |
 
 > 实体创建全部数据驱动：登录后按本车云端能力与车辆数据判断（多 VIN 账号下
 > 每辆车独立创建自己支持的实体组），不支持的命令按下会返回网关明确报错，
@@ -71,6 +72,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.5.1**：**账号级只读端点补全**——新增车辆清单（`vds/v5/uservehicles` 完整车辆列表，多 VIN 账号自动识别全部车辆）、消息中心 v2（`messages/v2/page`，APK 6.16.0 主用版本）、车辆共享列表（`search-vehicle-share-list` 只读授权状态）、车辆设备列表（`search-vehicle-device-list`）4 类新传感器；登录后一次性探测、探测到数据才创建（全车型适配）；版本号十进制 +1（3.5.0→3.5.1）
 - **v3.5.0**：**APK 6.16.0 端点补全接入**（逆向 2026-10-09）——新增 3D 车型图（image）、车辆在线状态/车辆设备信息/车辆用户授权状态/SRS 安全档案/传感器影子/行车记录视频/最新消息/OTA 更新提醒（sensor）、标记消息已读/行车记录录制启停（button）、预约充电（switch）共 15 类新实体；全部登录后一次性探测、探测到数据才创建（全车型自动适配，非能力车型 0 不创建）；版本号十进制 +1（3.4.9→3.5.0）
 **修复 HACS 下载（关键）**——移除 `hacs.json` 的 `zip_release` 配置，恢复 archive 源码包下载模式：实测 v3.4.3（archive 模式）在这台 HAOS 可正常下载加载，v3.4.4+（release asset 模式）全部下载失败不加载实体（asset 下载通道不通）；回归 archive 后 HACS 更新恢复可用；版本号十进制 +1（3.4.7→3.4.8）
 **全车型兼容性征集启动**——新增 GitHub issue 模板「车型兼容性报告」（`.github/ISSUE_TEMPLATE/ford-model-compatibility.md`，标签 `compatibility`）：车主提交车型/年款/实体缺失项/控制实测/脱敏日志即可参与全车型适配（**无需提供 VIN、账号密码、精确位置**，登录与操作均在车主本人设备完成）；本版为文档与模板更新，无代码功能变更；版本号十进制 +1（3.4.6→3.4.7）
