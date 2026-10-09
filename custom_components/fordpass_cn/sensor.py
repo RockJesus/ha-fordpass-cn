@@ -91,7 +91,7 @@ async def async_setup_entry(
     # 不在新实体集合、且未被用户手动禁用的，显式移除。
     reg = hass.helpers.entity_registry.async_get(hass)
     new_ids = {s.unique_id for s in all_sensors}
-    for entry_ in reg.async_entries_for_domain(entry, DOMAIN):
+    for entry_ in reg.async_entries_for_domain(DOMAIN):
         if not entry_.entity_id.startswith("sensor."):
             continue
         if entry_.platform != DOMAIN:
