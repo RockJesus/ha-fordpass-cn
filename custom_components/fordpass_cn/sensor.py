@@ -1647,12 +1647,15 @@ class FordPassProbeSensor(SensorEntity):
             # ---- v3.5.0: APK 6.16.0 补全端点（探测数据驱动，全车型适配）----
             if self._kind == "online":
                 # v3.5.5: onlinernr 响应含 data.rnrStatusDesc/rnrStatusCode
-                # （"已通过"= 车辆在线可达）——优先取该字段，无则回退 status
-                rnr = (_swb_find(data, "rnrStatusDesc")
-                       or _swb_find(data, "rnrStatusCode"))
-                if rnr is not None:
+                # （"已通过"= 车辆在线可达）——优先取 rnrStatusCode 映射
+                # "在线/离线"，rnrStatusDesc 文字作回退
+                rnr_code = _swb_find(data, "rnrStatusCode")
+                if rnr_code is not None:
                     return {"2": "在线", "1": "离线", "0": "未知"}.get(
-                        str(rnr), str(rnr))
+                        str(rnr_code), str(rnr_code))
+                rnr = _swb_find(data, "rnrStatusDesc")
+                if rnr is not None:
+                    return str(rnr)
                 st = (_swb_find(data, "onLineState") or _swb_find(data, "online")
                       or _swb_find(data, "status"))
                 if st is not None:
