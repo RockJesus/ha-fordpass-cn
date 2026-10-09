@@ -7,8 +7,9 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import voluptuous as vol
 
 from .api import FordPassApi, FordPassApiError
 from . import capability
@@ -198,6 +199,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "vin": coordinators[0].vin,
         "honk_settings": honk_settings,
     }
+
+    # v3.7.10: cevs 加密链变体手动探测服务——初始探测只发 plain 单变体
+    # （v3.7.9 一次 12 请求被福特云风控静默降级），其余变体（json_vin /
+    # json_vin_xjw / aes_ecb）用本 service 人工逐个触发，每次 3 请求，
+    # 结果写 api.cevs_diag 由诊断传感器自读（防风控、无需重启发版）。
+    async def _svc_probe_cevs_variant(call: ServiceCall) -> None:
+        vname = str(call.data.get("variant", "plain"))
+        for co in coordinators:
+            await co.api.probe_cevs_variant(co.vin, vname)
+
+    _reg = hass.services.async_register(
+        DOMAIN, "probe_cevs_variant", _svc_probe_cevs_variant,
+        schema=vol.Schema({vol.Optional("variant", default="plain"): str}),
+    )
+    entry.async_on_unload(lambda: _reg())
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
