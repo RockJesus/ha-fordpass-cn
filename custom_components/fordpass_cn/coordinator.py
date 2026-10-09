@@ -138,7 +138,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
         # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
         # 直接读取——不再依赖导出日志即可从 HA 侧确认探测成败）
-        self.cevs_diag = dict(getattr(self.api, "cevs_diag", {}) or {})
+        # v3.7.10: 直接引用 api.cevs_diag 同一 dict——probe_cevs_variant 服务
+        # 写入后 sensor 立即可见（拷贝会失去同步）
+        self.cevs_diag = getattr(self.api, "cevs_diag", {})
         # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + 24h TTL
         # 缓存（探测类请求绝不进入常规轮询，防福特云限流）；探测结果供
         # sensor 按"探测到数据才创建"接入。失败/非家充桩车型保持 None。
