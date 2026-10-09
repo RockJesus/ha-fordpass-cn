@@ -234,6 +234,12 @@ PATH_SHARE_LIST = "/api/cnesl-user/v1/search-vehicle-share-list"
 # 车辆设备列表（vds/v1/search-vehicle-device-list）
 PATH_DEVICE_LIST = "/api/cnxapi-vds/v1/search-vehicle-device-list"
 
+# v3.6.2: 待开发清单补全（APK 6.16.0 端点）
+# 消息中心 v3（mcm 域，APK 主用——替代 cnxapi-message 双 404）
+PATH_MCM_MESSAGES_V3 = "/api/mcm/messagecenter/v3/user/messages"
+# 用户级红点（cnesl-user 域——账号级统一红点，字段更少，替代 alert 缺字段红点）
+PATH_USER_REDDOT = "/api/cnesl-user/v1/reddot-status"
+
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
 #   1. GET  authorize            -> HTML form + cookies (x-ms-cpim-csrf) + x-request-id

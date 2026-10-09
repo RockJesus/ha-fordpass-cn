@@ -133,6 +133,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise RuntimeError("No usable vehicles found on this FordPass account")
 
     for coordinator in coordinators:
+        # v3.6.2: 全量车辆清单（v5/vehicles/list 已验证 live）共享给每车，
+        # 供「车辆清单」传感器显示账号下全部车辆。
+        coordinator.vehicles_list = vehicles
         # v3.3.3: 先恢复最后已知数据（实体立即有值，不显示 unavailable/
         # unknown 中间态），再后台刷新；云端暂不可达时首次刷新失败
         # 不阻塞集成加载——实体用最后数据创建，轮询恢复后自动更新。
