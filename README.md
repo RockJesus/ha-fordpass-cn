@@ -70,7 +70,10 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 ## 版本历史
 
 <details>
-<summary>📜 版本历史（点击展开）</summary>- **v3.6.4**：**修复 sensor 平台 setup 清理段报错**——残留实体清理用 `hass.helpers.entity_registry.async_get` 在 HAOS 2026.10 报 `'HomeAssistant' object has no attribute 'helpers'`（system_log ERROR：sensor platform setup 失败，但实体已先行 async_add_entities 不影响加载）；改为官方推荐 `from homeassistant.helpers import entity_registry as er; er.async_get(hass)`；版本号十进制 +1（3.6.3→3.6.4）
+<summary>📜 版本历史（点击展开）</summary>
+- **v3.6.5**：**修复残留清理 API 二次变更**——v3.6.4 修掉 `hass.helpers` 后，HAOS 2026.10 又报 `'EntityRegistry' object has no attribute 'async_entries_for_domain'`（新版移除该方法）；改用 `reg.entities.values()` 过滤 `platform==DOMAIN`（等价，官方当前写法）；版本号十进制 +1（3.6.4→3.6.5）
+
+- **v3.6.4**：**修复 sensor 平台 setup 清理段报错**——残留实体清理用 `hass.helpers.entity_registry.async_get` 在 HAOS 2026.10 报 `'HomeAssistant' object has no attribute 'helpers'`（system_log ERROR：sensor platform setup 失败，但实体已先行 async_add_entities 不影响加载）；改为官方推荐 `from homeassistant.helpers import entity_registry as er; er.async_get(hass)`；版本号十进制 +1（3.6.3→3.6.4）
 
 - **v3.6.3**：**车辆清单创建条件修复**——v3.6.2 只修了值解析回退（uservehicles probe 被注册端点拒绝不存 _ep），但创建条件仍 `if _ep.get("uservehicles")` 恒不成立 → 「车辆清单」实体未创建；现创建条件改为 `uservehicles 且 coordinator.vehicles_list 有值` 即创建（v5/vehicles/list 登录已验证，恒有值）；版本号十进制 +1（3.6.2→3.6.3）
 
