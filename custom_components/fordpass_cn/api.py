@@ -1535,7 +1535,9 @@ class FordPassApi:
                 # xjw 即 CBC IV hex）——此前全部 RSA 变体方向错误（服务器白盒解密失败）
                 key = f"{name}_wbk_{vname}"
                 try:
-                    iv = None if vname == "wbk_plain" else xjw_now
+                    # v3.7.19: encrypt_field 的 iv 参数是 bytes（hex str 会抛
+                    # 类型错误——此前 wbk_shared 一直静默失败）
+                    iv = None if vname == "wbk_plain" else bytes.fromhex(xjw_now)
                     enc, xjw2 = await asyncio.to_thread(
                         lambda: self.crypto.encrypt_field(vin, iv),
                     )
@@ -1756,8 +1758,9 @@ class FordPassApi:
             ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
             b = dict(body)
+            # v3.7.19: iv 传 bytes（此前传 hex str 抛类型错误，cevs_diag 恒空）
             enc, xjw2 = await asyncio.to_thread(
-                lambda: self.crypto.encrypt_field(vin, xjw_now),
+                lambda: self.crypto.encrypt_field(vin, bytes.fromhex(xjw_now)),
             )
             b["vin"] = enc
             b["xjw"] = xjw2
