@@ -71,7 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
-- **v3.6.10**：**去重授权状态实体**——「授权状态」（vehicle-status authorization）与「车辆用户授权状态」（user_auth 探测端点）语义重复，移除前者保留后者（信息更全：authorizationStatus+role+ownerMobile）；旧条目由 setup 清理段自动移除；版本号十进制 +1（3.6.9→3.6.10）
+- **v3.7.0**：**去重授权状态实体**——「授权状态」（vehicle-status authorization）与「车辆用户授权状态」（user_auth 探测端点）语义重复，移除前者保留后者（信息更全：authorizationStatus+role+ownerMobile）；旧条目由 setup 清理段自动移除；版本号十进制进位（3.6.9→3.7.0，段内 10 两位数不合规）
 - **v3.6.9**：**修复车辆清单「解析失败」**——v3.6.8 用 vehicles_list 兜底激活了 uservehicles 解析分支（v3.6.2 起从未执行过），`dict.fromkeys(models)[:6]` 对 dict 切片抛 `KeyError: slice` → 被 except 捕获显示「解析失败」；改 `list(dict.fromkeys(models))[:6]`；版本号十进制 +1（3.6.8→3.6.9）
 - **v3.6.8**：**v3.6.7 修正版强制发布**——v3.6.7 首版误把 uservehicles 兜底加在 smartwallbox 传感器、且同版本号二次发布 HACS 不重拉包（update 实体同版本判定已最新），车辆清单仍 unknown；v3.6.7 修正版（extra_probes 探测传感器 native_value 用 vehicles_list 兜底）以 v3.6.8 新版本号重新发布确保落盘；版本号十进制 +1（3.6.7→3.6.8）
 - **v3.6.7**：**修复车辆清单 unknown + 车辆用户授权状态显示 200**——①车辆清单实体（uservehicles 实为注册端点，rejected 无 probe 数据）`_probe()` 恒 None → 状态永远 unknown，刷新时用 `vehicles_list`（v5/vehicles/list）兜底 + 型号提取加 `localMarketValue` 字段（vehicles/list 实际字段名）；②车辆用户授权状态原解析取 `status` 拿到外层 HTTP 200，改优先 `authorizationStatus`（"Authorized"→已授权）；⚠️ 首版误在 smartwallbox 传感器加兜底，正确位置是 extra_probes 驱动的探测传感器（v3.6.7 修正发布）；③cevs departuretimes/chargelogs 回退 `vin+xjw`（v3.6.6 日志实证去掉 xjw 报 `Invalid input: 'vin' and 'xjw' must be a valid string`——xjw 必须成对存在，Impossible modulus 为加密层问题待 HAR）；版本号十进制 +1（3.6.6→3.6.7）
