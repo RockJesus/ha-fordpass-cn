@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.5**：**预约出发/充电（cevs 域）raw_body 裸发修正**——v3.7.4 部署日志实证 RSA 密文 vin 已通过 modulus 校验（Impossible modulus 根除），cevs DTO 报 `Unrecognized field "timestamp"`（不接受外层签名）/ `Missing required creator property 'xjw'`；新增 `_request(raw_body=True)` 裸发通道（body 不加 timestamp/sign），departuretimes/commandstatus 裸发 RSA vin、chargelogs 补同会话 xjw；探测命中后自动创建预约/充电实体；版本号十进制 +1（3.7.4→3.7.5）
 - **v3.7.4**：**预约出发/充电（cevs 域）RSA 加密探测**——根因定位：cevs 端点 `Impossible modulus` = App 用 `encryptByRSA`（RSA 公钥）加密敏感字段，集成原白盒 AES 密文被服务器 RSA 解密失败；新增纯 Python RSA/PKCS1v15 加密（cryptography 为 HA Core 自带依赖）+ 探测变体（departuretimes/chargelogs/commandstatus 三个只读端点以 RSA 密文 vin POST，APK 2088 行完整 2048-bit 公钥）；命中组合后自动创建预约/充电实体，失败仅日志不创建；版本号十进制 +1（3.7.3→3.7.4）
 - **v3.7.3**：**家充桩扩展（全车型适配）**——新增「家充桩分享列表」（sharing/query/v3）、「家充桩充电状态(桩级)」（charging/status/wallbox）、「家充桩充电信息」（charging/wallbox）、「家充桩充电订单」（charging-center/wallbox/orders）4 个传感器；探测到绑定桩后自动带 wallboxId 补测桩级 POST，无绑定车型不创建；版本号十进制 +1（3.7.2→3.7.3）
 - **v3.7.2**：**接入待开发清单（全车型适配）**——①**家充桩控制**：新增「家充桩充电」开关（charging/start-stop/v2，smartwallbox 探测到绑定桩的车型创建）+「解绑家充桩」按钮（binding/unbind/v2）；②**车辆授权管理**：新增「车辆授权列表」传感器（vehicle-user-auth 查询，探测到数据创建）；③**公共充电探测（纯电/插混专属）**：新增「公共充电站」「充电订单」「充电站地图」传感器（EVSS/vpoi 探测，锐际纯油无数据不创建）；④家充桩授权查询加入探测摘要；版本号十进制 +1（3.7.1→3.7.2）
