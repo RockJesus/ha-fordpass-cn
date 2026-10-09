@@ -72,6 +72,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.5.4**：**探测过滤业务错误响应**——errorCode 206004（capabilityMmota is false）等被网关拒绝的响应是 dict 非空、此前被误存为"探测到数据"创建假实体（OTA 版本/详情显示 206004 错误）；现 errorCode/error 存在或 status 非 0/200 一律视为车型无能力（INFO 日志标记 rejected，不创建实体）；车辆在线状态解析优化（onlinernr 响应仅 status:200 时显示"在线"）；版本号十进制 +1（3.5.3→3.5.4）
 - **v3.5.3**：**修复探测链 NameError（关键）**——`probe_extra_endpoints` / `probe_smartwallbox` 使用的 25 个端点常量（PATH_MAINTENANCE_HISTORY / PATH_OTA_* / PATH_ONLINENR / PATH_3D_MODEL / PATH_MESSAGES_PAGE / PATH_PDS_DEVICE / PATH_SMARTWALLBOX_* 等）缺失 `from .const import`，导致探测函数一执行即抛 `name 'PATH_MAINTENANCE_HISTORY' is not defined`、整链失败（v3.4.6 起所有"探测到数据才创建"的实体从未创建过）；本版补齐全部 import 并新增静态检查（全部 .py 的 const 引用与 import 差集校验）；版本号十进制 +1（3.5.2→3.5.3）
 - **v3.5.2**：**修复账号级端点探测签名**——uservehicles / 消息中心 v2 / 车辆共享列表改为仅 timestamp+sign 签名（不带 encryptedVin/xjw，与 messages/summary 抓包一致；此前带车辆参数被网关拒绝导致探测空、不建实体）；账号级探测结果 API 实例级缓存，多 VIN 账号仅首车发请求（符合风控"探测类请求登录后仅执行一次"）；版本号十进制 +1（3.5.1→3.5.2）
 - **v3.5.1**：**账号级只读端点补全**——新增车辆清单（`vds/v5/uservehicles` 完整车辆列表，多 VIN 账号自动识别全部车辆）、消息中心 v2（`messages/v2/page`，APK 6.16.0 主用版本）、车辆共享列表（`search-vehicle-share-list` 只读授权状态）、车辆设备列表（`search-vehicle-device-list`）4 类新传感器；登录后一次性探测、探测到数据才创建（全车型适配）；版本号十进制 +1（3.5.0→3.5.1）
