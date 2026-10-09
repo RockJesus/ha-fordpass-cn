@@ -1734,12 +1734,22 @@ class FordPassApi:
         # Unrecognized field "timestamp"（不接受外层签名）→ raw_body 裸发；
         # chargelogs 报 Missing required creator property 'xjw' → 补 xjw
         # （与 encrypt_field 同会话 IV）。失败仅日志，不创建、不进轮询。
+        # v3.7.18: cevs 自动探测独立为 probe_cevs_auto（wbk_shared 单变体，
+        # 3 请求防风控）——此前嵌在 probe_extra_endpoints 尾部，前段探测
+        # 失败即中断、cevs_diag 为空、诊断传感器不创建。
+        try:
+            await self.probe_cevs_auto(vin)
+        except Exception as exc:  # noqa: BLE001
+            self._log.debug("FordPass cevs auto probe failed: %s", exc)
+        return result or None
+
+    async def probe_cevs_auto(self, vin: str) -> None:
+        """cevs 域自动探测（v3.7.18）：白盒 AES-CBC 单变体 wbk_shared
+        （encrypt_field，xjw=IV hex——与 login/token refresh 同链，
+        v3.7.16 实证 cevs 真实加密形态）。3 请求/次，防福特云风控
+        静默降级；结果写 api.cevs_diag（coordinator 引用同一对象，
+        诊断传感器直接可读）。"""
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-        # v3.7.17: cevs 真实加密形态 = 白盒 AES-CBC（encrypt_field，xjw=IV hex，
-        # 与 login/token refresh 同链）。自动探测只发 wbk_shared 单变体
-        # （3 请求/次，防福特云风控静默降级）；其余 RSA/明文变体仅经
-        # probe_cevs_variant service 人工触发。v3.7.14 曾把自动探测绑到
-        # "plain" 键致 KeyError 崩溃（变体表重写后无该键）——本次修复。
         for name, path, body in (
             ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
             ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
@@ -1752,7 +1762,6 @@ class FordPassApi:
             b["vin"] = enc
             b["xjw"] = xjw2
             await self._probe_cevs_variant_wbk(name, path, b, "wbk_shared")
-        return result or None
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
         """探测家充桩管理（smartwallbox）端点结构（只读/幂等，v3.4.5）。

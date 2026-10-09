@@ -140,6 +140,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 直接读取——不再依赖导出日志即可从 HA 侧确认探测成败）
         # v3.7.10: 直接引用 api.cevs_diag 同一 dict——probe_cevs_variant 服务
         # 写入后 sensor 立即可见（拷贝会失去同步）
+        # v3.7.18: cevs 自动探测独立 try（probe_cevs_auto）——此前嵌在
+        # extra_probes 探测内部，前段失败即中断、diag 不创建
+        try:
+            await self.api.probe_cevs_auto(self.vin)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass cevs auto probe failed: %s", exc)
         self.cevs_diag = getattr(self.api, "cevs_diag", {})
         # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + 24h TTL
         # 缓存（探测类请求绝不进入常规轮询，防福特云限流）；探测结果供

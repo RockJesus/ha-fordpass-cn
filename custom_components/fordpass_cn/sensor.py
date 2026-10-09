@@ -296,10 +296,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "最近充电记录", "record"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "家充桩充电状态", "status"))
     # v3.7.6: 预约出发/充电探测诊断（cevs 域）——探测结果暴露为传感器，
-    # 无需导出日志即可从 HA 侧读取三端点成败与摘要；探测执行过才创建
-    # （setup 登录后必执行，cevs_diag 非空）。
-    if coordinator.cevs_diag:
-        sensors.append(FordPassCevsDiagSensor(coordinator))
+    # 无需导出日志即可从 HA 侧读取三端点成败与摘要。
+    # v3.7.18: 无条件创建（空时显示"未探测"，available 恒 True）——此前
+    # 依赖 setup 时 cevs_diag 非空，前段探测中断即不创建，实体缺失难排查。
+    sensors.append(FordPassCevsDiagSensor(coordinator))
     # v3.4.6: 只读探测实体（OTA 新版本/详情、预约出发、充电日志）——探测
     # 到数据才创建，非能力车型/无数据不创建（全车型适配，0 unavailable）。
     _ep = coordinator.extra_probes
