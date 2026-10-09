@@ -295,6 +295,11 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_binding", "默认充电桩", "default"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "最近充电记录", "record"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "家充桩充电状态", "status"))
+    # v3.7.6: 预约出发/充电探测诊断（cevs 域）——探测结果暴露为传感器，
+    # 无需导出日志即可从 HA 侧读取三端点成败与摘要；探测执行过才创建
+    # （setup 登录后必执行，cevs_diag 非空）。
+    if coordinator.cevs_diag:
+        sensors.append(FordPassCevsDiagSensor(coordinator))
     # v3.4.6: 只读探测实体（OTA 新版本/详情、预约出发、充电日志）——探测
     # 到数据才创建，非能力车型/无数据不创建（全车型适配，0 unavailable）。
     _ep = coordinator.extra_probes
@@ -1617,6 +1622,48 @@ class FordPassSmartWallboxSensor(SensorEntity):
             for k, v in list(data.items())[:12]:
                 if isinstance(v, (str, int, float, bool)) or v is None:
                     attrs[str(k)] = v
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+
+class FordPassCevsDiagSensor(SensorEntity):
+    """预约出发/充电探测诊断传感器（v3.7.6，cevs 域）。
+
+    数据源 coordinator.cevs_diag = api.cevs_diag（probe_extra_endpoints
+    登录后执行，departuretimes/chargelogs/commandstatus 三端点 RSA 探测
+    结果：ok/rejected/failed + 摘要）。用途：HA 侧直接读取 cevs 探测
+    成败与错误消息（无需导出日志）；探测执行过即创建，永远可用。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:cloud-question"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-cevs-diag"
+        self._attr_name = "预约出发/充电探测诊断"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> str:
+        diag = self.coordinator.cevs_diag or {}
+        if not diag:
+            return "未探测"
+        ok = sum(1 for v in diag.values() if v.startswith("ok"))
+        bad = len(diag) - ok
+        return f"{ok} 端点 ok / {bad} 端点异常"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs = dict(self.coordinator.cevs_diag or {})
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
