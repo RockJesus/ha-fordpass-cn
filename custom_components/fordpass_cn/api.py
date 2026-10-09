@@ -1098,7 +1098,18 @@ class FordPassApi:
         q["encryptedVin"] = enc_vin
         q["xjw"] = xjw
         if method == "POST":
-            data = await self._request("POST", path, body=body or {}, query=q)
+            # v3.5.6: POST body 必须带 encryptedVin/xjw（日志实证 100502
+            # "encrypted vin should not be blank; xjw should not be null"）
+            # + 通用 clientType/appVersion（uservehicles 需要）；body 模板
+            # 含 "vin": None 时替换为明文 VIN（departuretimes/chargelogs）
+            b = dict(body or {})
+            b.setdefault("encryptedVin", enc_vin)
+            b.setdefault("xjw", xjw)
+            b.setdefault("clientType", CLIENT_TYPE)
+            b.setdefault("appVersion", APP_VERSION)
+            if b.get("vin") is None and "vin" in b:
+                b["vin"] = vin
+            data = await self._request("POST", path, body=b)
         else:
             data = await self._request("GET", path, query=q)
         return data if isinstance(data, dict) else {"raw": data}
@@ -1398,44 +1409,70 @@ class FordPassApi:
                     pass
             return False
 
+        # v3.5.6: 值结构 (path, post_body 模板, allow_post)。
+        # 日志实证（2026-10-09 v3.5.5）：多数端点 GET 404、POST body 缺字段
+        # 400（错误消息给出所需 body 字段）→ POST 变体按模板补字段：
+        #   departuretimes/chargelogs 需明文 "vin"
+        #   uservehicles 需 clientType/appVersion/encryptedVin/xjw（通用自动补）
+        #   其余端点 encryptedVin/xjw 由 _get_signed 自动补
+        # 双方法都 404 / 业务拒绝的端点（messages_*/sensor_shadow/
+        # schedule_departure/pds_device/maintenance-history/ota_versions/
+        # ota_detail/onlinernr）allow_post=False 仅 GET，不白试变体
         probes = {
-            "maintenance-history": PATH_MAINTENANCE_HISTORY,
-            "departuretimes": PATH_DEPARTURE_TIMES_RETRIEVE,
-            "chargelogs": PATH_CHARGELOGS_RETRIEVE,
-            "ota_versions": PATH_OTA_VERSIONS,
-            "ota_detail": PATH_OTA_DETAIL,
-            "ota_search_details": PATH_OTA_SEARCH_DETAILS,
-            "ota_new_status": PATH_OTA_NEW_STATUS,
-            # v3.5.0: APK 6.16.0 补全端点（全部只读/幂等 GET，不触发车辆动作）
-            "onlinernr": PATH_ONLINENR,
-            "3d_model": PATH_3D_MODEL,
-            "schedule_departure": PATH_SCHEDULE_DEPARTURE,
-            "pds_device": PATH_PDS_DEVICE,
-            "user_auth": PATH_USER_AUTH_STATUS,
-            "srs_profile": PATH_SRS_PROFILE,
-            "sensor_shadow": PATH_SENSOR_SHADOW,
-            "video_file": PATH_VIDEO_FILE,
-            "messages_page": PATH_MESSAGES_PAGE,
-            "ota_reddot": PATH_OTA_REDDOT,
+            "maintenance-history": (PATH_MAINTENANCE_HISTORY, None, False),
+            "departuretimes": (PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}, True),
+            "chargelogs": (PATH_CHARGELOGS_RETRIEVE, {"vin": None}, True),
+            "ota_versions": (PATH_OTA_VERSIONS, None, False),
+            "ota_detail": (PATH_OTA_DETAIL, None, False),
+            "ota_search_details": (PATH_OTA_SEARCH_DETAILS, None, True),
+            "ota_new_status": (PATH_OTA_NEW_STATUS, None, True),
+            # v3.5.0: APK 6.16.0 补全端点（全部只读/幂等，不触发车辆动作）
+            "onlinernr": (PATH_ONLINENR, None, False),
+            "3d_model": (PATH_3D_MODEL, None, True),
+            "schedule_departure": (PATH_SCHEDULE_DEPARTURE, None, False),
+            "pds_device": (PATH_PDS_DEVICE, None, False),
+            "user_auth": (PATH_USER_AUTH_STATUS, None, True),
+            "srs_profile": (PATH_SRS_PROFILE, None, True),
+            "sensor_shadow": (PATH_SENSOR_SHADOW, None, False),
+            "video_file": (PATH_VIDEO_FILE, None, True),
+            "messages_page": (PATH_MESSAGES_PAGE, None, False),
+            "ota_reddot": (PATH_OTA_REDDOT, None, True),
             # v3.5.1: 车辆级端点（search-vehicle-device-list 按车辆签名）
-            "device_list": PATH_DEVICE_LIST,
+            "device_list": (PATH_DEVICE_LIST, None, True),
         }
-        # v3.5.1: 账号级端点——仅 timestamp+sign 签名，不带 encryptedVin/xjw
-        # （同 messages/summary 抓包实证；带车辆参数会被网关拒绝 → 探测空）
+        # v3.5.1: 账号级端点。v3.5.6 实证——GET 全 404（v3.5.1/3.5.2 移除
+        # 车辆参数后仍 404 → 路由为 POST-only）；POST body 需
+        # clientType/appVersion/encryptedVin/xjw（uservehicles 错误消息
+        # 明确给出）。GET 保持无参（同 messages/summary），POST 带参。
         account_probes = {
-            "uservehicles": PATH_USER_VEHICLES,
-            "messages_v2": PATH_MESSAGES_V2_PAGE,
-            "share_list": PATH_SHARE_LIST,
+            "uservehicles": (PATH_USER_VEHICLES, {"clientType": CLIENT_TYPE,
+                                                  "appVersion": APP_VERSION}, True),
+            "messages_v2": (PATH_MESSAGES_V2_PAGE, None, False),
+            "share_list": (PATH_SHARE_LIST, None, True),
         }
 
-        async def _probe(name: str, path: str, signed: bool) -> dict[str, Any] | None:
-            """多形态探测：GET → 失败再 POST 空 body；业务拒绝不再试变体。"""
-            for method, body in (("GET", None), ("POST", {})):
+        async def _probe(name: str, spec, signed: bool) -> dict[str, Any] | None:
+            """多形态探测：GET → allow_post 时再试 POST(带 body 模板)；
+            业务拒绝/双 404 不再试变体。"""
+            path, post_body, allow_post = spec
+            variants = [("GET", None)]
+            if allow_post:
+                variants.append(("POST", post_body or {}))
+            for method, body in variants:
                 try:
                     if signed:
                         data = await self._get_signed(path, vin, method=method, body=body)
                     elif method == "POST":
-                        data = await self._request("POST", path, body=body or {})
+                        b = dict(body or {})
+                        b.setdefault("clientType", CLIENT_TYPE)
+                        b.setdefault("appVersion", APP_VERSION)
+                        # 账号级 POST body 也需 encryptedVin/xjw
+                        # （share_list 错误消息明确给出）
+                        enc_vin, xjw = await asyncio.to_thread(
+                            lambda: self.crypto.encrypt_field(vin))
+                        b.setdefault("encryptedVin", enc_vin)
+                        b.setdefault("xjw", xjw)
+                        data = await self._request("POST", path, body=b)
                     else:
                         data = await self._request("GET", path)
                 except Exception as exc:  # noqa: BLE001 - 探测失败只记录
@@ -1459,8 +1496,8 @@ class FordPassApi:
 
         result: dict[str, Any] = {}
         # 车辆级端点：带 encryptedVin/xjw 签名
-        for name, path in probes.items():
-            data = await _probe(name, path, signed=True)
+        for name, spec in probes.items():
+            data = await _probe(name, spec, signed=True)
             if data:
                 result[name] = data
         # 账号级探测结果 api 实例级缓存（v3.5.2）：多 VIN 账号每车一个
@@ -1471,8 +1508,8 @@ class FordPassApi:
             result.update(account_cache)
         else:
             account_res: dict[str, Any] = {}
-            for name, path in account_probes.items():
-                data = await _probe(name, path, signed=False)
+            for name, spec in account_probes.items():
+                data = await _probe(name, spec, signed=False)
                 if data:
                     account_res[name] = data
             self._account_probe_cache = dict(account_res)
