@@ -85,6 +85,22 @@ async def async_setup_entry(
         all_sensors.extend(_make_sensors(coordinator))
     async_add_entities(all_sensors)
 
+    # v3.5.8: 清理升级残留的旧 sensor 实体——新版不再创建（如双后轮 value=0
+    # 非该能力车型）但旧 registry 条目仍在时会一直 unavailable，违反
+    # "实体不显示不可用"要求。凡 platform==fordpass_cn 的 sensor 且 unique_id
+    # 不在新实体集合、且未被用户手动禁用的，显式移除。
+    reg = hass.helpers.entity_registry.async_get(hass)
+    new_ids = {s.unique_id for s in all_sensors}
+    for entry_ in reg.async_entries_for_domain(entry, DOMAIN):
+        if not entry_.entity_id.startswith("sensor."):
+            continue
+        if entry_.platform != DOMAIN:
+            continue
+        if entry_.disabled_by is not None:
+            continue
+        if entry_.unique_id not in new_ids:
+            reg.async_remove(entry_.entity_id)
+
 
 def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors = [
