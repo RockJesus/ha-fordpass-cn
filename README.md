@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.6.6**：**cevs 端点去 xjw 加密修复尝试 + 探测结果确认**——v3.6.5 日志实证 departuretimes/chargelogs body 只剩 `vin+xjw` 仍报 `Impossible modulus [1]`（cevs 域 DTO 连 xjw 都不接受，疑似加密层字段冲突）→ body 只留明文 vin（`__skip_xjw__` 哨兵）；同日探测矩阵确认：user_auth/srs_profile/share_list POST 200 通（数据驱动创建正常）、ota_new_status/device_list 500 `SDA User does not exists`（账号级业务拒绝）、mcm v3/sensor_shadow/user_reddot 双 404（独立 host 或路径待 HAR）、maintenance-history `User not vehicle owner`（非车主账号属性）；版本号十进制 +1（3.6.5→3.6.6）
 - **v3.6.5**：**修复残留清理 API 二次变更**——v3.6.4 修掉 `hass.helpers` 后，HAOS 2026.10 又报 `'EntityRegistry' object has no attribute 'async_entries_for_domain'`（新版移除该方法）；改用 `reg.entities.values()` 过滤 `platform==DOMAIN`（等价，官方当前写法）；版本号十进制 +1（3.6.4→3.6.5）
 
 - **v3.6.4**：**修复 sensor 平台 setup 清理段报错**——残留实体清理用 `hass.helpers.entity_registry.async_get` 在 HAOS 2026.10 报 `'HomeAssistant' object has no attribute 'helpers'`（system_log ERROR：sensor platform setup 失败，但实体已先行 async_add_entities 不影响加载）；改为官方推荐 `from homeassistant.helpers import entity_registry as er; er.async_get(hass)`；版本号十进制 +1（3.6.3→3.6.4）
