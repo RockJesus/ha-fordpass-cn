@@ -1810,7 +1810,7 @@ class FordPassProbeSensor(SensorEntity):
                         elif vin is not None:
                             models.append(str(vin)[-6:])
                     if models:
-                        return f"{len(lst)} 辆车：{'、'.join(dict.fromkeys(models)[:6])}"
+                        return f"{len(lst)} 辆车：{'、'.join(list(dict.fromkeys(models))[:6])}"
                     return f"{len(lst)} 辆车"
                 return "无车辆清单数据"
             if self._kind == "messages_v2":
