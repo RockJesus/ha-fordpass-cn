@@ -1477,11 +1477,16 @@ class FordPassApi:
             self.cevs_diag[key] = "ok(empty)"
 
     async def probe_cevs_variant(self, vin: str, vname: str) -> None:
-        """手动触发 cevs 指定变体探测（service 调用，3 请求/次，防风控降级）。"""
+        """手动触发 cevs 指定变体探测（service 调用，3 请求/次，防风控降级）。
+
+        v3.7.13: 明文变体 plaintext / plaintext_xjw（raw_body 裸发明文 VIN，
+        此前 v3.6.x 明文报 Impossible modulus 是带外层签名版本，raw 明文未测）。
+        """
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
         payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
-        if vname not in payloads:
-            self.cevs_diag[f"variant_error"] = f"unknown variant {vname}"
+        plaintext_ok = vname in ("plaintext", "plaintext_xjw")
+        if vname not in payloads and not plaintext_ok:
+            self.cevs_diag["variant_error"] = f"unknown variant {vname}"
             return
         for name, path, body in (
             ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
@@ -1489,9 +1494,32 @@ class FordPassApi:
             ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
             for pem in CEVS_RSA_PUBKEYS:
-                await self._probe_cevs_variant_once(
-                    name, path, body, vname, payloads[vname], pem,
-                )
+                if plaintext_ok:
+                    b = dict(body)
+                    b["vin"] = vin
+                    if vname == "plaintext_xjw":
+                        b["xjw"] = xjw_now
+                    try:
+                        data = await self._request("POST", path, b, raw_body=True)
+                        key = f"{name}_rsa_{vname}"
+                    except Exception as exc:  # noqa: BLE001
+                        key = f"{name}_rsa_{vname}"
+                        self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
+                        self._log.debug(
+                            "FordPass probe %s rsa_%s failed: %s", name, vname, exc,
+                        )
+                        continue
+                    if isinstance(data, dict) and data:
+                        if _is_err_resp(data):
+                            self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
+                            continue
+                        self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
+                    else:
+                        self.cevs_diag[key] = "ok(empty)"
+                else:
+                    await self._probe_cevs_variant_once(
+                        name, path, body, vname, payloads[vname], pem,
+                    )
 
     async def probe_extra_endpoints(self, vin: str) -> dict[str, Any] | None:
         """探测只读 GET 端点响应并返回结果供实体创建（v3.4.6）。
