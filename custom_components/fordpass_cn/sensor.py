@@ -95,7 +95,9 @@ async def async_setup_entry(
     # 不在新实体集合、且未被用户手动禁用的，显式移除。
     reg = er.async_get(hass)
     new_ids = {s.unique_id for s in all_sensors}
-    reg_entries = reg.async_entries_for_domain(DOMAIN)
+    # v3.6.5: HAOS 2026.10 移除 EntityRegistry.async_entries_for_domain，
+    # 改用 reg.entities.values() 过滤 platform==DOMAIN（等价）。
+    reg_entries = [e for e in reg.entities.values() if e.platform == DOMAIN]
     _LOGGER.debug("sensor cleanup: registry=%d new_ids=%d", len(reg_entries), len(new_ids))
     for entry_ in reg_entries:
         if not entry_.entity_id.startswith("sensor."):
