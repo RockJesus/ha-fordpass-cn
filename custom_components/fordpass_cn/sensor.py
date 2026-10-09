@@ -13,6 +13,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength, UnitOfPressure
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
@@ -92,7 +93,7 @@ async def async_setup_entry(
     # 非该能力车型）但旧 registry 条目仍在时会一直 unavailable，违反
     # "实体不显示不可用"要求。凡 platform==fordpass_cn 的 sensor 且 unique_id
     # 不在新实体集合、且未被用户手动禁用的，显式移除。
-    reg = hass.helpers.entity_registry.async_get(hass)
+    reg = er.async_get(hass)
     new_ids = {s.unique_id for s in all_sensors}
     reg_entries = reg.async_entries_for_domain(DOMAIN)
     _LOGGER.debug("sensor cleanup: registry=%d new_ids=%d", len(reg_entries), len(new_ids))
