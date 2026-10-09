@@ -210,7 +210,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         FordPassSensor(coordinator, "inner_rr_tire", "内右后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge", ["TPMS", "innerRightRearTirePressure"], round_value=True, skip_if_missing=True),
         FordPassSensor(coordinator, "inner_lr_tire_status", "内左后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "innerLeftRearTireStatus"], enum_map=_tire_status_map, skip_if_missing=True),
         FordPassSensor(coordinator, "inner_rr_tire_status", "内右后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "innerRightRearTireStatus"], enum_map=_tire_status_map, skip_if_missing=True),
-        FordPassSensor(coordinator, "dual_rear_wheel", "双后轮", None, None, "mdi:car", ["TPMS", "dualRearWheel"], enum_map={1: "启用", 0: "停用", "1": "启用", "0": "停用", True: "启用", False: "停用"}, skip_if_missing=True),
+        FordPassSensor(coordinator, "dual_rear_wheel", "双后轮", None, None, "mdi:car", ["TPMS", "dualRearWheel"], enum_map={1: "启用", 0: "停用", "1": "启用", "0": "停用", True: "启用", False: "停用"}, skip_if_missing=True, skip_if_zero=True),
         # 车门 / 车内环境 / 状态标志
         FordPassSensor(coordinator, "inner_tailgate", "内尾门", None, None, "mdi:car-back", ["doorStatus", "innerTailgateDoor"], enum_map=_door_map, skip_if_missing=True),
         FordPassSensor(coordinator, "cabin_temp", "车内温度", "°C", SensorDeviceClass.TEMPERATURE, "mdi:thermometer", ["CabnAmbTeActl"], round_value=True, skip_if_missing=True),
@@ -473,7 +473,8 @@ class FordPassSensor(SensorEntity):
     def __init__(self, coordinator, key, label, unit, device_class, icon, path,
                  round_value: bool = False, enum_map: dict | None = None,
                  multiplier: float | None = None, transform=None,
-                 skip_if_missing: bool = False) -> None:
+                 skip_if_missing: bool = False,
+                 skip_if_zero: bool = False) -> None:
         self.coordinator = coordinator
         self._key = key
         # Normalise `path`: a single path (["a","b"]) or a list of candidate
@@ -489,6 +490,8 @@ class FordPassSensor(SensorEntity):
         # v2.9.0: 数据无效（null/Not_Supported/...）时不创建该实体，其他车型
         # 用户不会看到 unknown 实体；字段恢复有效后重载集成即可出现。
         self._skip_if_missing = skip_if_missing
+        # v3.5.7: 值为 0/停用 时不创建（如 dualRearWheel=0 = 非双后轮车型）
+        self._skip_if_zero = skip_if_zero
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = label
         self._attr_has_entity_name = False
@@ -501,11 +504,17 @@ class FordPassSensor(SensorEntity):
 
     @property
     def data_usable(self) -> bool:
-        """创建期过滤：skip_if_missing 的实体仅当字段当前有有效值时创建。"""
-        if not self._skip_if_missing:
-            return True
-        status = self.coordinator.data.get("vehiclestatus", {})
-        return _is_usable(status, self._paths)
+        """创建期过滤：skip_if_missing 的实体仅当字段当前有有效值时创建；
+        skip_if_zero 的实体值为 0/停用 时（非该能力车型）不创建。"""
+        if self._skip_if_missing:
+            status = self.coordinator.data.get("vehiclestatus", {})
+            if not _is_usable(status, self._paths):
+                return False
+        if self._skip_if_zero:
+            val = _first_leaf(self.coordinator.data.get("vehiclestatus", {}), self._paths)
+            if val in (0, "0", False, "false", "False", "停用", None):
+                return False
+        return True
 
     @property
     def available(self) -> bool:
