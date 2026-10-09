@@ -147,6 +147,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass cevs auto probe failed: %s", exc)
         self.cevs_diag = getattr(self.api, "cevs_diag", {})
+        # v3.7.24: 预约出发/充电探测结果（实体数据源，探测到数据才创建）
+        self.cevs_probe = getattr(self.api, "cevs_probe", {})
         # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + 24h TTL
         # 缓存（探测类请求绝不进入常规轮询，防福特云限流）；探测结果供
         # sensor 按"探测到数据才创建"接入。失败/非家充桩车型保持 None。
