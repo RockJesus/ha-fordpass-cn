@@ -1363,7 +1363,24 @@ class FordPassApi:
         "探测到数据才创建"接入实体。全部只读/幂等 GET，不触发任何车辆
         动作；非能力车型/无数据端点返回空，不创建实体（全车型适配）。
         端点来源：6.16.0 APK libapp.so 字符串逆向（2026-10-08）+ 既有探测。
+
+        v3.5.4: 过滤业务错误响应——errorCode 206004 "capabilityMmota is
+        false" 等被网关拒绝的响应是 dict 非空，此前被误存为"探测到数据"
+        创建假实体；errorCode/error 存在或 status 非 0/200 一律视为
+        "车型无能力"（打 INFO rejected，不创建实体）。
         """
+
+        def _is_err_resp(data: dict) -> bool:
+            if "errorCode" in data or "error" in data:
+                return True
+            st = data.get("status")
+            if isinstance(st, (int, str)):
+                try:
+                    return int(st) not in (0, 200)
+                except (TypeError, ValueError):
+                    pass
+            return False
+
         probes = {
             "maintenance-history": PATH_MAINTENANCE_HISTORY,
             "departuretimes": PATH_DEPARTURE_TIMES_RETRIEVE,
@@ -1401,11 +1418,16 @@ class FordPassApi:
             except Exception as exc:  # noqa: BLE001 - 探测失败只记录
                 self._log.debug("FordPass probe %s failed: %s", name, exc)
                 continue
-            if isinstance(data, dict) and data:
+            if isinstance(data, dict) and data and not _is_err_resp(data):
                 result[name] = data
                 self._log.info(
                     "FordPass probe %s -> %s",
                     name, json.dumps(data, ensure_ascii=False)[:600],
+                )
+            elif isinstance(data, dict) and data:
+                self._log.info(
+                    "FordPass probe %s -> (rejected: %s)",
+                    name, json.dumps(data, ensure_ascii=False)[:200],
                 )
             else:
                 self._log.info("FordPass probe %s -> (empty)", name)
@@ -1423,11 +1445,16 @@ class FordPassApi:
                 except Exception as exc:  # noqa: BLE001 - 探测失败只记录
                     self._log.debug("FordPass probe %s failed: %s", name, exc)
                     continue
-                if isinstance(data, dict) and data:
+                if isinstance(data, dict) and data and not _is_err_resp(data):
                     account_res[name] = data
                     self._log.info(
                         "FordPass probe %s -> %s",
                         name, json.dumps(data, ensure_ascii=False)[:600],
+                    )
+                elif isinstance(data, dict) and data:
+                    self._log.info(
+                        "FordPass probe %s -> (rejected: %s)",
+                        name, json.dumps(data, ensure_ascii=False)[:200],
                     )
                 else:
                     self._log.info("FordPass probe %s -> (empty)", name)
@@ -1465,11 +1492,17 @@ class FordPassApi:
                     )
                     continue
                 if isinstance(data, dict):
-                    result[name] = {"signed": signed, "data": data}
-                    self._log.info(
-                        "FordPass smartwallbox probe %s -> %s",
-                        name, json.dumps(data, ensure_ascii=False)[:800],
-                    )
+                    if "errorCode" in data or "error" in data:
+                        self._log.info(
+                            "FordPass smartwallbox %s -> (rejected: %s)",
+                            name, json.dumps(data, ensure_ascii=False)[:200],
+                        )
+                    else:
+                        result[name] = {"signed": signed, "data": data}
+                        self._log.info(
+                            "FordPass smartwallbox probe %s -> %s",
+                            name, json.dumps(data, ensure_ascii=False)[:800],
+                        )
                     break
                 if data is not None:
                     result[name] = {"signed": signed, "raw": str(data)[:200]}
