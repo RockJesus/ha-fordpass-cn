@@ -1512,7 +1512,7 @@ class FordPassApi:
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
         payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
         plaintext_ok = vname in ("plaintext", "plaintext_xjw")
-        wbk_ok = vname in ("wbk_plain", "wbk_shared")
+        wbk_ok = vname in ("wbk_plain", "wbk_shared", "wbk_cevs_plain", "wbk_cevs_shared")
         if vname not in payloads and not plaintext_ok and not wbk_ok:
             self.cevs_diag["variant_error"] = f"unknown variant {vname}"
             return
@@ -1537,10 +1537,19 @@ class FordPassApi:
                 try:
                     # v3.7.19: encrypt_field 的 iv 参数是 bytes（hex str 会抛
                     # 类型错误——此前 wbk_shared 一直静默失败）
-                    iv = None if vname == "wbk_plain" else bytes.fromhex(xjw_now)
-                    enc, xjw2 = await asyncio.to_thread(
-                        lambda: self.crypto.encrypt_field(vin, iv),
-                    )
+                    # v3.7.20: wbk_cevs_* 用 cevs 场景专用密钥（服务器按
+                    # cevs 场景解密，x_api 场景密文报 bad key）
+                    if vname.startswith("wbk_cevs_"):
+                        cevs_crypto = FordPassCrypto.get(scene="cevs")
+                        iv = None if vname == "wbk_cevs_plain" else bytes.fromhex(xjw_now)
+                        enc, xjw2 = await asyncio.to_thread(
+                            lambda: cevs_crypto.encrypt_field(vin, iv),
+                        )
+                    else:
+                        iv = None if vname == "wbk_plain" else bytes.fromhex(xjw_now)
+                        enc, xjw2 = await asyncio.to_thread(
+                            lambda: self.crypto.encrypt_field(vin, iv),
+                        )
                     b["vin"] = enc
                     b["xjw"] = xjw2
                     data = await self._request("POST", path, b, raw_body=True)
@@ -1746,25 +1755,25 @@ class FordPassApi:
         return result or None
 
     async def probe_cevs_auto(self, vin: str) -> None:
-        """cevs 域自动探测（v3.7.18）：白盒 AES-CBC 单变体 wbk_shared
-        （encrypt_field，xjw=IV hex——与 login/token refresh 同链，
-        v3.7.16 实证 cevs 真实加密形态）。3 请求/次，防福特云风控
-        静默降级；结果写 api.cevs_diag（coordinator 引用同一对象，
-        诊断传感器直接可读）。"""
+        """cevs 域自动探测（v3.7.20）：**白盒 AES-CBC + cevs 场景专用密钥**
+        （whitebox_keys_for_prod.json 的 cevs.encrypt——v3.7.20 实证此前
+        x_api 场景加密被服务器 cevs 场景解密报 bad key）。单变体
+        wbk_cevs_shared（共享会话 IV），3 请求/次防福特云风控静默降级；
+        结果写 api.cevs_diag（coordinator 引用同一对象，诊断传感器可读）。"""
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        cevs_crypto = FordPassCrypto.get(scene="cevs")
         for name, path, body in (
             ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
             ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
             ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
             b = dict(body)
-            # v3.7.19: iv 传 bytes（此前传 hex str 抛类型错误，cevs_diag 恒空）
             enc, xjw2 = await asyncio.to_thread(
-                lambda: self.crypto.encrypt_field(vin, bytes.fromhex(xjw_now)),
+                lambda: cevs_crypto.encrypt_field(vin, bytes.fromhex(xjw_now)),
             )
             b["vin"] = enc
             b["xjw"] = xjw2
-            await self._probe_cevs_variant_wbk(name, path, b, "wbk_shared")
+            await self._probe_cevs_variant_wbk(name, path, b, "wbk_cevs_shared")
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
         """探测家充桩管理（smartwallbox）端点结构（只读/幂等，v3.4.5）。

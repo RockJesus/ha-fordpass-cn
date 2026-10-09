@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.20**：**cevs 白盒场景专用密钥**——whitebox_keys_for_prod.json 含独立 `cevs` 场景（此前用 x_api 场景加密被服务器 cevs 场景解密报 bad key）；自动探测与 service 的 wbk_cevs_* 变体改用 `FordPassCrypto.get(scene="cevs")`；版本号十进制 +1（3.7.19→3.7.20）
 - **v3.7.19**：**wbk 探测修复 iv 类型**——encrypt_field 的 iv 参数要求 bytes，此前传 hex 字符串抛类型错误致 wbk_shared 探测恒失败、诊断传感器恒"未探测"；自动探测与 service 分支统一 bytes.fromhex 修复；版本号十进制 +1（3.7.18→3.7.19）
 - **v3.7.18**：**cevs 诊断链路加固**——自动探测独立为 probe_cevs_auto（白盒单变体 3 请求）并从 extra_probes 失败链中解耦（coordinator 独立 try）；诊断传感器无条件创建（空显示未探测，不依赖 setup 时 diag 非空）；版本号十进制 +1（3.7.17→3.7.18）
 - **v3.7.17**：**修复 cevs 自动探测 KeyError**——v3.7.14 重写变体表后自动探测仍取 `payloads["plain"]` 键（已不存在）致探测整体崩溃、诊断传感器不创建；自动探测改为白盒 wbk_shared 单变体（3 请求防风控，cevs 真实加密形态）；版本号十进制 +1（3.7.16→3.7.17）
