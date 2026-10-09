@@ -99,7 +99,7 @@ async def async_setup_entry(
         if entry_.disabled_by is not None:
             continue
         if entry_.unique_id not in new_ids:
-            reg.async_remove(entry_.entity_id)
+            await reg.async_remove(entry_.entity_id)
 
 
 def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
