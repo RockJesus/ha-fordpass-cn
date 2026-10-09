@@ -22,6 +22,7 @@ from typing import Any
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
@@ -134,7 +135,92 @@ async def async_setup_entry(
                 buttons.append(_FordPassWlButton(
                     coordinator, "window_close", "远程关窗", "mdi:car-door",
                     window[0]))
+        # v3.5.0: APK 6.16.0 补全命令——消息已读 / 行车记录仪录制。
+        # 消息已读：messages_page 探测有数据才创建（有消息中心的车）。
+        # 录制按钮：video_file 探测有数据才创建（带行车记录仪硬件的车），
+        # 无硬件车型 404/无数据自动跳过（全车型适配）。
+        _ep = coordinator.extra_probes
+        if isinstance(_ep, dict) and _ep.get("messages_page"):
+            buttons.append(FordPassMarkReadButton(coordinator))
+        if isinstance(_ep, dict) and _ep.get("video_file"):
+            buttons.append(FordPassVideoStartButton(coordinator))
+            buttons.append(FordPassVideoStopButton(coordinator))
     async_add_entities(buttons)
+
+
+class FordPassMarkReadButton(ButtonEntity):
+    """标记消息已读（v3.5.0）：POST messages/read。
+
+    messages_page 探测有数据才创建；按 message 实体的最新分类/消息 id
+    标记已读（未读到 id 时按空分类提交，服务端按当前未读处理）。
+    标记已读不可逆但无破坏性；失败时按钮上报错误信息。
+    """
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-messages_read"
+        self._attr_name = "标记消息已读"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:email-check-outline"
+
+    async def async_press(self) -> None:
+        try:
+            category_id: str | None = None
+            message_id: str | None = None
+            ep = self.coordinator.extra_probes or {}
+            mp = ep.get("messages_page") or {}
+            payload = mp.get("data") if isinstance(mp, dict) else None
+            lst = payload.get("messages") if isinstance(payload, dict) else None
+            if not isinstance(lst, list):
+                lst = payload.get("list") if isinstance(payload, dict) else None
+            if isinstance(lst, list) and lst and isinstance(lst[0], dict):
+                message_id = str(lst[0].get("messageId") or "")
+                category_id = str(lst[0].get("categoryId") or "")
+            await self.coordinator.api.mark_messages_read(
+                category_id or None, message_id or None
+            )
+        except Exception as exc:  # noqa: BLE001 - 按钮失败向用户如实报错
+            raise HomeAssistantError(f"标记已读失败: {exc}") from exc
+
+
+class FordPassVideoStartButton(ButtonEntity):
+    """开始行车记录仪录制（v3.5.0）：POST start-video-recording。
+
+    仅带行车记录仪硬件车型（video_file 探测有数据）创建。
+    """
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-video_start"
+        self._attr_name = "开始行车记录"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:record-rec"
+
+    async def async_press(self) -> None:
+        try:
+            await self.coordinator.api.start_video_recording(self.coordinator.vin)
+        except Exception as exc:  # noqa: BLE001
+            raise HomeAssistantError(f"开始录制失败: {exc}") from exc
+
+
+class FordPassVideoStopButton(ButtonEntity):
+    """停止行车记录仪录制（v3.5.0）：POST stop-video-recording。"""
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-video_stop"
+        self._attr_name = "停止行车记录"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:stop"
+
+    async def async_press(self) -> None:
+        try:
+            await self.coordinator.api.stop_video_recording(self.coordinator.vin)
+        except Exception as exc:  # noqa: BLE001
+            raise HomeAssistantError(f"停止录制失败: {exc}") from exc
 
 
 class _FordPassWlButton(ButtonEntity):

@@ -244,6 +244,88 @@ class FordPassRemoteImageEntity(ImageEntity):
             _LOGGER.warning("remote image fetch error: %s", exc)
             return None
 
+class FordPass3dModelImage(ImageEntity):
+    """3D 车型图（v3.5.0）：GET vds/v1/vehicle/search-3d-vehicle-model-url。
+
+    探测到 modelUrl 才创建（非能力车型无数据自动跳过，全车型适配）；
+    下载后持久化到 www（_3d 后缀），重启不重复拉取；无 URL 时显示
+    车型名、保留已有图片（v3.1.2 规则，不 unavailable）。
+    """
+
+    def __init__(self, hass: HomeAssistant, coordinator: FordPassCoordinator) -> None:
+        super().__init__(hass)
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-vehicle_3d_image"
+        self._attr_name = "3D 车型图"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._attr_icon = "mdi:car"
+        self._attr_content_type = "image/png"
+        self._persist_path = _local_path(hass, coordinator.vin, "_3d")
+        self._image_bytes: bytes | None = None
+
+    def _model_url(self) -> str | None:
+        ep = self.coordinator.extra_probes or {}
+        data = ep.get("3d_model")
+        if not isinstance(data, dict):
+            return None
+        for d in (data, data.get("data")):
+            if not isinstance(d, dict):
+                continue
+            for k in ("modelUrl", "url", "threeDModelUrl", "threeDModelURL"):
+                v = d.get(k)
+                if v:
+                    return str(v)
+        return None
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 恒可用（保留已下载图片）
+
+    @property
+    def state(self) -> str:
+        return self.coordinator.vehicle_model
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        return {
+            "vehicle_model": self.coordinator.vehicle_model,
+            "image_url": self._model_url() or "",
+            "image_path": self._persist_path,
+        }
+
+    async def async_image(self) -> bytes | None:
+        if self._image_bytes:
+            return self._image_bytes
+        local = await self.hass.async_add_executor_job(_read_local, self._persist_path)
+        if local:
+            self._image_bytes = local
+            return local
+        url = self._model_url()
+        if not url:
+            return None
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=20),
+                headers={"user-agent": "Mozilla/5.0 (FordPass HA integration)"},
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning("3d model image fetch failed: HTTP %s", resp.status)
+                    return None
+                data = await resp.read()
+                if data:
+                    self._image_bytes = data
+                    await self.hass.async_add_executor_job(
+                        _persist_sync, self._persist_path, data
+                    )
+                return data or None
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("3d model image fetch error: %s", exc)
+            return None
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -266,5 +348,11 @@ async def async_setup_entry(
         if getattr(coordinator, "car_id", None)
     ]
     entities = entities + remote_entities
+    # v3.5.0: 3D 车型图——探测到 modelUrl 才创建（全车型自动适配）
+    entities = entities + [
+        FordPass3dModelImage(hass, coordinator)
+        for coordinator in coordinators
+        if isinstance((coordinator.extra_probes or {}).get("3d_model"), dict)
+    ]
     if entities:
         async_add_entities(entities)

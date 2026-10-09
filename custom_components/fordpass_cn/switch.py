@@ -81,7 +81,77 @@ async def async_setup_entry(
                 switches.append(_FordPassWlSwitch(
                     coordinator, "fridge", "车载冰箱", "mdi:fridge",
                     *_wl_pair(wl, "Fridge")))
+        # v3.5.0: 预约充电/预约出发开关——departuretimes/retrieve 探测有数据
+        # 才创建（支持该功能的车型自动出现；toggle 参数随探测结果自动带）
+        _ep = coordinator.extra_probes
+        if isinstance(_ep, dict) and _ep.get("departuretimes"):
+            switches.append(FordPassDepartureSwitch(coordinator))
     async_add_entities(switches)
+
+
+class FordPassDepartureSwitch(SwitchEntity):
+    """预约充电/预约出发开关（v3.5.0）：POST departuretimes/toggleon|off。
+
+    departuretimes/retrieve 探测有数据才创建；状态取探测结果中的
+    switchStatus/toggleStatus/enabled 等字段（字段缺失时 assumed_state，
+    按下后乐观更新）。参数中带 departureTimesColumUpdateId（探测结果第一
+    个任务 id），服务端按具体任务切换；非该能力车型不创建。
+    """
+
+    _attr_assumed_state = True
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-departure_toggle"
+        self._attr_name = "预约充电"
+        self._attr_has_entity_name = False
+        self._attr_icon = "mdi:calendar-clock"
+        self._attr_device_info = coordinator.device_info
+        self._state: bool | None = None
+        self._task_id: str | None = None
+
+    def _probe(self) -> dict | None:
+        ep = self.coordinator.extra_probes or {}
+        return ep.get("departuretimes") if isinstance(ep, dict) else None
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2 规则：保留最后已知状态，不随云端失败 unavailable
+
+    @property
+    def is_on(self) -> bool | None:
+        return self._state
+
+    async def async_update(self) -> None:
+        data = self._probe()
+        if not isinstance(data, dict):
+            return
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return
+        for k in ("switchStatus", "toggleStatus", "enabled", "status", "onOffStatus"):
+            v = payload.get(k)
+            if v is not None:
+                self._state = str(v).lower() in ("1", "true", "on", "yes", "open")
+                break
+        lst = payload.get("list") or payload.get("departureTimes") or payload.get("tasks")
+        if isinstance(lst, list) and lst and isinstance(lst[0], dict):
+            self._task_id = str(lst[0].get("departureTimesColumUpdateId")
+                               or lst[0].get("id") or "")
+
+    async def async_turn_on(self) -> None:
+        await self.coordinator.api.departure_toggle(
+            self.coordinator.vin, True, self._task_id or None
+        )
+        self._state = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self) -> None:
+        await self.coordinator.api.departure_toggle(
+            self.coordinator.vin, False, self._task_id or None
+        )
+        self._state = False
+        self.async_write_ha_state()
 
 
 def _wl_matches(wl: list[str] | None, *kws: str) -> list[str]:

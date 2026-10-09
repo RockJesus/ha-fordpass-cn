@@ -277,6 +277,17 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("ota_detail", "OTA 详情", "ota_detail"),
             ("departuretimes", "预约出发", "departure"),
             ("chargelogs", "充电日志", "chargelog"),
+            # v3.5.0: APK 6.16.0 补全端点（探测到数据才创建，全车型自动适配）
+            ("onlinernr", "车辆在线状态", "online"),
+            ("3d_model", "3D 车型图地址", "model3d"),
+            ("schedule_departure", "预约行程", "schedule"),
+            ("pds_device", "车辆设备信息", "device"),
+            ("user_auth", "车辆用户授权状态", "auth"),
+            ("srs_profile", "SRS 安全档案", "srs"),
+            ("sensor_shadow", "传感器影子", "shadow"),
+            ("video_file", "行车记录视频", "video"),
+            ("messages_page", "最新消息", "messages"),
+            ("ota_reddot", "OTA 更新提醒", "ota_reddot"),
         ):
             if _ep.get(_k):
                 sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
@@ -1628,6 +1639,85 @@ class FordPassProbeSensor(SensorEntity):
                 if lst:
                     return f"{len(lst)} 条充电记录"
                 return "暂无充电日志"
+            # ---- v3.5.0: APK 6.16.0 补全端点（探测数据驱动，全车型适配）----
+            if self._kind == "online":
+                st = (_swb_find(data, "onLineState") or _swb_find(data, "online")
+                      or _swb_find(data, "status"))
+                if st is not None:
+                    return {"1": "在线", "0": "离线", "true": "在线", "false": "离线",
+                            "ONLINE": "在线", "OFFLINE": "离线"}.get(str(st), str(st))
+                return "未知"
+            if self._kind == "model3d":
+                u = (_swb_find(data, "modelUrl") or _swb_find(data, "url")
+                     or _swb_find(data, "threeDModelUrl"))
+                if u is not None:
+                    return str(u)
+                return "暂无 3D 车型图"
+            if self._kind == "schedule":
+                lst = _swb_list(data)
+                if lst:
+                    first = lst[0] if isinstance(lst[0], dict) else {}
+                    t = (_swb_find(first, "departureTime") or _swb_find(first, "startTime")
+                         or _swb_find(first, "scheduleTime"))
+                    if t is not None:
+                        return f"{len(lst)} 个预约行程（最近 {t}）"
+                    return f"{len(lst)} 个预约行程"
+                t = (_swb_find(data, "departureTime") or _swb_find(data, "nextDeparture"))
+                if t is not None:
+                    return str(t)
+                return "无预约行程"
+            if self._kind == "device":
+                d = _swb_find(data, "deviceId") or _swb_find(data, "id")
+                tp = _swb_find(data, "deviceType") or _swb_find(data, "type")
+                if d is not None or tp is not None:
+                    return " / ".join(str(x) for x in (tp, d) if x)
+                return "暂无设备信息"
+            if self._kind == "auth":
+                st = (_swb_find(data, "authStatus") or _swb_find(data, "status"))
+                if st is not None:
+                    return {"1": "已授权", "0": "未授权", "true": "已授权",
+                            "false": "未授权", "AUTHORIZED": "已授权",
+                            "UNAUTHORIZED": "未授权"}.get(str(st), str(st))
+                return "未知"
+            if self._kind == "srs":
+                txt = (_swb_find(data, "srsProfile") or _swb_find(data, "profile")
+                       or _swb_find(data, "srsProfileName"))
+                if txt is not None:
+                    return str(txt)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条安全档案"
+                return "暂无安全档案"
+            if self._kind == "shadow":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 项传感器状态"
+                return "暂无传感器影子数据"
+            if self._kind == "video":
+                u = (_swb_find(data, "videoFileUrl") or _swb_find(data, "fileUrl")
+                     or _swb_find(data, "videoUrl"))
+                if u is not None:
+                    return "最近录像可查看"
+                return "暂无行车记录视频"
+            if self._kind == "messages":
+                lst = _swb_list(data)
+                if lst:
+                    first = lst[0] if isinstance(lst[0], dict) else {}
+                    subj = (_swb_find(first, "subject") or _swb_find(first, "title")
+                            or _swb_find(first, "content"))
+                    if subj is not None:
+                        return str(subj)
+                    return f"{len(lst)} 条消息"
+                return "无消息"
+            if self._kind == "ota_reddot":
+                st = (_swb_find(data, "redDotStatus") or _swb_find(data, "status")
+                      or _swb_find(data, "allRedDotStatus"))
+                if st is not None:
+                    try:
+                        return "有 OTA 更新" if int(st) != 0 else "无 OTA 更新"
+                    except (TypeError, ValueError):
+                        return str(st)
+                return "未知"
         except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
             return "解析失败"
         return None
