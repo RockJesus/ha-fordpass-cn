@@ -1445,6 +1445,31 @@ class FordPassApi:
         ]
         return variants
 
+
+    async def _probe_cevs_variant_wbk(
+        self, name: str, path: str, body: dict, vname: str,
+    ) -> None:
+        """白盒 AES-CBC 变体探测（v3.7.16/17，cevs 真实加密链与
+        login/token refresh 一致：vin=encrypt_field(明文)，xjw=IV hex）。"""
+        key = f"{name}_wbk_{vname}"
+        try:
+            data = await self._request("POST", path, body, raw_body=True)
+        except Exception as exc:  # noqa: BLE001
+            self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
+            self._log.debug("FordPass probe %s wbk_%s failed: %s", name, vname, exc)
+            return
+        if isinstance(data, dict) and data:
+            if _is_err_resp(data):
+                self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
+                self._log.info(
+                    "FordPass probe %s wbk_%s -> (rejected: %s)",
+                    name, vname, json.dumps(data, ensure_ascii=False)[:200],
+                )
+                return
+            self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
+        else:
+            self.cevs_diag[key] = "ok(empty)"
+
     async def _probe_cevs_variant_once(
         self, name: str, path: str, body: dict, vname: str, payload: bytes,
         pem: str,
@@ -1710,20 +1735,23 @@ class FordPassApi:
         # chargelogs 报 Missing required creator property 'xjw' → 补 xjw
         # （与 encrypt_field 同会话 IV）。失败仅日志，不创建、不进轮询。
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-        # v3.7.10: 单变体（plain）基线探测——v3.7.9 一次发 12 请求（3 端点×
-        # 4 变体）被福特云风控静默降级（全部 200+空 body），故初始只发 1 变体；
-        # 其余变体用 fordpass_cn.probe_cevs_variant service 人工逐个触发
-        # （每次 3 请求，诊断传感器自读区分解密层行为）。
-        payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
+        # v3.7.17: cevs 真实加密形态 = 白盒 AES-CBC（encrypt_field，xjw=IV hex，
+        # 与 login/token refresh 同链）。自动探测只发 wbk_shared 单变体
+        # （3 请求/次，防福特云风控静默降级）；其余 RSA/明文变体仅经
+        # probe_cevs_variant service 人工触发。v3.7.14 曾把自动探测绑到
+        # "plain" 键致 KeyError 崩溃（变体表重写后无该键）——本次修复。
         for name, path, body in (
             ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
             ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
             ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
-            for pem in CEVS_RSA_PUBKEYS:
-                await self._probe_cevs_variant_once(
-                    name, path, body, "plain", payloads["plain"], pem,
-                )
+            b = dict(body)
+            enc, xjw2 = await asyncio.to_thread(
+                lambda: self.crypto.encrypt_field(vin, xjw_now),
+            )
+            b["vin"] = enc
+            b["xjw"] = xjw2
+            await self._probe_cevs_variant_wbk(name, path, b, "wbk_shared")
         return result or None
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:

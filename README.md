@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.17**：**修复 cevs 自动探测 KeyError**——v3.7.14 重写变体表后自动探测仍取 `payloads["plain"]` 键（已不存在）致探测整体崩溃、诊断传感器不创建；自动探测改为白盒 wbk_shared 单变体（3 请求防风控，cevs 真实加密形态）；版本号十进制 +1（3.7.16→3.7.17）
 - **v3.7.16**：**cevs 真实加密形态确认——白盒 AES-CBC**——login/token refresh 的 encrypt_field（xjw=IV hex）即 cevs vin 字段的加密链，此前全部 RSA 变体方向错误（服务器白盒解密失败）；新增 wbk_plain/wbk_shared 探测变体；版本号十进制 +1（3.7.15→3.7.16）
 - **v3.7.15**：**修复 sensor 平台 setup 崩溃**——HA 2026.x `EntityRegistry.async_remove` 为同步返回 None，`await` 报 TypeError 致 sensor 平台整体不加载（diag/新实体全缺）；改为同步调用。services.yaml 补入 CHANGED（此前只在 zip 不在 main，HACS archive 模式缺文件持续报 Failed to load services.yaml）；版本号十进制 +1（3.7.14→3.7.15）
 - **v3.7.14**：**cevs 三公钥 × 双 payload 矩阵**——k1=libapp.so 2048（raw_body 形态首次测）、k2=feed_back 2048（未测）、k3=cnesl 4096（对照）；payload=RSA(VIN) / RSA(VIN+xjw)；三端点 body 统一补 xjw；vname 按公钥一对一触发（3 请求/次防风控）；版本号十进制 +1（3.7.13→3.7.14）
