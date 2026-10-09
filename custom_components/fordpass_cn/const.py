@@ -181,6 +181,25 @@ PATH_SMARTWALLBOX_BINDING = "/api/smartwallbox/processor/binding/v5"
 PATH_SMARTWALLBOX_CHG_STATUS = "/api/smartwallbox/processor/charging/status/wallboxId/v2"
 PATH_SMARTWALLBOX_RECORDS = "/api/smartwallbox/processor/charging/records/single/list/v2r"
 PATH_SMARTWALLBOX_CONFIG = "/api/smartwallbox/processor/config/common/query/v2"
+# v3.7.2: 家充桩控制端点（6.16.0 APK 逆向）——仅探测到家充桩绑定的车型创建
+#   charging/start/v2        开始充电（POST，body 需 wallboxId）
+#   charging/stop/v2         停止充电
+#   binding/unbind/v2        解绑充电桩
+#   authority/query/v3       桩授权查询（只读）
+PATH_SMARTWALLBOX_CHARGE_START = "/api/smartwallbox/processor/charging/start/v2"
+PATH_SMARTWALLBOX_CHARGE_STOP = "/api/smartwallbox/processor/charging/stop/v2"
+PATH_SMARTWALLBOX_UNBIND = "/api/smartwallbox/processor/binding/unbind/v2"
+PATH_SMARTWALLBOX_AUTHORITY = "/api/smartwallbox/processor/authority/query/v3"
+
+# v3.7.2: 车辆授权管理（vds/v1/vehicles/vehicle-user-auth 查询授权列表）与
+# 公共充电探测（纯电/插混车型专属，数据驱动创建，锐际纯油探测无数据不创建）：
+#   evss/stations/v1            公共充电站（位置相关，无参探测失败不创建）
+#   evss/orders/v2              充电订单
+#   vpoi/chargestations/v3      充电站地图（位置相关）
+PATH_VEHICLE_USER_AUTH = "/api/cnxapi-vds/v1/vehicles/vehicle-user-auth"
+PATH_EVSS_STATIONS = "/api/evss/stations/v1"
+PATH_EVSS_ORDERS = "/api/evss/orders/v2"
+PATH_VPOI_CHARGESTATIONS = "/api/vpoi/chargestations/v3"
 
 # OTA 版本/详情（6.16.0 APK 逆向，2026-10-08，只读 GET 探测接入 v3.4.6）：
 #   alert/ota/versions             OTA 版本列表
