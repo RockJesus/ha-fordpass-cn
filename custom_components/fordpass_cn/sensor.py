@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import re
 import time
+
+_LOGGER = logging.getLogger(__name__)
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -91,7 +94,9 @@ async def async_setup_entry(
     # 不在新实体集合、且未被用户手动禁用的，显式移除。
     reg = hass.helpers.entity_registry.async_get(hass)
     new_ids = {s.unique_id for s in all_sensors}
-    for entry_ in reg.async_entries_for_domain(DOMAIN):
+    reg_entries = reg.async_entries_for_domain(DOMAIN)
+    _LOGGER.debug("sensor cleanup: registry=%d new_ids=%d", len(reg_entries), len(new_ids))
+    for entry_ in reg_entries:
         if not entry_.entity_id.startswith("sensor."):
             continue
         if entry_.platform != DOMAIN:
@@ -99,6 +104,7 @@ async def async_setup_entry(
         if entry_.disabled_by is not None:
             continue
         if entry_.unique_id not in new_ids:
+            _LOGGER.debug("sensor cleanup: removing stale %s", entry_.entity_id)
             await reg.async_remove(entry_.entity_id)
 
 
