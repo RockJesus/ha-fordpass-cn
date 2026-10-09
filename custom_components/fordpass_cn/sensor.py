@@ -336,6 +336,12 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("evss_stations", "公共充电站", "evss_stations"),
             ("evss_orders", "充电订单", "evss_orders"),
             ("vpoi_chargestations", "充电站地图", "vpoi_chargestations"),
+            # v3.7.3: 家充桩扩展（分享列表/桩级充电状态/充电信息/充电订单）
+            # ——仅探测到绑定桩+桩级数据才创建（锐际纯油无墙盒不创建）
+            ("wallbox_sharing_query", "家充桩分享列表", "wallbox_sharing"),
+            ("wallbox_charge_status", "家充桩充电状态(桩级)", "wallbox_charge_status"),
+            ("wallbox_charging", "家充桩充电信息", "wallbox_charging"),
+            ("wallbox_orders", "家充桩充电订单", "wallbox_orders"),
         ):
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
@@ -1920,6 +1926,48 @@ class FordPassProbeSensor(SensorEntity):
                     return f"{cnt} 个充电站"
                 return "暂无充电站数据"
             if self._kind == "evss_orders":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条充电订单"
+                return "暂无充电订单"
+            # v3.7.3: 家充桩扩展解析（分享列表/桩级充电状态/充电信息/充电订单）
+            if self._kind == "wallbox_sharing":
+                lst = _swb_list(data)
+                if lst:
+                    users = []
+                    for u in lst:
+                        if not isinstance(u, dict):
+                            continue
+                        nm = (_swb_find(u, "phone") or _swb_find(u, "userName")
+                              or _swb_find(u, "nickName") or _swb_find(u, "name")
+                              or _swb_find(u, "userId"))
+                        if nm is not None:
+                            users.append(str(nm))
+                    if users:
+                        return f"{len(lst)} 个共享用户：{'、'.join(list(dict.fromkeys(users))[:5])}"
+                    return f"{len(lst)} 个共享用户"
+                return "暂无分享"
+            if self._kind == "wallbox_charge_status":
+                st = (_swb_find(data, "chargingStatus") or _swb_find(data, "status")
+                      or _swb_find(data, "chargingState") or _swb_find(data, "state"))
+                if st is not None:
+                    return str(st)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条充电状态"
+                return "未知充电状态"
+            if self._kind == "wallbox_charging":
+                pct = (_swb_find(data, "batteryLevel") or _swb_find(data, "soc")
+                       or _swb_find(data, "chargePercent"))
+                if pct is not None:
+                    tail = []
+                    for k in ("remainingTime", "chargeTime", "power", "currentPower"):
+                        v = _swb_find(data, k)
+                        if v is not None:
+                            tail.append(f"{k}={v}")
+                    return f"电量 {pct}%" + ((" · " + "、".join(tail)) if tail else "")
+                return "暂无充电信息"
+            if self._kind == "wallbox_orders":
                 lst = _swb_list(data)
                 if lst:
                     return f"{len(lst)} 条充电订单"
