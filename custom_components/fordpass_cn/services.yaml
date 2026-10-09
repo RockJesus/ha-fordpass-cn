@@ -1,0 +1,21 @@
+probe_cevs_variant:
+  name: Probe CEVS variant
+  description: >-
+    Manually probe one encryption-chain variant of the CEVS (departure/charging)
+    endpoints. Results are written to the CEVS diagnostic sensor attributes.
+  fields:
+    variant:
+      description: Encryption-chain variant to probe.
+      example: "json_vin"
+      default: "plain"
+      selector:
+        select:
+          options:
+            - plaintext
+            - plaintext_xjw
+            - k1_plain
+            - k1_vinxjw
+            - k2_plain
+            - k2_vinxjw
+            - k3_plain
+            - k3_vinxjw

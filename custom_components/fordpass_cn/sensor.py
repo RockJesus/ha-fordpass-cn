@@ -108,7 +108,7 @@ async def async_setup_entry(
             continue
         if entry_.unique_id not in new_ids:
             _LOGGER.debug("sensor cleanup: removing stale %s", entry_.entity_id)
-            await reg.async_remove(entry_.entity_id)
+            reg.async_remove(entry_.entity_id)  # v3.7.15: HA 2026.x async_remove 为同步返回 None，await 报 TypeError
 
 
 def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
