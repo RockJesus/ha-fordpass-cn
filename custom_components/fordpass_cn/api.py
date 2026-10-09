@@ -1487,11 +1487,12 @@ class FordPassApi:
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
         payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
         plaintext_ok = vname in ("plaintext", "plaintext_xjw")
-        if vname not in payloads and not plaintext_ok:
+        wbk_ok = vname in ("wbk_plain", "wbk_shared")
+        if vname not in payloads and not plaintext_ok and not wbk_ok:
             self.cevs_diag["variant_error"] = f"unknown variant {vname}"
             return
         pems: list[str] = [None]
-        if not plaintext_ok:
+        if not plaintext_ok and not wbk_ok:
             try:
                 kidx = int(vname.split("_")[0][1:]) - 1
                 pems = [CEVS_RSA_PUBKEYS[kidx]]
@@ -1504,6 +1505,32 @@ class FordPassApi:
             ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
             b = dict(body)
+            if wbk_ok:
+                # v3.7.16: cevs 真实加密 = 白盒 AES-CBC（与 login/token refresh 同链，
+                # xjw 即 CBC IV hex）——此前全部 RSA 变体方向错误（服务器白盒解密失败）
+                key = f"{name}_wbk_{vname}"
+                try:
+                    iv = None if vname == "wbk_plain" else xjw_now
+                    enc, xjw2 = await asyncio.to_thread(
+                        lambda: self.crypto.encrypt_field(vin, iv),
+                    )
+                    b["vin"] = enc
+                    b["xjw"] = xjw2
+                    data = await self._request("POST", path, b, raw_body=True)
+                except Exception as exc:  # noqa: BLE001
+                    self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
+                    self._log.debug(
+                        "FordPass probe %s wbk_%s failed: %s", name, vname, exc,
+                    )
+                    continue
+                if isinstance(data, dict) and data:
+                    if _is_err_resp(data):
+                        self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
+                        continue
+                    self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
+                else:
+                    self.cevs_diag[key] = "ok(empty)"
+                continue
             b["xjw"] = xjw_now  # 三端点统一补 xjw（DTO {vin,xjw} 假设）
             for pem in pems:
                 if plaintext_ok:

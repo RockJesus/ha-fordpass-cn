@@ -11,6 +11,8 @@ probe_cevs_variant:
       selector:
         select:
           options:
+            - wbk_plain
+            - wbk_shared
             - plaintext
             - plaintext_xjw
             - k1_plain
