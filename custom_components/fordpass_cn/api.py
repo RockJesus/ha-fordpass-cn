@@ -67,6 +67,7 @@ from .const import (
     PATH_GENERATE_PASSCODE,
     PATH_MAINTENANCE_HISTORY,
     PATH_MAINTENANCE_PLAN,
+    PATH_MCM_MESSAGES_V3,
     PATH_MESSAGES_PAGE,
     PATH_MESSAGES_READ,
     PATH_MESSAGES_SUMMARY,
@@ -100,6 +101,7 @@ from .const import (
     PATH_USER_AUTH_STATUS,
     PATH_USER_PREF_GROUPS,
     PATH_USER_PREF_LIST,
+    PATH_USER_REDDOT,
     PATH_USER_VEHICLES,
     PATH_V5_ANNOUNCE_STATUS,
     PATH_V5_HONK,
@@ -1423,8 +1425,8 @@ class FordPassApi:
         # ota_detail/onlinernr）allow_post=False 仅 GET，不白试变体
         probes = {
             "maintenance-history": (PATH_MAINTENANCE_HISTORY, None, False),
-            "departuretimes": (PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}, True),
-            "chargelogs": (PATH_CHARGELOGS_RETRIEVE, {"vin": None}, True),
+            "departuretimes": (PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None, "__skip_encrypted_vin__": True}, True),
+            "chargelogs": (PATH_CHARGELOGS_RETRIEVE, {"vin": None, "__skip_encrypted_vin__": True}, True),
             "ota_versions": (PATH_OTA_VERSIONS, None, False),
             "ota_detail": (PATH_OTA_DETAIL, None, False),
             "ota_search_details": (PATH_OTA_SEARCH_DETAILS, None, True),
@@ -1436,7 +1438,7 @@ class FordPassApi:
             "pds_device": (PATH_PDS_DEVICE, None, False),
             "user_auth": (PATH_USER_AUTH_STATUS, None, True),
             "srs_profile": (PATH_SRS_PROFILE, None, True),
-            "sensor_shadow": (PATH_SENSOR_SHADOW, None, False),
+            "sensor_shadow": (PATH_SENSOR_SHADOW, None, True),
             "video_file": (PATH_VIDEO_FILE, None, True),
             "messages_page": (PATH_MESSAGES_PAGE, None, False),
             "ota_reddot": (PATH_OTA_REDDOT, {"__skip_encrypted_vin__": True}, True),
@@ -1452,6 +1454,10 @@ class FordPassApi:
                                                   "appVersion": APP_VERSION}, True),
             "messages_v2": (PATH_MESSAGES_V2_PAGE, None, False),
             "share_list": (PATH_SHARE_LIST, None, True),
+            # v3.6.2: 待开发清单补全——消息中心 v3（mcm 域，GET 无参同 summary）、
+            # 用户级红点（cnesl-user，账号级只读）。探测到数据才创建。
+            "mcm_messages_v3": (PATH_MCM_MESSAGES_V3, None, True),
+            "user_reddot": (PATH_USER_REDDOT, None, True),
         }
 
         async def _probe(name: str, spec, signed: bool) -> dict[str, Any] | None:

@@ -315,6 +315,9 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("messages_v2", "消息中心 v2", "messages_v2"),
             ("share_list", "车辆共享列表", "share_list"),
             ("device_list", "车辆设备列表", "device_list"),
+            # v3.6.2: 待开发清单补全（mcm 消息中心 v3 / 用户级红点）
+            ("mcm_messages_v3", "消息中心", "mcm_messages"),
+            ("user_reddot", "红点状态", "user_reddot"),
         ):
             if _ep.get(_k):
                 sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
@@ -1768,7 +1771,13 @@ class FordPassProbeSensor(SensorEntity):
                 return "未知"
             # ---- v3.5.1: 账号级只读端点（探测数据驱动，全车型适配）----
             if self._kind == "uservehicles":
+                # v3.6.2: uservehicles 实为车辆注册端点（"Vehicle already
+                # registered"），列表以 coordinator.vehicles_list（v5/vehicles/list，
+                # 已验证 live）为准；probe 数据仅作兜底。
                 lst = _swb_list(data)
+                vl = getattr(self.coordinator, "vehicles_list", None) or []
+                if not lst and isinstance(vl, list) and vl:
+                    lst = vl
                 if lst:
                     models = []
                     for v in lst:
@@ -1823,6 +1832,34 @@ class FordPassProbeSensor(SensorEntity):
                         return f"{len(lst)} 个设备：{'、'.join(dict.fromkeys(names)[:6])}"
                     return f"{len(lst)} 个设备"
                 return "暂无设备列表"
+            # ---- v3.6.2: 待开发清单补全（mcm 消息中心 v3 / 用户级红点）----
+            if self._kind == "mcm_messages":
+                lst = _swb_list(data)
+                if lst:
+                    first = lst[0] if isinstance(lst[0], dict) else {}
+                    subj = (_swb_find(first, "readMessageSubject")
+                            or _swb_find(first, "subject") or _swb_find(first, "title")
+                            or _swb_find(first, "content"))
+                    if subj is not None:
+                        return str(subj)
+                    return f"{len(lst)} 条消息"
+                return "无消息"
+            if self._kind == "user_reddot":
+                st = (_swb_find(data, "redDotStatus") or _swb_find(data, "reddotStatus")
+                      or _swb_find(data, "status") or _swb_find(data, "unreadCount"))
+                if st is not None:
+                    try:
+                        return "有未读红点" if int(st) != 0 else "无红点"
+                    except (TypeError, ValueError):
+                        return str(st)
+                # 无显式字段：递归找第一个整型字段（红点数）
+                for _v in data.values():
+                    if isinstance(_v, bool):
+                        return "有未读红点" if _v else "无红点"
+                for _v in data.values():
+                    if isinstance(_v, int) and _v >= 0:
+                        return f"{_v} 个红点"
+                return "无红点"
         except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
             return "解析失败"
         return None
