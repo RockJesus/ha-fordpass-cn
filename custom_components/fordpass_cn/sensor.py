@@ -329,6 +329,13 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             # v3.6.2: 待开发清单补全（mcm 消息中心 v3 / 用户级红点）
             ("mcm_messages_v3", "消息中心", "mcm_messages"),
             ("user_reddot", "红点状态", "user_reddot"),
+            # v3.7.2: 车辆授权列表（vehicle-user-auth）+ 公共充电探测
+            # （EVSS/vpoi 纯电插混专属——探测到数据才创建，锐际纯油无数据
+            # 不创建，全车型自动适配）
+            ("user_auth_list", "车辆授权列表", "auth_list"),
+            ("evss_stations", "公共充电站", "evss_stations"),
+            ("evss_orders", "充电订单", "evss_orders"),
+            ("vpoi_chargestations", "充电站地图", "vpoi_chargestations"),
         ):
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
@@ -1882,6 +1889,41 @@ class FordPassProbeSensor(SensorEntity):
                         return f"{len(lst)} 条记录，最近：{' '.join(parts)}"
                     return f"{len(lst)} 条保养记录"
                 return "暂无保养记录"
+            # v3.7.2: 车辆授权列表（vehicle-user-auth，授权用户/审批状态）
+            if self._kind == "auth_list":
+                lst = _swb_list(data)
+                if lst:
+                    users = []
+                    for u in lst:
+                        if not isinstance(u, dict):
+                            continue
+                        nm = (_swb_find(u, "userName") or _swb_find(u, "nickName")
+                              or _swb_find(u, "phone") or _swb_find(u, "userId")
+                              or _swb_find(u, "name"))
+                        if nm is not None:
+                            users.append(str(nm))
+                    if users:
+                        return f"{len(lst)} 个授权用户：{'、'.join(list(dict.fromkeys(users))[:6])}"
+                    return f"{len(lst)} 个授权用户"
+                st = _swb_find(data, "authorizationStatus") or _swb_find(data, "status")
+                if st is not None:
+                    return str(st)
+                return "暂无授权用户"
+            # v3.7.2: 公共充电探测（EVSS 充电站/订单、vpoi 充电站地图）——
+            # 纯电/插混车型专属；位置相关无参探测失败→探测无数据不创建
+            if self._kind in ("evss_stations", "vpoi_chargestations"):
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 个充电站"
+                cnt = _swb_find(data, "total") or _swb_find(data, "count")
+                if cnt is not None:
+                    return f"{cnt} 个充电站"
+                return "暂无充电站数据"
+            if self._kind == "evss_orders":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条充电订单"
+                return "暂无充电订单"
             # ---- v3.6.2: 待开发清单补全（mcm 消息中心 v3 / 用户级红点）----
             if self._kind == "mcm_messages":
                 lst = _swb_list(data)

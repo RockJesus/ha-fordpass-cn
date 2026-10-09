@@ -94,6 +94,10 @@ from .const import (
     PATH_SHARE_LIST,
     PATH_SIM_INFO,
     PATH_SMARTWALLBOX_BINDING,
+    PATH_SMARTWALLBOX_CHARGE_START,
+    PATH_SMARTWALLBOX_CHARGE_STOP,
+    PATH_SMARTWALLBOX_UNBIND,
+    PATH_SMARTWALLBOX_AUTHORITY,
     PATH_SMARTWALLBOX_CONFIG,
     PATH_SMARTWALLBOX_RECORDS,
     PATH_SRS_PROFILE,
@@ -106,7 +110,11 @@ from .const import (
     PATH_V5_ANNOUNCE_STATUS,
     PATH_V5_HONK,
     PATH_V5_PANIC,
+    PATH_EVSS_ORDERS,
+    PATH_EVSS_STATIONS,
+    PATH_VEHICLE_USER_AUTH,
     PATH_VEHICLES_LIST,
+    PATH_VPOI_CHARGESTATIONS,
     PATH_VEHICLE_STATUS,
     PATH_VIDEO_FILE,
     PATH_VIDEO_START,
@@ -1462,6 +1470,13 @@ class FordPassApi:
             # 用户级红点（cnesl-user，账号级只读）。探测到数据才创建。
             "mcm_messages_v3": (PATH_MCM_MESSAGES_V3, None, True),
             "user_reddot": (PATH_USER_REDDOT, None, True),
+            # v3.7.2: 车辆授权管理列表（vehicle-user-auth 查询该车辆授权用户，
+            # 只读；非授权/无数据的车型不创建）。公共充电探测（纯电/插混专属，
+            # 位置相关无参探测失败→不创建，全车型安全）：
+            "user_auth_list": (PATH_VEHICLE_USER_AUTH, None, True),
+            "evss_stations": (PATH_EVSS_STATIONS, None, True),
+            "evss_orders": (PATH_EVSS_ORDERS, None, True),
+            "vpoi_chargestations": (PATH_VPOI_CHARGESTATIONS, None, True),
         }
 
         async def _probe(name: str, spec, signed: bool) -> dict[str, Any] | None:
@@ -1573,7 +1588,53 @@ class FordPassApi:
                 if data is not None:
                     result[name] = {"signed": signed, "raw": str(data)[:200]}
                     break
+        # v3.7.2: 家充桩授权查询（只读，加入探测摘要——有绑定的车型才返回数据）
+        for name, path in (("wallbox_authority", PATH_SMARTWALLBOX_AUTHORITY),):
+            for signed in (True, False):
+                try:
+                    if signed:
+                        data = await self._get_signed(path, vin)
+                    else:
+                        data = await self._request("GET", path)
+                except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                    self._log.debug(
+                        "FordPass smartwallbox %s (signed=%s) failed: %s",
+                        name, signed, exc,
+                    )
+                    continue
+                if isinstance(data, dict):
+                    if "errorCode" in data or "error" in data:
+                        self._log.info(
+                            "FordPass smartwallbox %s -> (rejected: %s)",
+                            name, json.dumps(data, ensure_ascii=False)[:200],
+                        )
+                    else:
+                        result[name] = {"signed": signed, "data": data}
+                        self._log.info(
+                            "FordPass smartwallbox probe %s -> %s",
+                            name, json.dumps(data, ensure_ascii=False)[:800],
+                        )
+                    break
+                if data is not None:
+                    result[name] = {"signed": signed, "raw": str(data)[:200]}
+                    break
         return result or None
+
+    # ------------------------------------------------ v3.7.2 家充桩控制
+    async def wallbox_charge_start(self, vin: str, wallbox_id: str) -> dict[str, Any]:
+        """开始充电：POST charging/start/v2（v3.7.2，wallboxId 由调用方传入）。"""
+        body = {"wallboxId": wallbox_id}
+        return await self._request("POST", PATH_SMARTWALLBOX_CHARGE_START, body)
+
+    async def wallbox_charge_stop(self, vin: str, wallbox_id: str) -> dict[str, Any]:
+        """停止充电：POST charging/stop/v2（v3.7.2）。"""
+        body = {"wallboxId": wallbox_id}
+        return await self._request("POST", PATH_SMARTWALLBOX_CHARGE_STOP, body)
+
+    async def wallbox_unbind(self, vin: str, wallbox_id: str) -> dict[str, Any]:
+        """解绑充电桩：POST binding/unbind/v2（v3.7.2）。"""
+        body = {"wallboxId": wallbox_id}
+        return await self._request("POST", PATH_SMARTWALLBOX_UNBIND, body)
 
     # ------------------------------------------------ v3.5.0 新增命令/查询
     async def mark_messages_read(

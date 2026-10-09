@@ -145,7 +145,58 @@ async def async_setup_entry(
         if isinstance(_ep, dict) and _ep.get("video_file"):
             buttons.append(FordPassVideoStartButton(coordinator))
             buttons.append(FordPassVideoStopButton(coordinator))
+        # v3.7.2: 家充桩解绑按钮——smartwallbox 探测到绑定桩才创建
+        if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
+            buttons.append(FordPassWallboxUnbindButton(coordinator))
     async_add_entities(buttons)
+
+
+class FordPassWallboxUnbindButton(ButtonEntity):
+    """解绑家充桩（v3.7.2）：POST binding/unbind/v2。
+
+    仅 smartwallbox 探测到绑定桩的车型创建；wallboxId 取默认桩。
+    解绑为不可逆操作，云端失败时如实抛错（HomeAssistantError）。
+    """
+
+    _attr_icon = "mdi:link-off"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-wallbox_unbind"
+        self._attr_name = "解绑家充桩"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用
+
+    def _wallbox_id(self) -> str | None:
+        wb = self.coordinator.smartwallbox or {}
+        bind = wb.get("wallbox_binding")
+        data = bind.get("data") if isinstance(bind, dict) else None
+        if not isinstance(data, dict):
+            return None
+        for key in ("wallboxId", "defaultWallboxId", "id", "equipmentId"):
+            v = data.get(key)
+            if v:
+                return str(v)
+        lst = data.get("list") or data.get("wallboxList")
+        if isinstance(lst, list) and lst and isinstance(lst[0], dict):
+            for key in ("wallboxId", "id", "equipmentId", "serialNumber"):
+                v = lst[0].get(key)
+                if v:
+                    return str(v)
+        return None
+
+    async def async_press(self) -> None:
+        wid = self._wallbox_id()
+        if not wid:
+            raise HomeAssistantError("未找到已绑定的家充桩")
+        try:
+            await self.coordinator.api.wallbox_unbind(self.coordinator.vin, wid)
+        except Exception as err:  # noqa: BLE001
+            raise HomeAssistantError(f"解绑家充桩失败: {err}") from err
 
 
 class FordPassMarkReadButton(ButtonEntity):
