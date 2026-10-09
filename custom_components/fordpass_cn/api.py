@@ -1110,6 +1110,10 @@ class FordPassApi:
             b.setdefault("xjw", xjw)
             if b.get("vin") is None and "vin" in b:
                 b["vin"] = vin
+            if b.get("__skip_xjw__"):
+                # v3.6.6: cevs 域 DTO 连 xjw 也不接受（v3.6.5 日志：body 只留
+                # vin+xjw 仍 Impossible modulus）——body 只留明文 vin
+                b.pop("xjw", None)
             if b.pop("__skip_encrypted_vin__", None):
                 # v3.5.7: OTARedDotStatusRequestDTO 不接受 encryptedVin
                 # （日志实证 Unrecognized field）——body 只留 xjw
@@ -1425,8 +1429,8 @@ class FordPassApi:
         # ota_detail/onlinernr）allow_post=False 仅 GET，不白试变体
         probes = {
             "maintenance-history": (PATH_MAINTENANCE_HISTORY, None, False),
-            "departuretimes": (PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None, "__skip_encrypted_vin__": True}, True),
-            "chargelogs": (PATH_CHARGELOGS_RETRIEVE, {"vin": None, "__skip_encrypted_vin__": True}, True),
+            "departuretimes": (PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None, "__skip_encrypted_vin__": True, "__skip_xjw__": True}, True),
+            "chargelogs": (PATH_CHARGELOGS_RETRIEVE, {"vin": None, "__skip_encrypted_vin__": True, "__skip_xjw__": True}, True),
             "ota_versions": (PATH_OTA_VERSIONS, None, False),
             "ota_detail": (PATH_OTA_DETAIL, None, False),
             "ota_search_details": (PATH_OTA_SEARCH_DETAILS, None, True),
