@@ -1540,6 +1540,13 @@ class FordPassSmartWallboxSensor(SensorEntity):
     @property
     def native_value(self) -> str | None:
         data = self._probe()
+        if data is None and self._kind == "uservehicles":
+            # v3.6.7: uservehicles 是注册端点（rejected 无 probe 数据），
+            # 实体创建仅凭 vehicles_list——刷新同样必须用 vehicles_list 兜底，
+            # 否则 _probe() 恒 None → 状态永远 unknown。
+            vl = getattr(self.coordinator, "vehicles_list", None) or []
+            if vl:
+                data = {"list": vl}
         if data is None:
             return None
         try:
@@ -1731,11 +1738,15 @@ class FordPassProbeSensor(SensorEntity):
                     return " / ".join(str(x) for x in (tp, d) if x)
                 return "暂无设备信息"
             if self._kind == "auth":
-                st = (_swb_find(data, "authStatus") or _swb_find(data, "status"))
+                # v3.6.7: user_auth 响应字段是 authorizationStatus（"Authorized"），
+                # 原解析找 status 拿到外层 HTTP 200——优先 authorizationStatus。
+                st = (_swb_find(data, "authorizationStatus") or _swb_find(data, "authStatus")
+                      or _swb_find(data, "status"))
                 if st is not None:
                     return {"1": "已授权", "0": "未授权", "true": "已授权",
                             "false": "未授权", "AUTHORIZED": "已授权",
-                            "UNAUTHORIZED": "未授权"}.get(str(st), str(st))
+                            "UNAUTHORIZED": "未授权", "Authorized": "已授权",
+                            "Unauthorized": "未授权"}.get(str(st), str(st))
                 return "未知"
             if self._kind == "srs":
                 txt = (_swb_find(data, "srsProfile") or _swb_find(data, "profile")
@@ -1790,7 +1801,8 @@ class FordPassProbeSensor(SensorEntity):
                     for v in lst:
                         if not isinstance(v, dict):
                             continue
-                        m = (_swb_find(v, "vehicleModelName") or _swb_find(v, "modelName")
+                        m = (_swb_find(v, "localMarketValue") or _swb_find(v, "vehicleModelName")
+                             or _swb_find(v, "modelName")
                              or _swb_find(v, "model") or _swb_find(v, "vehicleName"))
                         vin = _swb_find(v, "vin") or _swb_find(v, "encryptedVin")
                         if m is not None:
