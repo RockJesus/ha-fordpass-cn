@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import re
 import time
@@ -300,6 +301,13 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # v3.7.18: 无条件创建（空时显示"未探测"，available 恒 True）——此前
     # 依赖 setup 时 cevs_diag 非空，前段探测中断即不创建，实体缺失难排查。
     sensors.append(FordPassCevsDiagSensor(coordinator))
+    # v3.7.24: 预约出发/充电业务传感器——探测到数据才创建
+    # （cevs_probe 非空 = 端点返回真实 200；非 cevs 车型/失败不创建）
+    cevs_probe = getattr(coordinator, "cevs_probe", {}) or {}
+    if cevs_probe.get("departuretimes"):
+        sensors.append(FordPassCevsDepartureSensor(coordinator))
+    if cevs_probe.get("chargelogs"):
+        sensors.append(FordPassCevsChargelogSensor(coordinator))
     # v3.4.6: 只读探测实体（OTA 新版本/详情、预约出发、充电日志）——探测
     # 到数据才创建，非能力车型/无数据不创建（全车型适配，0 unavailable）。
     _ep = coordinator.extra_probes
@@ -1628,6 +1636,86 @@ class FordPassSmartWallboxSensor(SensorEntity):
             else None
         )
         return attrs
+
+
+class FordPassCevsDepartureSensor(SensorEntity):
+    """预约出发状态传感器（v3.7.24，cevs 域）。
+
+    数据源 coordinator.cevs_probe["departuretimes"]（探测到数据才创建）：
+    isEnabled（On/Off）+ goTimesScheduleCloudData.calendarDaysList（日历
+    计划）+ syncStatus（同步状态）。非 cevs 车型/端点失败不创建。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-cevs-departure"
+        self._attr_name = "预约出发"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> str:
+        data = self.coordinator.cevs_probe.get("departuretimes") or {}
+        enabled = str(data.get("isEnabled", "")).lower() == "on"
+        return "已启用" if enabled else "未启用"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self.coordinator.cevs_probe.get("departuretimes") or {}
+        attr: dict = {}
+        cloud = data.get("goTimesScheduleCloudData") or {}
+        days = cloud.get("calendarDaysList") or []
+        attr["同步状态"] = data.get("syncStatus")
+        attr["计划条数"] = len(days)
+        attr["isEnabled"] = data.get("isEnabled")
+        if days:
+            attr["日历计划"] = json.dumps(days, ensure_ascii=False)
+        return attr
+
+
+class FordPassCevsChargelogSensor(SensorEntity):
+    """充电记录传感器（v3.7.24，cevs 域）。
+
+    数据源 coordinator.cevs_probe["chargelogs"]：chargeLogs 列表 + 下一条
+    充电时间 nextChrgTimestamp。非 cevs 车型/端点失败不创建。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:battery-charging"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-cevs-chargelogs"
+        self._attr_name = "充电记录"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> str:
+        data = self.coordinator.cevs_probe.get("chargelogs") or {}
+        logs = data.get("chargeLogs") or []
+        return f"{len(logs)} 条"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        data = self.coordinator.cevs_probe.get("chargelogs") or {}
+        logs = data.get("chargeLogs") or []
+        attr: dict = {
+            "记录条数": len(logs),
+            "下次充电时间": data.get("nextChrgTimestamp"),
+        }
+        if logs:
+            attr["最近记录"] = json.dumps(logs[-1] if logs else {}, ensure_ascii=False)
+        return attr
 
 
 class FordPassCevsDiagSensor(SensorEntity):

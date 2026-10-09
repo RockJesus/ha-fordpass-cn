@@ -1473,6 +1473,9 @@ class FordPassApi:
                 )
                 return
             self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
+            # v3.7.24: 成功响应存入 cevs_probe 供实体创建
+            if vname == "wbk_cevs_shared":
+                self.cevs_probe[name] = data
         else:
             self.cevs_diag[key] = "ok(empty)"
 
@@ -1771,9 +1774,14 @@ class FordPassApi:
         x_api 场景加密被服务器 cevs 场景解密报 bad key）。单变体
         wbk_cevs_shared（共享会话 IV），3 请求/次防福特云风控静默降级；
         结果写 api.cevs_diag（coordinator 引用同一对象，诊断传感器可读）。"""
+        # v3.7.24: 成功响应解析进 self.cevs_probe（预约出发/充电实体数据源）——
+        # departuretimes: isEnabled/goTimesScheduleCloudData/syncStatus；
+        # chargelogs: chargeLogs/nextChrgTimestamp；commandstatus 需 commandId
+        # 业务字段（非加密问题），不建实体。
         # v3.7.21: 整个自动探测独立 try——异常写入 cevs_diag["auto_error"]
         # （诊断传感器直接可读，不再被 coordinator debug 吞掉）；端点循环
         # 内每端点独立 try，一个端点失败不中断其余。
+        self.cevs_probe: dict[str, Any] = {}
         try:
             _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
             cevs_crypto = FordPassCrypto.get(scene="cevs")
