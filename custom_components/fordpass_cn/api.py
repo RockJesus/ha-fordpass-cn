@@ -1098,17 +1098,20 @@ class FordPassApi:
         q["encryptedVin"] = enc_vin
         q["xjw"] = xjw
         if method == "POST":
-            # v3.5.6: POST body 必须带 encryptedVin/xjw（日志实证 100502
-            # "encrypted vin should not be blank; xjw should not be null"）
-            # + 通用 clientType/appVersion（uservehicles 需要）；body 模板
-            # 含 "vin": None 时替换为明文 VIN（departuretimes/chargelogs）
+            # v3.5.7: POST body 只补 encryptedVin/xjw（所有端点都要）。
+            # clientType/appVersion 仅 uservehicles 接受（日志实证其余端点
+            # 报 Unrecognized field "clientType" 400）——由该端点 body 模板
+            # 显式提供，不通用补。body 模板含 "vin": None 时替换为明文
+            # VIN（departuretimes/chargelogs）。
             b = dict(body or {})
             b.setdefault("encryptedVin", enc_vin)
             b.setdefault("xjw", xjw)
-            b.setdefault("clientType", CLIENT_TYPE)
-            b.setdefault("appVersion", APP_VERSION)
             if b.get("vin") is None and "vin" in b:
                 b["vin"] = vin
+            if b.pop("__skip_encrypted_vin__", None):
+                # v3.5.7: OTARedDotStatusRequestDTO 不接受 encryptedVin
+                # （日志实证 Unrecognized field）——body 只留 xjw
+                b.pop("encryptedVin", None)
             data = await self._request("POST", path, body=b)
         else:
             data = await self._request("GET", path, query=q)
@@ -1436,7 +1439,7 @@ class FordPassApi:
             "sensor_shadow": (PATH_SENSOR_SHADOW, None, False),
             "video_file": (PATH_VIDEO_FILE, None, True),
             "messages_page": (PATH_MESSAGES_PAGE, None, False),
-            "ota_reddot": (PATH_OTA_REDDOT, None, True),
+            "ota_reddot": (PATH_OTA_REDDOT, {"__skip_encrypted_vin__": True}, True),
             # v3.5.1: 车辆级端点（search-vehicle-device-list 按车辆签名）
             "device_list": (PATH_DEVICE_LIST, None, True),
         }
@@ -1463,11 +1466,10 @@ class FordPassApi:
                     if signed:
                         data = await self._get_signed(path, vin, method=method, body=body)
                     elif method == "POST":
+                        # v3.5.7: 账号级 POST body 只补 encryptedVin/xjw
+                        # （share_list 报 Unrecognized field "clientType"；
+                        # 仅 uservehicles 的模板自带 clientType/appVersion）
                         b = dict(body or {})
-                        b.setdefault("clientType", CLIENT_TYPE)
-                        b.setdefault("appVersion", APP_VERSION)
-                        # 账号级 POST body 也需 encryptedVin/xjw
-                        # （share_list 错误消息明确给出）
                         enc_vin, xjw = await asyncio.to_thread(
                             lambda: self.crypto.encrypt_field(vin))
                         b.setdefault("encryptedVin", enc_vin)
