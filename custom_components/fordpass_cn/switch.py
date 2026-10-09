@@ -86,7 +86,84 @@ async def async_setup_entry(
         _ep = coordinator.extra_probes
         if isinstance(_ep, dict) and _ep.get("departuretimes"):
             switches.append(FordPassDepartureSwitch(coordinator))
+        # v3.7.2: 家充桩充电开关——smartwallbox 探测到绑定桩才创建
+        # （纯电/插混家充桩车型自动出现；开=charging/start、关=charging/stop）
+        if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
+            switches.append(FordPassWallboxChargeSwitch(coordinator))
     async_add_entities(switches)
+
+
+class FordPassWallboxChargeSwitch(SwitchEntity):
+    """家充桩充电开关（v3.7.2）——开=charging/start/v2、关=charging/stop/v2。
+
+    仅 smartwallbox 探测到绑定桩的车型创建（纯电/插混家充桩车型）；
+    wallboxId 从探测结果 wallbox_binding 提取默认桩。assumed_state：
+    按下即翻转，云端结果如实写入「家充桩充电状态」传感器（若存在）。
+    """
+
+    _attr_assumed_state = True
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-wallbox_charge"
+        self._attr_name = "家充桩充电"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+        self._state = False
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 不随福特云刷新失败而不可用
+
+    @property
+    def is_on(self) -> bool:
+        return self._state
+
+    def _wallbox_id(self) -> str | None:
+        """从探测结果取默认桩 id。"""
+        wb = self.coordinator.smartwallbox or {}
+        bind = wb.get("wallbox_binding")
+        data = bind.get("data") if isinstance(bind, dict) else None
+        if not isinstance(data, dict):
+            return None
+        for key in ("wallboxId", "defaultWallboxId", "id", "equipmentId"):
+            v = data.get(key)
+            if v:
+                return str(v)
+        lst = data.get("list") or data.get("wallboxList")
+        if isinstance(lst, list) and lst and isinstance(lst[0], dict):
+            for key in ("wallboxId", "id", "equipmentId", "serialNumber"):
+                v = lst[0].get(key)
+                if v:
+                    return str(v)
+        return None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        wid = self._wallbox_id()
+        if not wid:
+            self._state = False
+            self.async_write_ha_state()
+            return
+        try:
+            await self.coordinator.api.wallbox_charge_start(self.coordinator.vin, wid)
+            self._state = True
+        except Exception:  # noqa: BLE001 - 网关拒绝时如实提示
+            self._state = False
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        wid = self._wallbox_id()
+        if not wid:
+            self._state = False
+            self.async_write_ha_state()
+            return
+        try:
+            await self.coordinator.api.wallbox_charge_stop(self.coordinator.vin, wid)
+            self._state = False
+        except Exception:  # noqa: BLE001 - 网关拒绝时如实提示
+            self._state = True
+        self.async_write_ha_state()
 
 
 class FordPassDepartureSwitch(SwitchEntity):
