@@ -196,6 +196,34 @@ PATH_CHARGELOGS_RETRIEVE = "/api/cevs/v2/chargelogs/retrieve"
 # 家充桩充电过程日志（只读 GET，并入 smartwallbox 探测族 v3.4.6）
 PATH_SMARTWALLBOX_PROCESS_LOG = "/api/smartwallbox/processor/charging/records/process/log/v3"
 
+# ---- v3.5.0：APK 6.16.0 端点补全（全车型探测接入，2026-10-09 逆向） ----
+# 消息列表/标记已读（cnxapi-message）
+PATH_MESSAGES_PAGE = "/api/cnxapi-message/app/messages/page"
+PATH_MESSAGES_READ = "/api/cnxapi-message/app/messages/read"
+# OTA 红点（alert/v1/vehicle-reddot-status——首页 OTA 可用角标）
+PATH_OTA_REDDOT = "/api/alert/v1/vehicle-reddot-status"
+# 车辆在线状态（vds/v1/vehicles/onlinernr）
+PATH_ONLINENR = "/api/cnxapi-vds/v1/vehicles/onlinernr"
+# 3D 车型图（vds/v1/vehicle/search-3d-vehicle-model-url）
+PATH_3D_MODEL = "/api/cnxapi-vds/v1/vehicle/search-3d-vehicle-model-url"
+# 预约行程任务（pds/v1/search-schedule-departure-tasks）
+PATH_SCHEDULE_DEPARTURE = "/api/cnxapi-pds/v1/search-schedule-departure-tasks"
+# 预约充电启停/保存（cevs/v2/departuretimes）
+PATH_DEPARTURE_TOGGLE_ON = "/api/cevs/v2/departuretimes/toggleon"
+PATH_DEPARTURE_TOGGLE_OFF = "/api/cevs/v2/departuretimes/toggleoff"
+# 车辆设备档案（pds/v1/device）
+PATH_PDS_DEVICE = "/api/cnxapi-pds/v1/device"
+# 车辆用户授权状态（vds/v1/vehicles/search-vehicle-user-auth-status）
+PATH_USER_AUTH_STATUS = "/api/cnxapi-vds/v1/vehicles/search-vehicle-user-auth-status"
+# SRS 安全档案（cds/v1/vehicles/search-srs-profile）
+PATH_SRS_PROFILE = "/api/cnxapi-cds/v1/vehicles/search-srs-profile"
+# 传感器影子（cnjvsl-sensor-mapping/v2/sensor/shadow）
+PATH_SENSOR_SHADOW = "/api/cnjvsl-sensor-mapping/v2/sensor/shadow"
+# 行车记录仪视频（pds/v1 视频录制/查询）
+PATH_VIDEO_START = "/api/cnxapi-pds/v1/start-video-recording"
+PATH_VIDEO_STOP = "/api/cnxapi-pds/v1/stop-video-recording"
+PATH_VIDEO_FILE = "/api/cnxapi-pds/v1/search-video-file-url"
+
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
 #   1. GET  authorize            -> HTML form + cookies (x-ms-cpim-csrf) + x-request-id
