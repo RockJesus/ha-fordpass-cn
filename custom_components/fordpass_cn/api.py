@@ -98,6 +98,10 @@ from .const import (
     PATH_SMARTWALLBOX_CHARGE_STOP,
     PATH_SMARTWALLBOX_UNBIND,
     PATH_SMARTWALLBOX_AUTHORITY,
+    PATH_SMARTWALLBOX_CHG_STATUS_WB,
+    PATH_SMARTWALLBOX_CHG_WB,
+    PATH_SMARTWALLBOX_ORDERS,
+    PATH_SMARTWALLBOX_SHARING_QUERY,
     PATH_SMARTWALLBOX_CONFIG,
     PATH_SMARTWALLBOX_RECORDS,
     PATH_SRS_PROFILE,
@@ -1618,6 +1622,74 @@ class FordPassApi:
                 if data is not None:
                     result[name] = {"signed": signed, "raw": str(data)[:200]}
                     break
+        # v3.7.3: 桩级端点（分享列表/桩级充电状态/充电信息/充电订单）——
+        # 先尝试 GET；绑定桩探测有 wallboxId 时再补一次带 wallboxId 的
+        # POST（App 实际走 POST）。全部只读，无绑定车型不创建实体。
+        wb_bind = result.get("wallbox_binding", {})
+        wb_data = wb_bind.get("data") if isinstance(wb_bind, dict) else None
+        wb_id: str | None = None
+        if isinstance(wb_data, dict):
+            for key in ("wallboxId", "defaultWallboxId", "id", "equipmentId"):
+                if wb_data.get(key):
+                    wb_id = str(wb_data[key])
+                    break
+            if wb_id is None:
+                lst = wb_data.get("list") or wb_data.get("wallboxList")
+                if isinstance(lst, list) and lst and isinstance(lst[0], dict):
+                    for key in ("wallboxId", "id", "equipmentId", "serialNumber"):
+                        if lst[0].get(key):
+                            wb_id = str(lst[0][key])
+                            break
+        for name, path in (
+            ("wallbox_sharing_query", PATH_SMARTWALLBOX_SHARING_QUERY),
+            ("wallbox_charge_status", PATH_SMARTWALLBOX_CHG_STATUS_WB),
+            ("wallbox_charging", PATH_SMARTWALLBOX_CHG_WB),
+            ("wallbox_orders", PATH_SMARTWALLBOX_ORDERS),
+        ):
+            for signed in (True, False):
+                try:
+                    if signed:
+                        data = await self._get_signed(path, vin)
+                    else:
+                        data = await self._request("GET", path)
+                except Exception as exc:  # noqa: BLE001
+                    self._log.debug(
+                        "FordPass smartwallbox %s (signed=%s) failed: %s",
+                        name, signed, exc,
+                    )
+                    continue
+                if isinstance(data, dict):
+                    if "errorCode" in data or "error" in data:
+                        self._log.info(
+                            "FordPass smartwallbox %s -> (rejected: %s)",
+                            name, json.dumps(data, ensure_ascii=False)[:200],
+                        )
+                    else:
+                        result[name] = {"signed": signed, "data": data}
+                        self._log.info(
+                            "FordPass smartwallbox probe %s -> %s",
+                            name, json.dumps(data, ensure_ascii=False)[:800],
+                        )
+                    break
+                if data is not None:
+                    result[name] = {"signed": signed, "raw": str(data)[:200]}
+                    break
+            # 绑定桩 id 可用且 GET 未命中数据时，补一次带 wallboxId 的 POST
+            if wb_id and name not in result:
+                try:
+                    data = await self._request("POST", path, {"wallboxId": wb_id})
+                except Exception as exc:  # noqa: BLE001
+                    self._log.debug(
+                        "FordPass smartwallbox %s POST(wallboxId) failed: %s",
+                        name, exc,
+                    )
+                    continue
+                if isinstance(data, dict) and not ("errorCode" in data or "error" in data):
+                    result[name] = {"signed": False, "post_wallbox": True, "data": data}
+                    self._log.info(
+                        "FordPass smartwallbox probe %s POST(wallboxId) -> %s",
+                        name, json.dumps(data, ensure_ascii=False)[:800],
+                    )
         return result or None
 
     # ------------------------------------------------ v3.7.2 家充桩控制
