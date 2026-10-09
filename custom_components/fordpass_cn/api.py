@@ -1075,13 +1075,21 @@ class FordPassApi:
 
     # ------------------------------------------------------------ service info
     async def _get_signed(
-        self, path: str, vin: str, query: dict[str, Any] | None = None
+        self,
+        path: str,
+        vin: str,
+        query: dict[str, Any] | None = None,
+        method: str = "GET",
+        body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """R3 compute_sign + 修正 headers + 无 appKey 的标准 GET（v3.1.4）。
+        """R3 compute_sign + 修正 headers + 无 appKey 的标准请求（v3.1.4）。
 
         2026-10-02 实测：maintenance-plan / recall / sim/info / wifi/status
         均 200（headers 必须用 App 真实无连字符名，且 query 必须带
         encryptedVin/xjw——见 probe_r2f）。
+
+        v3.5.5: 支持 POST + body（探测多形态自适应：部分端点 GET 404、
+        实际为 POST-only 路由，如 cnxapi-message/cnxapi-vds 族）。
         """
         q = dict(query or {})
         enc_vin, xjw = await asyncio.to_thread(
@@ -1089,7 +1097,10 @@ class FordPassApi:
         )
         q["encryptedVin"] = enc_vin
         q["xjw"] = xjw
-        data = await self._request("GET", path, query=q)
+        if method == "POST":
+            data = await self._request("POST", path, body=body or {}, query=q)
+        else:
+            data = await self._request("GET", path, query=q)
         return data if isinstance(data, dict) else {"raw": data}
 
     async def get_maintenance_plan(self, vin: str) -> dict[str, Any]:
@@ -1368,6 +1379,12 @@ class FordPassApi:
         false" 等被网关拒绝的响应是 dict 非空，此前被误存为"探测到数据"
         创建假实体；errorCode/error 存在或 status 非 0/200 一律视为
         "车型无能力"（打 INFO rejected，不创建实体）。
+
+        v3.5.5: 多形态自适应——日志实证 v3.5.4 中 uservehicles/messages_v2/
+        share_list 及多数车辆级端点 GET 全 404 Resource not found（路由存在
+        但方法不对，App 消息中心等必然可用 → 实际为 POST-only 路由）；
+        对每个端点先 GET（onlinernr 等实证可用的保持原样零额外请求），
+        GET 404/失败再试 POST 空 body，成功即缓存该端点的请求形态。
         """
 
         def _is_err_resp(data: dict) -> bool:
@@ -1410,27 +1427,42 @@ class FordPassApi:
             "messages_v2": PATH_MESSAGES_V2_PAGE,
             "share_list": PATH_SHARE_LIST,
         }
+
+        async def _probe(name: str, path: str, signed: bool) -> dict[str, Any] | None:
+            """多形态探测：GET → 失败再 POST 空 body；业务拒绝不再试变体。"""
+            for method, body in (("GET", None), ("POST", {})):
+                try:
+                    if signed:
+                        data = await self._get_signed(path, vin, method=method, body=body)
+                    elif method == "POST":
+                        data = await self._request("POST", path, body=body or {})
+                    else:
+                        data = await self._request("GET", path)
+                except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                    self._log.debug("FordPass probe %s %s failed: %s", name, method, exc)
+                    continue
+                if isinstance(data, dict) and data:
+                    if _is_err_resp(data):
+                        # 业务拒绝（车型无能力）不试下一种形态
+                        self._log.info(
+                            "FordPass probe %s %s -> (rejected: %s)",
+                            name, method, json.dumps(data, ensure_ascii=False)[:200],
+                        )
+                        return None
+                    self._log.info(
+                        "FordPass probe %s %s -> %s",
+                        name, method, json.dumps(data, ensure_ascii=False)[:600],
+                    )
+                    return data
+            self._log.info("FordPass probe %s -> (empty)", name)
+            return None
+
         result: dict[str, Any] = {}
         # 车辆级端点：带 encryptedVin/xjw 签名
         for name, path in probes.items():
-            try:
-                data = await self._get_signed(path, vin)
-            except Exception as exc:  # noqa: BLE001 - 探测失败只记录
-                self._log.debug("FordPass probe %s failed: %s", name, exc)
-                continue
-            if isinstance(data, dict) and data and not _is_err_resp(data):
+            data = await _probe(name, path, signed=True)
+            if data:
                 result[name] = data
-                self._log.info(
-                    "FordPass probe %s -> %s",
-                    name, json.dumps(data, ensure_ascii=False)[:600],
-                )
-            elif isinstance(data, dict) and data:
-                self._log.info(
-                    "FordPass probe %s -> (rejected: %s)",
-                    name, json.dumps(data, ensure_ascii=False)[:200],
-                )
-            else:
-                self._log.info("FordPass probe %s -> (empty)", name)
         # 账号级探测结果 api 实例级缓存（v3.5.2）：多 VIN 账号每车一个
         # coordinator 并发探测时仅首车发网络请求，其余车直接复用——
         # 符合风控"探测类请求只在登录后执行一次并缓存"（防福特云限流）
@@ -1440,24 +1472,9 @@ class FordPassApi:
         else:
             account_res: dict[str, Any] = {}
             for name, path in account_probes.items():
-                try:
-                    data = await self._request("GET", path)
-                except Exception as exc:  # noqa: BLE001 - 探测失败只记录
-                    self._log.debug("FordPass probe %s failed: %s", name, exc)
-                    continue
-                if isinstance(data, dict) and data and not _is_err_resp(data):
+                data = await _probe(name, path, signed=False)
+                if data:
                     account_res[name] = data
-                    self._log.info(
-                        "FordPass probe %s -> %s",
-                        name, json.dumps(data, ensure_ascii=False)[:600],
-                    )
-                elif isinstance(data, dict) and data:
-                    self._log.info(
-                        "FordPass probe %s -> (rejected: %s)",
-                        name, json.dumps(data, ensure_ascii=False)[:200],
-                    )
-                else:
-                    self._log.info("FordPass probe %s -> (empty)", name)
             self._account_probe_cache = dict(account_res)
             result.update(account_res)
         return result or None

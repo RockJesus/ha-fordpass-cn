@@ -1646,11 +1646,18 @@ class FordPassProbeSensor(SensorEntity):
                 return "暂无充电日志"
             # ---- v3.5.0: APK 6.16.0 补全端点（探测数据驱动，全车型适配）----
             if self._kind == "online":
+                # v3.5.5: onlinernr 响应含 data.rnrStatusDesc/rnrStatusCode
+                # （"已通过"= 车辆在线可达）——优先取该字段，无则回退 status
+                rnr = (_swb_find(data, "rnrStatusDesc")
+                       or _swb_find(data, "rnrStatusCode"))
+                if rnr is not None:
+                    return {"2": "在线", "1": "离线", "0": "未知"}.get(
+                        str(rnr), str(rnr))
                 st = (_swb_find(data, "onLineState") or _swb_find(data, "online")
                       or _swb_find(data, "status"))
                 if st is not None:
                     if str(st) == "200":
-                        return "在线"  # v3.5.4: onlinernr 响应仅 status:200 = 车辆在线可达
+                        return "在线"  # v3.5.4: 响应仅 status:200 = 车辆在线可达
                     return {"1": "在线", "0": "离线", "true": "在线", "false": "离线",
                             "ONLINE": "在线", "OFFLINE": "离线"}.get(str(st), str(st))
                 return "未知"
