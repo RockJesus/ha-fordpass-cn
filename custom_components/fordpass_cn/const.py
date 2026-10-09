@@ -224,6 +224,16 @@ PATH_VIDEO_START = "/api/cnxapi-pds/v1/start-video-recording"
 PATH_VIDEO_STOP = "/api/cnxapi-pds/v1/stop-video-recording"
 PATH_VIDEO_FILE = "/api/cnxapi-pds/v1/search-video-file-url"
 
+# v3.5.1: 账号级只读端点补全（全车型/多账号适配）
+# 用户完整车辆清单（vds/v5/uservehicles——含每车 featureData 能力位图，全车型适配基石）
+PATH_USER_VEHICLES = "/api/cnxapi-vds/v5/uservehicles"
+# 消息中心 v2（APK 6.16.0 主用版本）
+PATH_MESSAGES_V2_PAGE = "/api/cnxapi-message/app/messages/v2/page"
+# 车辆共享列表（cnesl-user 只读——他人授权访问状态）
+PATH_SHARE_LIST = "/api/cnesl-user/v1/search-vehicle-share-list"
+# 车辆设备列表（vds/v1/search-vehicle-device-list）
+PATH_DEVICE_LIST = "/api/cnxapi-vds/v1/search-vehicle-device-list"
+
 # Username/password (B2C) login — recovered from the official app capture
 # (2026-09-29). Azure AD B2C four-step flow:
 #   1. GET  authorize            -> HTML form + cookies (x-ms-cpim-csrf) + x-request-id
