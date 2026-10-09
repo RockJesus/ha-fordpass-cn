@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.23**：**cevs 字段名回退**——DTO 反序列化错误实证三端点必填字段为 `vin`（v3.7.22 的 encryptedVin 报 Unrecognized field / Missing required creator property 'vin'，`CommandStatusV2Request` 类名暴露）；恢复 vin 字段并保持 cevs 场景密钥密文；版本号十进制 +1（3.7.22→3.7.23）
 - **v3.7.22**：**cevs body 字段修复**——whitebox cevs 场景密钥已解出 vin（v3.7.20），commandstatus 解密成功但仍报缺字段；按 vcs 域通用字段名将 body 改 `encryptedVin`+`xjw`（原 "vin" 字段未被 DTO 识别）；修复 wbk helper 内 `_is_err_resp` NameError（嵌套函数引用）；版本号十进制 +1（3.7.21→3.7.22）
 - **v3.7.21**：cevs 自动探测异常暴露——整体与每端点独立 try，错误写入诊断传感器 `auto_error`/`enc_err`（此前被 debug 吞掉无从排查）；版本号十进制 +1（3.7.20→3.7.21）
 - **v3.7.20**：**cevs 白盒场景专用密钥**——whitebox_keys_for_prod.json 含独立 `cevs` 场景（此前用 x_api 场景加密被服务器 cevs 场景解密报 bad key）；自动探测与 service 的 wbk_cevs_* 变体改用 `FordPassCrypto.get(scene="cevs")`；版本号十进制 +1（3.7.19→3.7.20）
