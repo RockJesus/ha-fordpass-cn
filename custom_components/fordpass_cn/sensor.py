@@ -1649,6 +1649,8 @@ class FordPassProbeSensor(SensorEntity):
                 st = (_swb_find(data, "onLineState") or _swb_find(data, "online")
                       or _swb_find(data, "status"))
                 if st is not None:
+                    if str(st) == "200":
+                        return "在线"  # v3.5.4: onlinernr 响应仅 status:200 = 车辆在线可达
                     return {"1": "在线", "0": "离线", "true": "在线", "false": "离线",
                             "ONLINE": "在线", "OFFLINE": "离线"}.get(str(st), str(st))
                 return "未知"
