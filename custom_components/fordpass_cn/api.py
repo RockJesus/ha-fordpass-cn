@@ -1778,18 +1778,19 @@ class FordPassApi:
             _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
             cevs_crypto = FordPassCrypto.get(scene="cevs")
             for name, path, body in (
-                ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"encryptedVin": None}),
-                ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"encryptedVin": None, "xjw": xjw_now}),
-                ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"encryptedVin": None}),
+                ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
+                ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
+                ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
             ):
                 try:
                     b = dict(body)
                     enc, xjw2 = await asyncio.to_thread(
                         lambda: cevs_crypto.encrypt_field(vin, bytes.fromhex(xjw_now)),
                     )
-                    # v3.7.22: cevs/vcs 域字段名为 encryptedVin（vcs 通用）；
-                    # 此前用 "vin" 报 Arguments not valid or missing
-                    b["encryptedVin"] = enc
+                    # v3.7.23: DTO 反序列化错误实证——三端点必填字段均为 "vin"
+                    # （v3.7.22 encryptedVin 报 Unrecognized field/Missing vin；
+                    # CommandStatusV2Request 类名暴露）。cevs 场景密文+vin。
+                    b["vin"] = enc
                     b["xjw"] = xjw2
                     await self._probe_cevs_variant_wbk(name, path, b, "wbk_cevs_shared")
                 except Exception as exc:  # noqa: BLE001
