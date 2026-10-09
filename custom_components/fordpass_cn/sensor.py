@@ -190,8 +190,12 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         FordPassSensor(coordinator, "remote_start_time", "远程启动时间", None, None, "mdi:clock-start",
                        ["remoteStart", "remoteStartTime"], transform=_remote_start_time),
         FordPassAutoOffSensor(coordinator),
-        FordPassSensor(coordinator, "authorization", "授权状态", None, None, "mdi:shield-check", ["authorization"],
-                       enum_map={"AUTHORIZED": "已授权", "UNAUTHORIZED": "未授权", "EXPIRED": "已过期"}),
+        # v3.6.10: 移除 authorization（vehicle-status 授权状态）——与
+        # user_auth「车辆用户授权状态」语义重复（两实体都显示授权状态），
+        # 保留 user_auth（authorizationStatus+role+ownerMobile 信息更全）。
+        # 旧条目由 setup 清理段自动 async_remove。
+        # FordPassSensor(coordinator, "authorization", "授权状态", None, None, "mdi:shield-check", ["authorization"],
+        #                enum_map={"AUTHORIZED": "已授权", "UNAUTHORIZED": "未授权", "EXPIRED": "已过期"}),
         FordPassSensor(coordinator, "crcc_flag", "远程控车功能", None, None, "mdi:remote", ["crccFlag"],
                        enum_map={"ON": "已开启", "OFF": "已关闭"}),
         FordPassSensor(coordinator, "life_cycle_mode", "电池生命周期模式", None, None, "mdi:car-battery", ["lifeCycMode"],
