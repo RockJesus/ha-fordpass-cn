@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.8**：**cevs 域 RSA 公钥修正**——APK assets 逆向发现 `rsa_public_key_for_cnesl_prod.txt`（CNESL/VCS 新能源服务 4096 位公钥，与 libapp.so 2048 位公钥不同）；预约出发/充电（cevs）探测改用该公钥加密 VIN；版本号十进制 +1（3.7.7→3.7.8）
 - **v3.7.7**：**修复 v3.7.6 发布漏推 coordinator.py 导致的实体不可用**（线上 tag 的 coordinator.py 为旧版、与新版 sensor.py 不一致 → sensor 平台 setup 报 `FordPassCoordinator has no attribute cevs_diag` → 64 实体 unavailable）；补充发布文件清单重发；版本号十进制 +1（3.7.6→3.7.7）
 - **v3.7.6**：**新增「预约出发/充电探测诊断」传感器**——cevs 域三端点（departuretimes/chargelogs/commandstatus）RSA 探测结果暴露为传感器状态与属性（ok/rejected/failed+错误摘要），HA 侧可直接读取探测成败，无需导出日志；版本号十进制 +1（3.7.5→3.7.6）
 - **v3.7.5**：**预约出发/充电（cevs 域）raw_body 裸发修正**——v3.7.4 部署日志实证 RSA 密文 vin 已通过 modulus 校验（Impossible modulus 根除），cevs DTO 报 `Unrecognized field "timestamp"`（不接受外层签名）/ `Missing required creator property 'xjw'`；新增 `_request(raw_body=True)` 裸发通道（body 不加 timestamp/sign），departuretimes/commandstatus 裸发 RSA vin、chargelogs 补同会话 xjw；探测命中后自动创建预约/充电实体；版本号十进制 +1（3.7.4→3.7.5）
