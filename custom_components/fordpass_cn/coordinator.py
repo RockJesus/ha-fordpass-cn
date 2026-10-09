@@ -82,6 +82,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.smartwallbox: dict[str, Any] | None = None
         # v3.4.6: 只读探测结果（OTA 详情/预约出发/充电日志等，None=无数据）
         self.extra_probes: dict[str, Any] | None = None
+        # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
+        # 直接读取——不再依赖导出日志即可从 HA 侧确认探测成败）
+        self.cevs_diag: dict[str, str] = {}
         # v3.4.1: 慢变数据 TTL 缓存（key -> (expire_monotonic, data)）——
         # 防止福特云限流：只有 vehicle-status 每轮拉取，其余按 TTL 命中
         # 直接复用上次数据，不发请求；请求失败保留旧缓存（最后已知状态）。
@@ -133,6 +136,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
+        # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
+        # 直接读取——不再依赖导出日志即可从 HA 侧确认探测成败）
+        self.cevs_diag = dict(getattr(self.api, "cevs_diag", {}) or {})
         # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + 24h TTL
         # 缓存（探测类请求绝不进入常规轮询，防福特云限流）；探测结果供
         # sensor 按"探测到数据才创建"接入。失败/非家充桩车型保持 None。
