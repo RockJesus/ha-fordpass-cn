@@ -319,7 +319,11 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("mcm_messages_v3", "消息中心", "mcm_messages"),
             ("user_reddot", "红点状态", "user_reddot"),
         ):
-            if _ep.get(_k):
+            # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
+            # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
+            # 「车辆清单」传感器据此创建。
+            if _ep.get(_k) or (_k == "uservehicles"
+                               and getattr(coordinator, "vehicles_list", None)):
                 sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
     # v3.1.7: 空调滤芯状态（AAR 能力车型；无 airFilter 字段的车型不创建，
     # 保证其他用户登录各自车型时不出现不支持的实体）
