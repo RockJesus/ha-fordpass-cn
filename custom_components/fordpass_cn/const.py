@@ -240,6 +240,19 @@ PATH_SCHEDULE_DEPARTURE = "/api/cnxapi-pds/v1/search-schedule-departure-tasks"
 # 预约充电启停/保存（cevs/v2/departuretimes）
 PATH_DEPARTURE_TOGGLE_ON = "/api/cevs/v2/departuretimes/toggleon"
 PATH_DEPARTURE_TOGGLE_OFF = "/api/cevs/v2/departuretimes/toggleoff"
+# v3.7.4: cevs 域命令状态查询（只读，APK 6.16.0 逆向）——
+#   commandstatus/retrieve 检索预约/充电命令执行状态
+PATH_CEVS_COMMAND_STATUS = "/api/cevs/v2/commandstatus/retrieve"
+
+# v3.7.4: cevs 域 RSA 加密候选公钥（App encryptByRSA 用公钥加密敏感字段后
+# POST；集成原白盒 AES 密文被服务器 RSA 解密失败 → Impossible modulus）。
+# 公钥取自 APK libapp.so 字符串表 2088-2089 行（完整 2048-bit PKCS#8
+# SPKI，MIIBI 开头——与 App encryptByRSA 调用一致）。字符串表其余两处
+# "-----BEGIN PUBLIC KEY-----"（19274/22157 行）base64 被截断无法拼出
+# 完整 DER，不臆造；若 k1 命中失败，需 HAR 或重逆向确认第二候选。
+CEVS_RSA_PUBKEYS = [
+    "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv1XJU2JkRL0yvJoIwqpQ5ycYRi/2GsIgunOsz1Y+qDhYN/u+YQrWJj8iu6DypF1iDe9Lgtp62koR7mODtMjzRDzK1PzZFNMfHS+aD+VegMWfm834fS/wSNMP9J7DYx05TT5e3+lcmxBOF86euJqDBZsPhX5P1hNimRa97S4cVA1G9iw2ZY6YLU1nbBpPiG1V97TLbATqRKx6yXNmGcZwrE0sIXS62PTO24/9y6H0Jiq5EJcshXlvAHIl3usoPSmSBJWiE7acdOqWuiAiwaI/PnaXSgbtg1LErWJhT9Nv5R84DFiAlLJz7Hg7MRuQ2XO6pPEH5QiFb7tMqzU9WSGsuQIDAQAB\n-----END PUBLIC KEY-----",
+]
 # 车辆设备档案（pds/v1/device）
 PATH_PDS_DEVICE = "/api/cnxapi-pds/v1/device"
 # 车辆用户授权状态（vds/v1/vehicles/search-vehicle-user-auth-status）

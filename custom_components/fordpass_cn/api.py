@@ -60,6 +60,8 @@ from .const import (
     PATH_COMMAND_STATUS,
     PATH_CRCC_PROFILE,
     PATH_CVFEATURES,
+    PATH_CEVS_COMMAND_STATUS,
+    CEVS_RSA_PUBKEYS,
     PATH_DEPARTURE_TIMES_RETRIEVE,
     PATH_DEPARTURE_TOGGLE_OFF,
     PATH_DEPARTURE_TOGGLE_ON,
@@ -1398,6 +1400,22 @@ class FordPassApi:
         self._log.debug("FordPass whitelist probe unexpected 2xx (no whitelist)")
         return None
 
+    @staticmethod
+    def _rsa_encrypt_cevs(text: str, pubkey_pem: str) -> str:
+        """RSA/ECB/PKCS1v15 加密（v3.7.4，cevs 域）。
+
+        福特派 App 的 encryptByRSA 用 RSA 公钥加密敏感字段后放进
+        cevs 请求体（集成原白盒 AES 密文被服务器 RSA 解密失败 →
+        Impossible modulus）。cryptography 为 HA Core 自带依赖，
+        无需新增 requirements。
+        """
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives import serialization
+
+        pub = serialization.load_pem_public_key(pubkey_pem.encode("utf-8"))
+        ct = pub.encrypt(text.encode("utf-8"), padding.PKCS1v15())
+        return base64.b64encode(ct).decode("ascii")
+
     async def probe_extra_endpoints(self, vin: str) -> dict[str, Any] | None:
         """探测只读 GET 端点响应并返回结果供实体创建（v3.4.6）。
 
@@ -1545,6 +1563,39 @@ class FordPassApi:
                     account_res[name] = data
             self._account_probe_cache = dict(account_res)
             result.update(account_res)
+        # v3.7.4: cevs 域 RSA 探测变体——原白盒 AES 密文/明文 vin 均被服务器
+        # RSA 解密失败（Impossible modulus）。App 用 encryptByRSA + 公钥加密
+        # 敏感字段，此处用 3 个候选公钥逐个尝试 body={"vin": RSA密文}（只读
+        # 端点：departuretimes/chargelogs/commandstatus）。成功即缓存该组合，
+        # 供实体"探测到数据才创建"接入；失败仅日志，不创建、不进轮询。
+        for name, path in (
+            ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE),
+            ("chargelogs", PATH_CHARGELOGS_RETRIEVE),
+            ("cevs_command_status", PATH_CEVS_COMMAND_STATUS),
+        ):
+            for idx, pem in enumerate(CEVS_RSA_PUBKEYS):
+                try:
+                    rsa_ct = await asyncio.to_thread(
+                        self._rsa_encrypt_cevs, vin, pem,
+                    )
+                    data = await self._request("POST", path, {"vin": rsa_ct})
+                except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                    self._log.debug(
+                        "FordPass probe %s rsa_k%d failed: %s", name, idx + 1, exc,
+                    )
+                    continue
+                if isinstance(data, dict) and data:
+                    if _is_err_resp(data):
+                        self._log.info(
+                            "FordPass probe %s rsa_k%d -> (rejected: %s)",
+                            name, idx + 1, json.dumps(data, ensure_ascii=False)[:200],
+                        )
+                        continue
+                    result[f"{name}_rsa_k{idx + 1}"] = data
+                    self._log.info(
+                        "FordPass probe %s rsa_k%d -> %s",
+                        name, idx + 1, json.dumps(data, ensure_ascii=False)[:600],
+                    )
         return result or None
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
