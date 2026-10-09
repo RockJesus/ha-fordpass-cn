@@ -190,6 +190,16 @@ PATH_SMARTWALLBOX_CHARGE_START = "/api/smartwallbox/processor/charging/start/v2"
 PATH_SMARTWALLBOX_CHARGE_STOP = "/api/smartwallbox/processor/charging/stop/v2"
 PATH_SMARTWALLBOX_UNBIND = "/api/smartwallbox/processor/binding/unbind/v2"
 PATH_SMARTWALLBOX_AUTHORITY = "/api/smartwallbox/processor/authority/query/v3"
+# v3.7.3: 家充桩分享/桩级状态/充电订单（6.16.0 APK 逆向）——仅家充桩车型
+#   探测到绑定桩后才尝试带 wallboxId 的 POST 探测，无绑定车型不创建：
+#   sharing/query/v3                 桩分享列表（只读）
+#   charging/status/wallbox          桩级充电状态（wallboxId 路径占位）
+#   charging/wallbox                 桩充电信息
+#   charging-center/v2/wallbox/orders  家充桩充电订单
+PATH_SMARTWALLBOX_SHARING_QUERY = "/api/smartwallbox/processor/sharing/query/v3"
+PATH_SMARTWALLBOX_CHG_STATUS_WB = "/api/smartwallbox/processor/charging/status/wallbox"
+PATH_SMARTWALLBOX_CHG_WB = "/api/smartwallbox/processor/charging/wallbox"
+PATH_SMARTWALLBOX_ORDERS = "/api/charging-center/v2/wallbox/orders"
 
 # v3.7.2: 车辆授权管理（vds/v1/vehicles/vehicle-user-auth 查询授权列表）与
 # 公共充电探测（纯电/插混车型专属，数据驱动创建，锐际纯油探测无数据不创建）：

@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.3**：**家充桩扩展（全车型适配）**——新增「家充桩分享列表」（sharing/query/v3）、「家充桩充电状态(桩级)」（charging/status/wallbox）、「家充桩充电信息」（charging/wallbox）、「家充桩充电订单」（charging-center/wallbox/orders）4 个传感器；探测到绑定桩后自动带 wallboxId 补测桩级 POST，无绑定车型不创建；版本号十进制 +1（3.7.2→3.7.3）
 - **v3.7.2**：**接入待开发清单（全车型适配）**——①**家充桩控制**：新增「家充桩充电」开关（charging/start-stop/v2，smartwallbox 探测到绑定桩的车型创建）+「解绑家充桩」按钮（binding/unbind/v2）；②**车辆授权管理**：新增「车辆授权列表」传感器（vehicle-user-auth 查询，探测到数据创建）；③**公共充电探测（纯电/插混专属）**：新增「公共充电站」「充电订单」「充电站地图」传感器（EVSS/vpoi 探测，锐际纯油无数据不创建）；④家充桩授权查询加入探测摘要；版本号十进制 +1（3.7.1→3.7.2）
 - **v3.7.1**：**接入保养历史（账号认证车主）**——v3.3.7 起探测的 `maintenance-history` 端点此前因账号非车主被网关业务拒绝（`User not vehicle owner`）无数据不创建；账号认证车主后探测有数据即创建「保养历史」传感器（通用解析：记录条数+最近一条日期/项目摘要，真实结构从 probe 日志精解析下版对齐）；顺带修复 device_list 分支同款 `dict.fromkeys` 切片坑；版本号十进制 +1（3.7.0→3.7.1）
 - **v3.7.0**：**去重授权状态实体**——「授权状态」（vehicle-status authorization）与「车辆用户授权状态」（user_auth 探测端点）语义重复，移除前者保留后者（信息更全：authorizationStatus+role+ownerMobile）；旧条目由 setup 清理段自动移除；版本号十进制进位（3.6.9→3.7.0，段内 10 两位数不合规）
