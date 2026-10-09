@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.9**：**cevs 域加密链变体探测**——APK assets 发现 CNESL/VCS 4096 位公钥（v3.7.8 已换，仍 bad key → 公钥非关键）；v3.7.9 探测枚举 4 种加密变体（纯 VIN / JSON{"vin"} / JSON{"vin","xjw"} / AES-ECB(vin,key=xjw)），诊断传感器自读区分服务器解密层真实行为，命中变体即确定 cevs 请求加密形态；版本号十进制 +1（3.7.8→3.7.9）
 - **v3.7.8**：**cevs 域 RSA 公钥修正**——APK assets 逆向发现 `rsa_public_key_for_cnesl_prod.txt`（CNESL/VCS 新能源服务 4096 位公钥，与 libapp.so 2048 位公钥不同）；预约出发/充电（cevs）探测改用该公钥加密 VIN；版本号十进制 +1（3.7.7→3.7.8）
 - **v3.7.7**：**修复 v3.7.6 发布漏推 coordinator.py 导致的实体不可用**（线上 tag 的 coordinator.py 为旧版、与新版 sensor.py 不一致 → sensor 平台 setup 报 `FordPassCoordinator has no attribute cevs_diag` → 64 实体 unavailable）；补充发布文件清单重发；版本号十进制 +1（3.7.6→3.7.7）
 - **v3.7.6**：**新增「预约出发/充电探测诊断」传感器**——cevs 域三端点（departuretimes/chargelogs/commandstatus）RSA 探测结果暴露为传感器状态与属性（ok/rejected/failed+错误摘要），HA 侧可直接读取探测成败，无需导出日志；版本号十进制 +1（3.7.5→3.7.6）
