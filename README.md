@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.7.14**：**cevs 三公钥 × 双 payload 矩阵**——k1=libapp.so 2048（raw_body 形态首次测）、k2=feed_back 2048（未测）、k3=cnesl 4096（对照）；payload=RSA(VIN) / RSA(VIN+xjw)；三端点 body 统一补 xjw；vname 按公钥一对一触发（3 请求/次防风控）；版本号十进制 +1（3.7.13→3.7.14）
 - **v3.7.13**：**cevs 明文变体探测**——4 种 RSA 变体（plain/JSON/JSON+xjw/AES-ECB）结果全同（departuretimes/commandstatus 缺字段、chargelogs 公钥错）；新增明文变体 plaintext/plaintext_xjw（raw_body 裸发明文 VIN，此前明文报 Impossible modulus 是带外层签名版本）；版本号十进制 +1（3.7.12→3.7.13）
 - **v3.7.12**：**services.yaml 补齐**——probe_cevs_variant 服务缺 services.yaml 致 HA 报 `Failed to load services.yaml`、服务未真正注册（v3.7.10/11 调用 200 但 handler 未执行）；补齐服务描述文件；版本号十进制 +1（3.7.11→3.7.12）
 - **v3.7.11**：**诊断同步修复**——coordinator.cevs_diag 由拷贝改为直接引用 api 对象，probe_cevs_variant 服务写入后诊断传感器立即可见（v3.7.10 service 已触发但 sensor 不更新）；版本号十进制 +1（3.7.10→3.7.11）
