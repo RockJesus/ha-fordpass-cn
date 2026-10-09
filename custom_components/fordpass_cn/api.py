@@ -1426,6 +1426,73 @@ class FordPassApi:
         ct = pub.encrypt(payload, padding.PKCS1v15())
         return base64.b64encode(ct).decode("ascii")
 
+    @staticmethod
+    def _cevs_variant_payloads(vin: str, xjw: str) -> list[tuple[str, bytes]]:
+        """cevs 加密链变体 payload（v3.7.9/3.7.10）。"""
+        variants: list[tuple[str, bytes]] = [
+            ("plain", vin.encode("utf-8")),
+            ("json_vin", json.dumps({"vin": vin}, separators=(",", ":")).encode("utf-8")),
+            ("json_vin_xjw", json.dumps({"vin": vin, "xjw": xjw}, separators=(",", ":")).encode("utf-8")),
+        ]
+        try:
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+            xjw_bytes = bytes.fromhex(xjw)
+            pad = 16 - (len(vin.encode("utf-8")) % 16)
+            plain_aes = vin.encode("utf-8") + bytes([pad]) * pad
+            ct_aes = Cipher(algorithms.AES(xjw_bytes), modes.ECB()).encryptor().update(plain_aes)
+            variants.append(("aes_ecb", ct_aes))
+        except Exception:
+            pass
+        return variants
+
+    async def _probe_cevs_variant_once(
+        self, name: str, path: str, body: dict, vname: str, payload: bytes,
+        pem: str,
+    ) -> None:
+        """对单个端点单个变体发一次探测，结果写 cevs_diag（诊断自读）。"""
+        key = f"{name}_rsa_{vname}"
+        try:
+            rsa_ct = await asyncio.to_thread(self._rsa_encrypt_cevs, payload, pem)
+            b = dict(body)
+            b["vin"] = rsa_ct
+            data = await self._request("POST", path, b, raw_body=True)
+        except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+            self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
+            self._log.debug("FordPass probe %s rsa_%s failed: %s", name, vname, exc)
+            return
+        if isinstance(data, dict) and data:
+            if _is_err_resp(data):
+                self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
+                self._log.info(
+                    "FordPass probe %s rsa_%s -> (rejected: %s)",
+                    name, vname, json.dumps(data, ensure_ascii=False)[:200],
+                )
+                return
+            self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
+            self._log.info(
+                "FordPass probe %s rsa_%s -> %s",
+                name, vname, json.dumps(data, ensure_ascii=False)[:600],
+            )
+        else:
+            self.cevs_diag[key] = "ok(empty)"
+
+    async def probe_cevs_variant(self, vin: str, vname: str) -> None:
+        """手动触发 cevs 指定变体探测（service 调用，3 请求/次，防风控降级）。"""
+        _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
+        if vname not in payloads:
+            self.cevs_diag[f"variant_error"] = f"unknown variant {vname}"
+            return
+        for name, path, body in (
+            ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
+            ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
+            ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
+        ):
+            for pem in CEVS_RSA_PUBKEYS:
+                await self._probe_cevs_variant_once(
+                    name, path, body, vname, payloads[vname], pem,
+                )
+
     async def probe_extra_endpoints(self, vin: str) -> dict[str, Any] | None:
         """探测只读 GET 端点响应并返回结果供实体创建（v3.4.6）。
 
@@ -1580,63 +1647,20 @@ class FordPassApi:
         # chargelogs 报 Missing required creator property 'xjw' → 补 xjw
         # （与 encrypt_field 同会话 IV）。失败仅日志，不创建、不进轮询。
         _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-        # v3.7.9: 加密链变体枚举——k1 纯 VIN；k2 JSON{"vin"}；k3 JSON{"vin","xjw"}；
-        # k4 AES-ECB(vin,key=xjw)。服务器解密层行为由诊断传感器自读区分，
-        # 命中变体即持久化为该端点加密形态（实体创建前）。
-        variants = (
-            ("plain", vin.encode("utf-8")),
-            ("json_vin", json.dumps({"vin": vin}, separators=(",", ":")).encode("utf-8")),
-            ("json_vin_xjw", json.dumps({"vin": vin, "xjw": xjw_now}, separators=(",", ":")).encode("utf-8")),
-        )
-        try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-            xjw_bytes = bytes.fromhex(xjw_now)
-            pad = 16 - (len(vin.encode("utf-8")) % 16)
-            plain_aes = vin.encode("utf-8") + bytes([pad]) * pad
-            ct_aes = Cipher(algorithms.AES(xjw_bytes), modes.ECB()).encryptor().update(plain_aes)
-            variants += (("aes_ecb", ct_aes),)
-        except Exception:
-            pass  # AES 变体失败不影响其余
+        # v3.7.10: 单变体（plain）基线探测——v3.7.9 一次发 12 请求（3 端点×
+        # 4 变体）被福特云风控静默降级（全部 200+空 body），故初始只发 1 变体；
+        # 其余变体用 fordpass_cn.probe_cevs_variant service 人工逐个触发
+        # （每次 3 请求，诊断传感器自读区分解密层行为）。
+        payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
         for name, path, body in (
             ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
             ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
             ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
-            for idx, (vname, payload) in enumerate(variants):
-                for pem in CEVS_RSA_PUBKEYS:
-                    try:
-                        rsa_ct = await asyncio.to_thread(
-                            self._rsa_encrypt_cevs, payload, pem,
-                        )
-                        b = dict(body)
-                        b["vin"] = rsa_ct
-                        data = await self._request(
-                            "POST", path, b, raw_body=True,
-                        )
-                        key = f"{name}_rsa_{vname}"
-                    except Exception as exc:  # noqa: BLE001 - 探测失败只记录
-                        key = f"{name}_rsa_{vname}"
-                        self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
-                        self._log.debug(
-                            "FordPass probe %s rsa_%s failed: %s", name, vname, exc,
-                        )
-                        continue
-                if isinstance(data, dict) and data:
-                    if _is_err_resp(data):
-                        self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
-                        self._log.info(
-                            "FordPass probe %s rsa_%s -> (rejected: %s)",
-                            name, idx + 1, json.dumps(data, ensure_ascii=False)[:200],
-                        )
-                        continue
-                    result[key] = data
-                    self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
-                    self._log.info(
-                        "FordPass probe %s rsa_%s -> %s",
-                        name, vname, json.dumps(data, ensure_ascii=False)[:600],
-                    )
-                else:
-                    self.cevs_diag[key] = "ok(empty)"
+            for pem in CEVS_RSA_PUBKEYS:
+                await self._probe_cevs_variant_once(
+                    name, path, body, "plain", payloads["plain"], pem,
+                )
         return result or None
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
