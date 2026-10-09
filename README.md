@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.6.3**：**车辆清单创建条件修复**——v3.6.2 只修了值解析回退（uservehicles probe 被注册端点拒绝不存 _ep），但创建条件仍 `if _ep.get("uservehicles")` 恒不成立 → 「车辆清单」实体未创建；现创建条件改为 `uservehicles 且 coordinator.vehicles_list 有值` 即创建（v5/vehicles/list 登录已验证，恒有值）；版本号十进制 +1（3.6.2→3.6.3）
 
 - **v3.6.2**：**待开发清单补全（第 4 批账号级/车辆级端点）**——①**车辆清单修复**：`uservehicles` 实为车辆注册端点（"Vehicle already registered"），清单改以 `v5/vehicles/list`（登录已验证 live）为准——`coordinator.vehicles_list` 共享给每车，「车辆清单」传感器显示账号下全部车辆（型号/尾号）；②**消息中心**：新增 mcm 域 `messagecenter/v3/user/messages` 探测（GET→POST 自适应），探测到数据创建「消息中心」传感器（读取最新消息主题）；③**用户级红点**：新增 `cnesl-user/v1/reddot-status` 账号级探测（替代 alert 域缺字段红点），创建「红点状态」传感器；④**传感器影子**开启 POST 形态探测（原仅 GET 404）；⑤**departuretimes/chargelogs 加密修复尝试**：body 加 `__skip_encrypted_vin__`（cevs 域 DTO 仅收明文 vin+xjw，不再补 encryptedVin——此前 `Impossible modulus` 疑似为多余加密字段触发服务端 RSA 校验失败）；尾门自动开闭/远程关窗在 APK strings 中无独立命令（仅能力位图 PaakTrunkOpenClose/UI 方法），待用户抓包 HAR 校准后接入；版本号十进制 +1（3.6.1→3.6.2）
 - **v3.6.1**：**清理逻辑加调试日志**——v3.6.0 的残留实体删除已根治双后轮（手动移除 registry 后过滤生效、不再重建），本版为 setup 清理逻辑增加 registry/new_ids 计数与删除明细日志，便于追踪任何车型升级残留；版本号十进制 +1（3.6.0→3.6.1）
