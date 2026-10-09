@@ -288,6 +288,11 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("video_file", "行车记录视频", "video"),
             ("messages_page", "最新消息", "messages"),
             ("ota_reddot", "OTA 更新提醒", "ota_reddot"),
+            # v3.5.1: 账号级只读端点补全（探测到数据才创建）
+            ("uservehicles", "车辆清单", "uservehicles"),
+            ("messages_v2", "消息中心 v2", "messages_v2"),
+            ("share_list", "车辆共享列表", "share_list"),
+            ("device_list", "车辆设备列表", "device_list"),
         ):
             if _ep.get(_k):
                 sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
@@ -1718,6 +1723,63 @@ class FordPassProbeSensor(SensorEntity):
                     except (TypeError, ValueError):
                         return str(st)
                 return "未知"
+            # ---- v3.5.1: 账号级只读端点（探测数据驱动，全车型适配）----
+            if self._kind == "uservehicles":
+                lst = _swb_list(data)
+                if lst:
+                    models = []
+                    for v in lst:
+                        if not isinstance(v, dict):
+                            continue
+                        m = (_swb_find(v, "vehicleModelName") or _swb_find(v, "modelName")
+                             or _swb_find(v, "model") or _swb_find(v, "vehicleName"))
+                        vin = _swb_find(v, "vin") or _swb_find(v, "encryptedVin")
+                        if m is not None:
+                            models.append(str(m))
+                        elif vin is not None:
+                            models.append(str(vin)[-6:])
+                    if models:
+                        return f"{len(lst)} 辆车：{'、'.join(dict.fromkeys(models)[:6])}"
+                    return f"{len(lst)} 辆车"
+                return "无车辆清单数据"
+            if self._kind == "messages_v2":
+                lst = _swb_list(data)
+                if lst:
+                    first = lst[0] if isinstance(lst[0], dict) else {}
+                    subj = (_swb_find(first, "readMessageSubject")
+                            or _swb_find(first, "subject") or _swb_find(first, "title")
+                            or _swb_find(first, "content"))
+                    if subj is not None:
+                        return str(subj)
+                    return f"{len(lst)} 条消息"
+                return "无消息"
+            if self._kind == "share_list":
+                lst = _swb_list(data)
+                if lst:
+                    active = 0
+                    for s in lst:
+                        if not isinstance(s, dict):
+                            continue
+                        stt = (_swb_find(s, "status") or _swb_find(s, "shareStatus"))
+                        if stt is not None and str(stt) in ("1", "ACTIVE", "active", "有效"):
+                            active += 1
+                    return f"{len(lst)} 个共享（{active} 个有效）"
+                return "无车辆共享"
+            if self._kind == "device_list":
+                lst = _swb_list(data)
+                if lst:
+                    names = []
+                    for d in lst:
+                        if not isinstance(d, dict):
+                            continue
+                        nm = (_swb_find(d, "deviceName") or _swb_find(d, "name")
+                              or _swb_find(d, "deviceType"))
+                        if nm is not None:
+                            names.append(str(nm))
+                    if names:
+                        return f"{len(lst)} 个设备：{'、'.join(dict.fromkeys(names)[:6])}"
+                    return f"{len(lst)} 个设备"
+                return "暂无设备列表"
         except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
             return "解析失败"
         return None
