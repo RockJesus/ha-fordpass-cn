@@ -72,6 +72,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>📜 版本历史（点击展开）</summary>
 
+- **v3.6.1**：**清理逻辑加调试日志**——v3.6.0 的残留实体删除已根治双后轮（手动移除 registry 后过滤生效、不再重建），本版为 setup 清理逻辑增加 registry/new_ids 计数与删除明细日志，便于追踪任何车型升级残留；版本号十进制 +1（3.6.0→3.6.1）
 - **v3.6.0**：**await async_remove 修复残留实体删除**——v3.5.8/9 清理逻辑未 await `reg.async_remove`（协程未运行），旧 sensor（双后轮 value=0）始终残留 unavailable；改为 `await` 后 setup 时真正移除不再创建的旧实体，实体不再显示不可用；版本号十进制进位（3.5.9→3.6.0）
 - **v3.5.9**：**修复残留清理 API 签名**——v3.5.8 的清理逻辑 `async_entries_for_domain` 误传 ConfigEntry（应传 domain 字符串）导致 TypeError、旧实体未删；修正后 setup 时显式移除不再创建的旧 sensor（双后轮 value=0），实体不显示不可用；版本号十进制 +1（3.5.8→3.5.9）
 - **v3.5.8**：**升级残留实体清理**——新版不再创建的旧 sensor（如双后轮 value=0 非该能力车型）在 registry 中残留会一直 unavailable，现于 setup 时按 unique_id 显式移除（保留用户手动禁用的实体），实体状态不再显示不可用；版本号十进制 +1（3.5.7→3.5.8）
