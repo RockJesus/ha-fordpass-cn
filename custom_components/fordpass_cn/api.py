@@ -381,12 +381,17 @@ class FordPassApi:
         base: str = BASE_URL,
         raw: bool = False,
         headers: dict[str, str] | None = None,
+        raw_body: bool = False,
     ) -> Any:
         url = base + path
         if body is not None:
             signed: dict[str, Any] = dict(body)
-            signed["timestamp"] = int(time.time() * 1000)
-            signed["sign"] = compute_sign(signed)
+            if not raw_body:
+                # v3.7.5: cevs 域 DTO 不接受 timestamp/sign（日志实证
+                # Unrecognized field "timestamp"）——raw_body=True 时 body
+                # 原样发送（cevs 走 RSA 密文自校验，不依赖外层签名）
+                signed["timestamp"] = int(time.time() * 1000)
+                signed["sign"] = compute_sign(signed)
             kwargs: dict[str, Any] = {"json": signed}
         else:
             params = dict(query or {})
@@ -1563,22 +1568,28 @@ class FordPassApi:
                     account_res[name] = data
             self._account_probe_cache = dict(account_res)
             result.update(account_res)
-        # v3.7.4: cevs 域 RSA 探测变体——原白盒 AES 密文/明文 vin 均被服务器
-        # RSA 解密失败（Impossible modulus）。App 用 encryptByRSA + 公钥加密
-        # 敏感字段，此处用 3 个候选公钥逐个尝试 body={"vin": RSA密文}（只读
-        # 端点：departuretimes/chargelogs/commandstatus）。成功即缓存该组合，
-        # 供实体"探测到数据才创建"接入；失败仅日志，不创建、不进轮询。
-        for name, path in (
-            ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE),
-            ("chargelogs", PATH_CHARGELOGS_RETRIEVE),
-            ("cevs_command_status", PATH_CEVS_COMMAND_STATUS),
+        # v3.7.4/3.7.5: cevs 域 RSA 探测变体——原白盒 AES 密文/明文 vin 均被
+        # 服务器 RSA 解密失败（Impossible modulus）；v3.7.4 日志实证 RSA 密文
+        # vin 通过 modulus 校验（不再 Impossible modulus），DTO 报
+        # Unrecognized field "timestamp"（不接受外层签名）→ raw_body 裸发；
+        # chargelogs 报 Missing required creator property 'xjw' → 补 xjw
+        # （与 encrypt_field 同会话 IV）。失败仅日志，不创建、不进轮询。
+        _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        for name, path, body in (
+            ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
+            ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
+            ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
         ):
             for idx, pem in enumerate(CEVS_RSA_PUBKEYS):
                 try:
                     rsa_ct = await asyncio.to_thread(
                         self._rsa_encrypt_cevs, vin, pem,
                     )
-                    data = await self._request("POST", path, {"vin": rsa_ct})
+                    b = dict(body)
+                    b["vin"] = rsa_ct
+                    data = await self._request(
+                        "POST", path, b, raw_body=True,
+                    )
                 except Exception as exc:  # noqa: BLE001 - 探测失败只记录
                     self._log.debug(
                         "FordPass probe %s rsa_k%d failed: %s", name, idx + 1, exc,
