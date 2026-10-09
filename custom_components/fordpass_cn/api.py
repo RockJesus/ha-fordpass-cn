@@ -1760,20 +1760,31 @@ class FordPassApi:
         x_api 场景加密被服务器 cevs 场景解密报 bad key）。单变体
         wbk_cevs_shared（共享会话 IV），3 请求/次防福特云风控静默降级；
         结果写 api.cevs_diag（coordinator 引用同一对象，诊断传感器可读）。"""
-        _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-        cevs_crypto = FordPassCrypto.get(scene="cevs")
-        for name, path, body in (
-            ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
-            ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
-            ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
-        ):
-            b = dict(body)
-            enc, xjw2 = await asyncio.to_thread(
-                lambda: cevs_crypto.encrypt_field(vin, bytes.fromhex(xjw_now)),
-            )
-            b["vin"] = enc
-            b["xjw"] = xjw2
-            await self._probe_cevs_variant_wbk(name, path, b, "wbk_cevs_shared")
+        # v3.7.21: 整个自动探测独立 try——异常写入 cevs_diag["auto_error"]
+        # （诊断传感器直接可读，不再被 coordinator debug 吞掉）；端点循环
+        # 内每端点独立 try，一个端点失败不中断其余。
+        try:
+            _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+            cevs_crypto = FordPassCrypto.get(scene="cevs")
+            for name, path, body in (
+                ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
+                ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
+                ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
+            ):
+                try:
+                    b = dict(body)
+                    enc, xjw2 = await asyncio.to_thread(
+                        lambda: cevs_crypto.encrypt_field(vin, bytes.fromhex(xjw_now)),
+                    )
+                    b["vin"] = enc
+                    b["xjw"] = xjw2
+                    await self._probe_cevs_variant_wbk(name, path, b, "wbk_cevs_shared")
+                except Exception as exc:  # noqa: BLE001
+                    self.cevs_diag[f"{name}_wbk_cevs_shared"] = f"enc_err: {type(exc).__name__}: {str(exc)[:160]}"
+                    self._log.info("FordPass cevs %s wbk_cevs_shared error: %s", name, exc)
+        except Exception as exc:  # noqa: BLE001
+            self.cevs_diag["auto_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+            self._log.info("FordPass cevs auto probe error: %s", exc)
 
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
         """探测家充桩管理（smartwallbox）端点结构（只读/幂等，v3.4.5）。
