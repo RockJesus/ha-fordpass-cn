@@ -432,11 +432,17 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass wifi_status fetch failed: %s", exc)
             data["wifi_status"] = (self.data or {}).get("wifi_status")
-        # 鸣笛设置云端查询（UserPreferenceV2）——v3.9.1: 不再在常规轮询中
-        # 刷新 chirp_cloud（轮询 TTL 缓存会把 _save_cloud 回读刚更新的值覆盖
-        # 回旧值：云端被 App/车机覆盖后轮询把旧值写回 data → select 云端同步
-        # 回调回写 → 改设置回弹）。改由 async_probe_capabilities 登录后
-        # 一次性初始化 + _save_cloud 回读更新。
+        # 鸣笛设置云端状态（chirp_cloud）——v3.9.3: 恢复纳入常规轮询
+        # （跟随状态刷新间隔每轮真拉，失败保留旧值）：App/车机端改动
+        # 后 HA 自动同步「鸣笛设置云端状态」。v3.9.1 曾因"轮询会把 App
+        # 覆盖后的值写回 data → select 云端回调回写 → 改设置回弹"移出
+        # 轮询——回弹已由 v3.9.0 的 _syncing 上传保护根治（上传期间
+        # select 忽略云端回写），故恢复轮询不再有回弹风险。
+        try:
+            data["chirp_cloud"] = await self.api.get_chirp_preference()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass chirp preference fetch failed: %s", exc)
+            data["chirp_cloud"] = (self.data or {}).get("chirp_cloud")
         # 空调滤芯状态（6 小时 TTL——健康度变化慢）
         data["air_filter"] = await self._cached_fetch(
             "air_filter", 21600, lambda: self.api.get_air_filter_status(self.vin)
