@@ -1,19 +1,21 @@
-# FordPass China 福特派互联 Home Assistant 自定义集成
+# FordPass China 福特派互联 Home Assistant 集成
 
-<img width="256" height="256" alt="images" src=custom_components/fordpass_cn/brand/logo.png />
+![brand](custom_components/fordpass_cn/brand/logo.png)
 
+[![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
+[![GitHub release](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn.svg)](https://github.com/RockJesus/ha-fordpass-cn/releases)
+[![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-blue.svg)](https://www.home-assistant.io)
 
-Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务，支持短信验证码 / 用户名密码两种登录方式、远程控车与车辆定位追踪。
+Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务：支持**手机号验证码 / 用户名密码**两种登录方式，远程控车、车辆状态监控、车辆定位追踪、预约出发/充电、家充桩管理、远程影像等全功能覆盖。
 
 > ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
 
 ## 功能特性
 
 - **双登录方式**：手机号短信验证码登录（无需密码）或用户名密码登录（Azure B2C 官方流程），配置时可自由选择。> 注意：用户名密码登录走微软 Azure AD B2C 网关，其风控可能拦截非浏览器自动化请求（返回 `AADB2C: An exception has occurred` 或 567）；如遇到此类失败，请改用短信验证码登录（登录后令牌自动续期，无需频繁重登）。
-- **车辆异常警示**：接入福特 vha/activealert 真实告警接口，明文中文告警显示
-- **远程控车**：上锁 / 解锁 / 远程启动 / 远程熄火 / 鸣笛寻车 / 灯光寻车 / 刷新车辆状态
-- **车辆状态**：门锁、报警、燃油量、胎压、里程等实时状态
-- **车辆异常警示**：接入福特 vha/activealert 真实告警接口，明文中文显示（如「胎压监测系统警告」）
+- **远程控车**：上锁 / 解锁 / 远程启动 / 远程熄火 / 鸣笛寻车 / 声光寻车 / 灯光寻车 / 刷新车辆状态
+- **车辆状态**：门锁、报警、燃油量、胎压、里程、车窗、车门等实时状态
+- **车辆异常警示**：接入福特 vha/activealert 真实告警接口，明文中文告警显示（如「胎压监测系统警告」）
 - **车辆图片**：展示车型渲染图（如「锐际 Escape」），图片持久保存不删除
 - **车辆定位追踪**：GPS 车辆位置（设备追踪器），可在 HA 地图上显示
 - **多实体中文命名**：设备名为车型（如「锐际 Escape」），车牌号、地址等属性齐全
@@ -29,7 +31,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ### 方式二：手动安装
 
-1. 下载最新版 Release（`fordpass_cn_3.4.3.zip`）
+1. 在 [Releases](https://github.com/RockJesus/ha-fordpass-cn/releases) 下载最新版压缩包
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
@@ -71,6 +73,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.8.3**：**移除「预约出发/充电探测诊断」传感器**（调试用诊断实体不再创建，探测仍执行并写入日志便于排查；升级后旧诊断实体由 registry 清理自动移除）；README 美化优化（徽章/去重/结构梳理）
 - **v3.8.2**：**修复重新加载集成失败**——`async_register` 返回 None，卸载回调 `lambda: _reg()` 报 `TypeError: 'NoneType' object is not callable`，改为显式 `async_remove` 注销服务；**cevs 实体按车型创建**——预约出发/充电记录仅 EV/PHEV/混动车型（fuelType ∈ E/BEV/P/PHEV/H/HEV/MHEV）创建，纯油/柴油车即使端点返回 200 也不创建（升级残留由 registry 清理自动移除）
 - **v3.8.1**：**修复 setup 期间 blocking call**——cevs 场景白盒密钥初始化（读 .so / unicorn 加载 / 读密钥 json）原在事件循环内同步执行（HA 日志 `Detected blocking call to open/import_module`），改为 `asyncio.to_thread` 异步化（首次初始化在线程执行，后续加密走既有线程池+锁）；修复后集成启动不再阻塞事件循环
 - **v3.8.0**：**版本号回归合规链**——此前 3.7.10~3.7.24 段内超 9 违规，本次按规则从 3.7.9 进位（3.7.9→3.8.0，十进制逐位、段内每数字≤9）；修复 lock 平台 `Updating fordpass_cn lock took longer than the scheduled update interval` 警告（实体轮询不再强制全量刷新并阻塞等待，锁状态由 coordinator 定时刷新驱动）；命令状态轮询 2s→5s（单命令最多 12 次请求，防福特云限流）
@@ -104,11 +107,8 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 - **v3.6.7**：**修复车辆清单 unknown + 车辆用户授权状态显示 200**——①车辆清单实体（uservehicles 实为注册端点，rejected 无 probe 数据）`_probe()` 恒 None → 状态永远 unknown，刷新时用 `vehicles_list`（v5/vehicles/list）兜底 + 型号提取加 `localMarketValue` 字段（vehicles/list 实际字段名）；②车辆用户授权状态原解析取 `status` 拿到外层 HTTP 200，改优先 `authorizationStatus`（"Authorized"→已授权）；⚠️ 首版误在 smartwallbox 传感器加兜底，正确位置是 extra_probes 驱动的探测传感器（v3.6.7 修正发布）；③cevs departuretimes/chargelogs 回退 `vin+xjw`（v3.6.6 日志实证去掉 xjw 报 `Invalid input: 'vin' and 'xjw' must be a valid string`——xjw 必须成对存在，Impossible modulus 为加密层问题待 HAR）；版本号十进制 +1（3.6.6→3.6.7）
 - **v3.6.6**：**cevs 端点去 xjw 加密修复尝试 + 探测结果确认**——v3.6.5 日志实证 departuretimes/chargelogs body 只剩 `vin+xjw` 仍报 `Impossible modulus [1]`（cevs 域 DTO 连 xjw 都不接受，疑似加密层字段冲突）→ body 只留明文 vin（`__skip_xjw__` 哨兵）；同日探测矩阵确认：user_auth/srs_profile/share_list POST 200 通（数据驱动创建正常）、ota_new_status/device_list 500 `SDA User does not exists`（账号级业务拒绝）、mcm v3/sensor_shadow/user_reddot 双 404（独立 host 或路径待 HAR）、maintenance-history `User not vehicle owner`（非车主账号属性）；版本号十进制 +1（3.6.5→3.6.6）
 - **v3.6.5**：**修复残留清理 API 二次变更**——v3.6.4 修掉 `hass.helpers` 后，HAOS 2026.10 又报 `'EntityRegistry' object has no attribute 'async_entries_for_domain'`（新版移除该方法）；改用 `reg.entities.values()` 过滤 `platform==DOMAIN`（等价，官方当前写法）；版本号十进制 +1（3.6.4→3.6.5）
-
 - **v3.6.4**：**修复 sensor 平台 setup 清理段报错**——残留实体清理用 `hass.helpers.entity_registry.async_get` 在 HAOS 2026.10 报 `'HomeAssistant' object has no attribute 'helpers'`（system_log ERROR：sensor platform setup 失败，但实体已先行 async_add_entities 不影响加载）；改为官方推荐 `from homeassistant.helpers import entity_registry as er; er.async_get(hass)`；版本号十进制 +1（3.6.3→3.6.4）
-
 - **v3.6.3**：**车辆清单创建条件修复**——v3.6.2 只修了值解析回退（uservehicles probe 被注册端点拒绝不存 _ep），但创建条件仍 `if _ep.get("uservehicles")` 恒不成立 → 「车辆清单」实体未创建；现创建条件改为 `uservehicles 且 coordinator.vehicles_list 有值` 即创建（v5/vehicles/list 登录已验证，恒有值）；版本号十进制 +1（3.6.2→3.6.3）
-
 - **v3.6.2**：**待开发清单补全（第 4 批账号级/车辆级端点）**——①**车辆清单修复**：`uservehicles` 实为车辆注册端点（"Vehicle already registered"），清单改以 `v5/vehicles/list`（登录已验证 live）为准——`coordinator.vehicles_list` 共享给每车，「车辆清单」传感器显示账号下全部车辆（型号/尾号）；②**消息中心**：新增 mcm 域 `messagecenter/v3/user/messages` 探测（GET→POST 自适应），探测到数据创建「消息中心」传感器（读取最新消息主题）；③**用户级红点**：新增 `cnesl-user/v1/reddot-status` 账号级探测（替代 alert 域缺字段红点），创建「红点状态」传感器；④**传感器影子**开启 POST 形态探测（原仅 GET 404）；⑤**departuretimes/chargelogs 加密修复尝试**：body 加 `__skip_encrypted_vin__`（cevs 域 DTO 仅收明文 vin+xjw，不再补 encryptedVin——此前 `Impossible modulus` 疑似为多余加密字段触发服务端 RSA 校验失败）；尾门自动开闭/远程关窗在 APK strings 中无独立命令（仅能力位图 PaakTrunkOpenClose/UI 方法），待用户抓包 HAR 校准后接入；版本号十进制 +1（3.6.1→3.6.2）
 - **v3.6.1**：**清理逻辑加调试日志**——v3.6.0 的残留实体删除已根治双后轮（手动移除 registry 后过滤生效、不再重建），本版为 setup 清理逻辑增加 registry/new_ids 计数与删除明细日志，便于追踪任何车型升级残留；版本号十进制 +1（3.6.0→3.6.1）
 - **v3.6.0**：**await async_remove 修复残留实体删除**——v3.5.8/9 清理逻辑未 await `reg.async_remove`（协程未运行），旧 sensor（双后轮 value=0）始终残留 unavailable；改为 `await` 后 setup 时真正移除不再创建的旧实体，实体不再显示不可用；版本号十进制进位（3.5.9→3.6.0）
@@ -166,9 +166,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 - **v3.1.10**：全车型支持策略回归——恢复 v3.1.8 因锐际实测网关拒绝（228205/402）而临时移除的实体创建：**后备箱锁**（TrunkUnlock，按尾门能力创建）、**灯光寻车**（ZoneLightingON/OFF）、**中央区灯光 / 语音助手初始化/取消 / 辅助设置 / OTA 激活排程**（按各自车型能力路径判断）——集成包含全部实体代码，登录后按车辆能力判断创建，云端不支持的车型按下返回网关明确报错、如实提示；删除 `CMD_EXTEND_START` 遗留误导别名。README：版本历史全部折叠；移除「实测限制」段落（实体能力差异已由「按车型能力创建 + 按下明确报错」机制覆盖）
 - **v3.1.9**：新增两组云端服务信息实体（逆向 6.16.0 确认、全部 200 实测）——①**车辆服务信息**（`GET /api/cnxapi-vds/v2/vehicles/ccfeatures`）：云端能力位图 availableFeatures + authedFeatures + 道路救援/客服/售后电话 + 车型电子说明书 URL，这是 App 判断「每辆车支持哪些功能」的权威云端清单；②**预测性诊断**（`GET /api/cnxapi-cds/prognostic/v1/list`）：机油寿命百分比（iolm=41）、剩余可行驶里程（4000km）、寿命归零月份、慢漏气胎标识、诊断提示，拆分 4 个传感器；③修正：删除 `CMD_EXTEND_START` 误导别名（曾错误指向 TrunkUnlock）；实测 send-command 白名单完整枚举确认 ExtendStart（远程启动延长）不在其中，锐际不支持，不创建实体。数据驱动创建——无 ccfeatures/prognostic 数据的车型不创建实体，0 unavailable
 - **v3.1.8**：按实车测试清单修复与收敛——①**移除网关不支持实体**：后备箱锁（TrunkUnlock）、灯光寻车（ZoneLighting）、中央区灯光（402）、语音助手初始化/取消、辅助设置、OTA 激活排程在锐际实测均被网关拒绝（`228205 cmdSpec can not empty` / 402），移除实体避免假按钮；②**鸣笛类型/时长参数修正**：ChirpType 从 1-5 修正为 App 枚举 0-4（此前差一错位）；「声光共舞」改为走独立 panic 端点 `POST /api/vehicles/v5/{vin}/panic/{duration}`（灯+喇叭，锐际 404 明确报错）；③**车窗状态**：未关闭时显示「未关闭（部分开启/全开）」，数值型数据（部分车型）显示「未关闭 N%」；④**远程启动时间**：修复毫秒时间戳解析（此前 13 位毫秒解析失败显示「未启动」）；⑤确认门锁/远程启动/重置空调滤芯/刷新类命令均实测正常
-
 - **v3.1.6**：全车型自动适配 + 多 VIN 支持——账号下每一辆车建立独立 coordinator / 设备 / 实体组（设备名 = 车辆昵称/车型，实体前缀 = 车辆名拼音，此前只加载第一辆车）。实体创建全部数据驱动：传感器按 vehicle-status 实际字段过滤（`skip_if_missing` + 创建期 `data_usable`），控制实体按车型能力过滤（`crccFlag` 远程控车 / `dualRearWheel` 双后轮拖车 / 尾门字段 / `preCondStatusDsply` 远程空调等）。因此**任何车型登录（电马纯电 / 锐界L混动 / 领裕柴油 / Ranger皮卡 / 锐际燃油等）只加载自己车真实支持的设备与实体，0 unavailable**（刷新失败保留最后已知状态）。修改扫描间隔/定位开关即时应用到全部车辆
-
 - **v3.1.4**：鸣笛寻车设置云端保存真正打通——逆向还原福特派 App 的 UserPreferenceV2 通道（`POST /api/cnxapi-pds/v1/user/preference-by-groups`，`VehicleAnnouncementSetting` 组：`vehicleAnnouncementSoundType` 5 种类型 + `vehicleAnnouncementDuration` 5-20 秒），`保存鸣笛设置`按钮现在把设置**真实写入福特账户云端**（旧 RCC profile-by-vin 通道 100400 根因 = signatureR2 独立密钥体系，实为误入）；签名层修正：headers 用 App 真实无连字符名（`appversion/ostype/osversion/clienttype`）、嵌套参数按 App 序列化（list→`[a&b]`、dict→`{k=v}`）；新增「鸣笛设置云端状态」传感器（`GET preference-list` 回读，App/其他设备改动可同步感知）。同时打通此前 100400 的保养计划/召回/SIM/WiFi 四个端点（实测 200），新增对应服务信息传感器（数据无效时不创建）；质保端点已过验签但服务端参数校验 100502（待 App 抓包），暂不接入
 - **v3.1.3**：新增「OTA 设置状态」传感器（`GET /api/alert/v1/ota/setting-info`，实测 200）——展示远程 OTA 开关、激活排程、当前/目标版本、状态描述；车辆无 OTA 能力或端点失败时不创建实体。同时完成对逆向清单中其余候选端点的实机验证：警报寻车（v5 `/panic/{duration}` 404）、单门独立解锁（v5 `/door/{doortype}/lock` 404，send-command 拒绝 `doorType` 字段）、OTA 详情/版本（`capabilityMmota is false` 206004）——以上端点在本车型/网关不可用，均不接入，避免制造失败实体
 - **v3.1.2**：所有实体不再因福特云刷新失败而显示「不可用」——`available` 统一固定为可用（开关/锁/按钮/选择器/传感器/定位/图片共 15 处），刷新失败时保留最后已知状态，不再整体变灰；操作类实体在云异常时调用仍会返回明确错误提示，但实体本身始终可用
@@ -180,7 +178,6 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 - **v3.0.6**：修复「手动拉取最新状态」偶发报错——福特网关在 ForceRefresh 后立即拉取 vehicle-status 时偶发返回非文本响应（原日志 `'utf-8' codec can't decode byte 0xfb`）；现在对非文本响应明确报错并自动重试一次（间隔 2 秒），不再让解码错误打断刷新流程
 - **v3.0.5**：鸣笛寻车由按钮迁移为开关实体（开 = v5 网关 `DELETE /api/vehicles/v5/{vin}/honk` 真实通道触发鸣笛，鸣笛约 30 秒自动停止、开关自动复位；关闭为本地复位——官方 App 停止鸣笛的 POST 加密信封尚未还原）；修复「灯光寻车」开关初始状态显示 `unknown`（默认关闭）；README 折叠历史版本
 - **v3.0.4**：鸣笛寻车落地——中国区 `send-command` 网关白名单不含 `Honk`（HTTP 400 100502），已切换为 v5 网关真实通道（`DELETE /api/vehicles/v5/{vin}/honk`，实测返回 200 + commandId），按钮按下即走该通道下发；后续若拿到官方 App POST 鸣笛的加密信封，将升级为开始/停止双通道（实体不变）
-
 - **v2.7.6**：修复用户名密码登录被 Azure AD B2C 风控拦截——登录请求（authorize → SelfAsserted → confirmed）改用同步 requests 客户端执行（实测 aiohttp 客户端会被 B2C 反自动化风控以 GlobalException 拦截，requests 客户端携带同样的 Cookie/CSRF/参数可正常通过）；csrf 与事务号（tx）优先从登录页 HTML 提取（与官方 WebView 一致）；提交凭证时手机号 `+` 正确 URL 编码；登录失败时区分"风控拦截"（提示等待后再试）与"凭证错误"；登录为一次性配置操作，在线程执行不阻塞事件循环
 - **v2.7.5**：日志与稳定性优化——「车辆异常警示」接口连续失败（如 404）时自动降级：连续 2 次失败后 1 小时内不再请求该接口（避免每轮轮询发无效请求并刷日志噪音），接口恢复后自动重试；令牌自动刷新（HTTP 401 / Cat2 token expired）日志级别从 INFO 降为 DEBUG，减少轮询期噪音；「刷新车辆状态」按钮在命令发送失败时不再重复打印 `no commandId` 警告
 - **v2.7.4**：新增用户名密码登录（配置流程可选两种登录方式：短信验证码 / 用户名密码；用户名密码走官方 Azure AD B2C 流程——authorize → SelfAsserted → confirmed 取授权码 → dlt-token-by-b2c-auth-code 换令牌，密码仅用于本次登录换取令牌、不持久化保存）；修复「车辆异常警示」activealert 接口持续 404——官方 App 该请求携带标准 `timestamp`+`sign` 签名，v2.7.4 起改用带签名的统一请求（并保留 vha 服务专用 appversion=1.0.0），接口恢复返回明文中文告警（如「胎压监测系统警告」）
