@@ -142,8 +142,19 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 写入后 sensor 立即可见（拷贝会失去同步）
         # v3.7.18: cevs 自动探测独立 try（probe_cevs_auto）——此前嵌在
         # extra_probes 探测内部，前段失败即中断、diag 不创建
+        # v3.8.5: 按车型跳过探测——纯油(G)/柴油(D)车 cevs 三端点（预约出发/
+        # 充电/命令状态）业务恒空且不创建实体（v3.8.2 创建规则），探测白打
+        # 请求并制造 Impossible modulus 噪音；与创建规则对称：fuelType ∈
+        # 电/插混/混动才探测（登录后一次，结果进 _cached_fetch 缓存）。
         try:
-            await self.api.probe_cevs_auto(self.vin)
+            fuel = str(self.vehicle_info.get("fuelType") or "").upper()
+            if fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV"):
+                await self.api.probe_cevs_auto(self.vin)
+            else:
+                self.logger.info(
+                    "FordPass cevs probe skipped for fuelType %s",
+                    fuel or "unknown",
+                )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass cevs auto probe failed: %s", exc)
         self.cevs_diag = getattr(self.api, "cevs_diag", {})
