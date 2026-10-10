@@ -333,7 +333,7 @@ class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
         await self.coordinator.run_command(CMD_ENGINE_STOP)
 
 
-class FordPassVAswitch(SwitchEntity):
+class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
     """声光寻车开关（v3.3.3）——由「声光寻车触发/取消」两按钮合并。
 
     HAR 实证（2026-10-03，福特派 6.16.0）：App 的声光寻车（鸣笛+灯光
