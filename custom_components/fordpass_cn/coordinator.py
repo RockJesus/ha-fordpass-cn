@@ -253,11 +253,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # _save_cloud 上传成功后的回读仍会更新此值（权威确认）。
         try:
             data = dict(self.data or {})
-            data["chirp_cloud"] = await self._cached_fetch(
-                "chirp_preference", PROBE_PERSIST_TTL,
-                lambda: self.api.get_chirp_preference(),
-                persist=True,
-            ) or {}
+            # v3.9.2: 探测无数据/失败时保留已恢复的最后已知值（不覆盖为空，
+            # 防「鸣笛设置云端状态」传感器因空值不创建/显示未知）
+            data["chirp_cloud"] = (
+                await self._cached_fetch(
+                    "chirp_preference", PROBE_PERSIST_TTL,
+                    lambda: self.api.get_chirp_preference(),
+                    persist=True,
+                )
+                or data.get("chirp_cloud") or {}
+            )
             self.async_set_updated_data(data)
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass chirp preference init failed: %s", exc)
@@ -265,11 +270,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 与 chirp_cloud 同理（仅登录后一次，不进入常规轮询）。
         try:
             data = dict(self.data or {})
-            data["remote_climate_cloud"] = await self._cached_fetch(
-                "remote_climate_preference", PROBE_PERSIST_TTL,
-                lambda: self.api.get_remote_climate_preference(),
-                persist=True,
-            ) or {}
+            data["remote_climate_cloud"] = (
+                await self._cached_fetch(
+                    "remote_climate_preference", PROBE_PERSIST_TTL,
+                    lambda: self.api.get_remote_climate_preference(),
+                    persist=True,
+                )
+                or data.get("remote_climate_cloud") or {}
+            )
             self.async_set_updated_data(data)
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass remote climate pref init failed: %s", exc)
