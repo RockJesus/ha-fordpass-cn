@@ -246,6 +246,34 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             persist=True,
         )
 
+        # v3.9.1: 鸣笛设置云端状态（chirp_cloud）初始化——只在登录后探测
+        # 阶段拉取一次（TTL 持久化缓存），**绝不进入常规轮询**：常规轮询
+        # 若回读 preference，云端被 App/车机覆盖后会把旧值写回 data，
+        # select 云端同步回调据此回写用户刚改的设置（改设置回弹）。
+        # _save_cloud 上传成功后的回读仍会更新此值（权威确认）。
+        try:
+            data = dict(self.data or {})
+            data["chirp_cloud"] = await self._cached_fetch(
+                "chirp_preference", PROBE_PERSIST_TTL,
+                lambda: self.api.get_chirp_preference(),
+                persist=True,
+            ) or {}
+            self.async_set_updated_data(data)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass chirp preference init failed: %s", exc)
+        # v3.9.1: 远程空调目标温度云端状态（remote_climate_cloud）初始化，
+        # 与 chirp_cloud 同理（仅登录后一次，不进入常规轮询）。
+        try:
+            data = dict(self.data or {})
+            data["remote_climate_cloud"] = await self._cached_fetch(
+                "remote_climate_preference", PROBE_PERSIST_TTL,
+                lambda: self.api.get_remote_climate_preference(),
+                persist=True,
+            ) or {}
+            self.async_set_updated_data(data)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass remote climate pref init failed: %s", exc)
+
     async def async_load_last_data(self) -> None:
         """Restore last-known data before first refresh (v3.3.3)."""
         if self._last_store is None:
@@ -396,11 +424,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass wifi_status fetch failed: %s", exc)
             data["wifi_status"] = (self.data or {}).get("wifi_status")
-        # 鸣笛设置云端查询（UserPreferenceV2，1 小时 TTL——用户改设置时
-        # select 已即时上云+本地写入，此查询仅作初始化同步）
-        data["chirp_cloud"] = await self._cached_fetch(
-            "chirp_preference", 3600, lambda: self.api.get_chirp_preference()
-        )
+        # 鸣笛设置云端查询（UserPreferenceV2）——v3.9.1: 不再在常规轮询中
+        # 刷新 chirp_cloud（轮询 TTL 缓存会把 _save_cloud 回读刚更新的值覆盖
+        # 回旧值：云端被 App/车机覆盖后轮询把旧值写回 data → select 云端同步
+        # 回调回写 → 改设置回弹）。改由 async_probe_capabilities 登录后
+        # 一次性初始化 + _save_cloud 回读更新。
         # 空调滤芯状态（6 小时 TTL——健康度变化慢）
         data["air_filter"] = await self._cached_fetch(
             "air_filter", 21600, lambda: self.api.get_air_filter_status(self.vin)

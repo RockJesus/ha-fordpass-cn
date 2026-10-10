@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
@@ -131,6 +132,10 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         # v3.9.0: 上传进行中标志 + 上传串行锁（防回弹/防并发竞态）
         self._syncing = False
         self._save_lock = asyncio.Lock()
+        # v3.9.1: 用户最近一次本地修改时间——云端同步回调在用户操作后
+        # 5 分钟内不回写（云端被 App/车机覆盖时，轮询/初始化回读的旧值
+        # 不得覆盖用户刚改的设置）
+        self._last_user_change = time.monotonic()
         # v3.3.3: 云端同步监听（coordinator 每次数据更新后回调）
         self._cloud_unsub = self.coordinator.async_add_listener(self._on_cloud_update)
 
@@ -145,8 +150,12 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
 
         v3.9.0: 本实体正在上传云端（_syncing=True）时忽略——旧 chirp_cloud
         尚未更新为最新值，回写会把用户刚选的值覆盖回旧值（回弹）。
+        v3.9.1: 用户本地修改后 5 分钟内同样忽略——coordinator 轮询缓存/
+        初始化回读可能携带被 App/车机覆盖的旧值，不得覆盖用户刚改的设置。
         """
         if self._syncing:
+            return
+        if time.monotonic() - self._last_user_change < 300:
             return
         type_cn, duration = _cloud_pref(self.coordinator)
         if duration is not None:
@@ -260,6 +269,8 @@ class FordPassHonkDurationSelect(_FordPassHonkSettingSelect):
     async def async_select_option(self, option: str) -> None:
         # v3.2.4: 选项显示带「秒」单位（如 15 秒），持久化仍存纯数字
         value = int(str(option).replace("秒", "").strip())
+        # v3.9.1: 记录本地用户修改时间——云端同步回调 5 分钟内不回写
+        self._last_user_change = time.monotonic()
         self._persist(CONF_HONK_DURATION, value)
         self._attr_current_option = f"{value} 秒"
         self.async_write_ha_state()
@@ -294,6 +305,8 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
         )
 
     async def async_select_option(self, option: str) -> None:
+        # v3.9.1: 记录本地用户修改时间——云端同步回调 5 分钟内不回写
+        self._last_user_change = time.monotonic()
         self._persist(CONF_CHIRP_TYPE, option)
         self._attr_current_option = option
         self.async_write_ha_state()
@@ -352,8 +365,11 @@ class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
         """云端温度变化 → 同步本地 select（幂等）。
 
         v3.9.0: 上传中忽略云端回写（防回弹，与鸣笛设置同）。
+        v3.9.1: 用户本地修改后 5 分钟内同样忽略（防云端旧值覆盖）。
         """
         if self._syncing:
+            return
+        if time.monotonic() - self._last_user_change < 300:
             return
         temp = _cloud_temp(self.coordinator)
         if temp is not None and temp in REMOTE_CLIMATE_TEMP_OPTIONS:
@@ -365,6 +381,8 @@ class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
 
     async def async_select_option(self, option: str) -> None:
         value = int(str(option).replace("°C", "").strip())
+        # v3.9.1: 记录本地用户修改时间——云端同步回调 5 分钟内不回写
+        self._last_user_change = time.monotonic()
         self._persist(CONF_REMOTE_TEMP, value)
         self._attr_current_option = f"{value} °C"
         self.async_write_ha_state()
