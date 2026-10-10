@@ -209,11 +209,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for co in coordinators:
             await co.api.probe_cevs_variant(co.vin, vname)
 
-    _reg = hass.services.async_register(
+    hass.services.async_register(
         DOMAIN, "probe_cevs_variant", _svc_probe_cevs_variant,
         schema=vol.Schema({vol.Optional("variant", default="plain"): str}),
     )
-    entry.async_on_unload(lambda: _reg())
+    # v3.8.2: async_register 返回 None，不能 `lambda: _reg()`（卸载时报
+    # TypeError: 'NoneType' object is not callable → 重新加载集成失败）；
+    # 显式 async_remove 注销服务。
+    entry.async_on_unload(
+        lambda: hass.services.async_remove(DOMAIN, "probe_cevs_variant")
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

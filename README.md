@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.8.2**：**修复重新加载集成失败**——`async_register` 返回 None，卸载回调 `lambda: _reg()` 报 `TypeError: 'NoneType' object is not callable`，改为显式 `async_remove` 注销服务；**cevs 实体按车型创建**——预约出发/充电记录仅 EV/PHEV/混动车型（fuelType ∈ E/BEV/P/PHEV/H/HEV/MHEV）创建，纯油/柴油车即使端点返回 200 也不创建（升级残留由 registry 清理自动移除）
 - **v3.8.1**：**修复 setup 期间 blocking call**——cevs 场景白盒密钥初始化（读 .so / unicorn 加载 / 读密钥 json）原在事件循环内同步执行（HA 日志 `Detected blocking call to open/import_module`），改为 `asyncio.to_thread` 异步化（首次初始化在线程执行，后续加密走既有线程池+锁）；修复后集成启动不再阻塞事件循环
 - **v3.8.0**：**版本号回归合规链**——此前 3.7.10~3.7.24 段内超 9 违规，本次按规则从 3.7.9 进位（3.7.9→3.8.0，十进制逐位、段内每数字≤9）；修复 lock 平台 `Updating fordpass_cn lock took longer than the scheduled update interval` 警告（实体轮询不再强制全量刷新并阻塞等待，锁状态由 coordinator 定时刷新驱动）；命令状态轮询 2s→5s（单命令最多 12 次请求，防福特云限流）
 - **v3.7.24**：**接入预约出发/充电实体（cevs 域核心突破）**——cevs 场景白盒密钥 + vin 字段实证有效：departuretimes（isEnabled/日历计划/同步状态）与 chargelogs（充电记录/下次充电时间）三请求探测全部 200；新增「预约出发」「充电记录」传感器（探测到数据才创建，全车型能力驱动）；commandstatus 仅缺 commandId 业务字段（非加密问题）；版本号十进制 +1（3.7.23→3.7.24）
