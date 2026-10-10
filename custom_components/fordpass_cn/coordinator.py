@@ -142,15 +142,19 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         if val is not None:
             self._cache[key] = (time.monotonic() + ttl, val)
-            if persist and self._probe_store is not None:
-                self._probe_cache[key] = {
-                    "expire": time.time() + ttl,
-                    "value": val,
-                }
-                try:
-                    await self._probe_store.async_save(self._probe_cache)
-                except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
-                    self.logger.debug("FordPass probe cache save failed: %s", exc)
+        # v3.8.7: 探测类失败（val=None，如 404=车型无该功能）也持久化——
+        # v3.8.6 只缓存非 None 结果，smartwallbox 探测失败没落盘，reload
+        # 每次重探 6 次 404（用户日志实证）。探测"完成但无数据"=能力缺失，
+        # TTL 内复用 None 不再重探；异常（raise，网络瞬时失败）仍不缓存。
+        if persist and self._probe_store is not None:
+            self._probe_cache[key] = {
+                "expire": time.time() + ttl,
+                "value": val,
+            }
+            try:
+                await self._probe_store.async_save(self._probe_cache)
+            except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
+                self.logger.debug("FordPass probe cache save failed: %s", exc)
         return val
 
     async def _load_probe_cache(self) -> None:
