@@ -284,10 +284,11 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         payload = coordinator.data.get(key)
         if payload:
             sensors.append(cls(coordinator))
-    # v3.1.4: 鸣笛设置云端状态（查询成功且能读出类型或时长才创建）
-    chirp_cloud = coordinator.data.get("chirp_cloud")
-    if isinstance(chirp_cloud, dict) and chirp_cloud:
-        sensors.append(FordPassChirpCloudSensor(coordinator))
+    # v3.1.4: 鸣笛设置云端状态
+    # v3.9.2: 无条件创建（不再要求查询成功且有值）——probe 一次性初始化
+    # 若云端暂不可达/无数据，sensor 显示「未获取」并保留最后已知状态，
+    # 避免实体缺失（v3.9.1 曾因探测空值导致此传感器不创建）。
+    sensors.append(FordPassChirpCloudSensor(coordinator))
     # v3.4.5: 家充桩管理（smartwallbox 探测数据驱动——非家充桩车型不创建）。
     # 数据源 coordinator.smartwallbox = api.probe_smartwallbox()（登录后一次
     # + 24h TTL 缓存，端点见 const.py smartwallbox 段）。有探测数据才创建，
@@ -1461,15 +1462,17 @@ class FordPassChirpCloudSensor(SensorEntity):
     @property
     def native_value(self) -> str | None:
         pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
-        if not isinstance(pref, dict):
-            return None
+        if not isinstance(pref, dict) or not pref:
+            # v3.9.2: 云端数据未获取时显示「未获取」（不显示 unknown/
+            # unavailable——保留实体可读状态）
+            return "未获取"
         # v3.2.2: 优先 App 官方槽位 AnnouncementType/Duration（HAR 实证），
         # 旧槽位 vehicleAnnouncementSoundType/vehicleAnnouncementDuration
         # 仅兜底（历史残留、App 新逻辑不读）。
         sound = pref.get("AnnouncementType") or pref.get("vehicleAnnouncementSoundType")
         duration = pref.get("Duration") or pref.get("vehicleAnnouncementDuration")
         if sound is None and duration is None:
-            return None
+            return "未获取"
         # 新槽位=枚举数字（0-4）；旧槽位=枚举名（chrip1...panic）——分别映射
         type_cn = next(
             (cn for cn, en in CHIRP_TO_ANNOUNCE.items() if en == str(sound)),
