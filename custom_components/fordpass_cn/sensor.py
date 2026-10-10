@@ -302,11 +302,17 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # 依赖 setup 时 cevs_diag 非空，前段探测中断即不创建，实体缺失难排查。
     sensors.append(FordPassCevsDiagSensor(coordinator))
     # v3.7.24: 预约出发/充电业务传感器——探测到数据才创建
-    # （cevs_probe 非空 = 端点返回真实 200；非 cevs 车型/失败不创建）
+    # （cevs_probe 非空 = 端点返回真实 200）。
+    # v3.8.2: 再按车型过滤——纯油/柴油车 cevs 端点同样返回 200 但业务
+    # 恒空（isEnabled=Off / chargeLogs=[]），预约出发/充电是 EV/PHEV/
+    # 混动功能；仅 fuelType ∈ 电/插混/混动集合才创建，其余车型不创建
+    # （升级残留由 async_setup_entry 的 registry 清理自动移除）。
     cevs_probe = getattr(coordinator, "cevs_probe", {}) or {}
-    if cevs_probe.get("departuretimes"):
+    fuel = str(coordinator.vehicle_info.get("fuelType") or "").upper()
+    cevs_supported = fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
+    if cevs_supported and cevs_probe.get("departuretimes"):
         sensors.append(FordPassCevsDepartureSensor(coordinator))
-    if cevs_probe.get("chargelogs"):
+    if cevs_supported and cevs_probe.get("chargelogs"):
         sensors.append(FordPassCevsChargelogSensor(coordinator))
     # v3.4.6: 只读探测实体（OTA 新版本/详情、预约出发、充电日志）——探测
     # 到数据才创建，非能力车型/无数据不创建（全车型适配，0 unavailable）。
