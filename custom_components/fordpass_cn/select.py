@@ -135,6 +135,19 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         # v3.3.3: 云端同步监听（coordinator 每次数据更新后回调）
         self._cloud_unsub = self.coordinator.async_add_listener(self._on_cloud_update)
 
+    async def async_added_to_hass(self) -> None:
+        """HA 实体注册后：恢复最后已知状态 + 立即同步一次当前云端值。
+
+        v3.9.5: coordinator 的初始化与首次刷新（async_probe_capabilities /
+        async_config_entry_first_refresh）在平台 setup 之前完成，listener
+        注册晚于这些数据更新——若只等监听回调，重启/重载后 select 要等
+        下一个状态刷新间隔（默认 30 分钟）才与云端同步。注册时立即
+        读一次当前 chirp_cloud/remote_climate_cloud 同步本地（幂等：
+        与当前值相同则不更新）。
+        """
+        await super().async_added_to_hass()
+        self._on_cloud_update()
+
     async def async_will_remove_from_hass(self) -> None:
         """卸载时注销云端同步监听（防止 reload 后重复回调）。"""
         if self._cloud_unsub is not None:
