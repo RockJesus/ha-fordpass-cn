@@ -10,6 +10,7 @@ POST /api/vehicles/v5/{vin}/honk（参数直达车机，等效上传设置）。
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -107,6 +108,10 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
     v3.3.3: 监听 coordinator 数据更新——「鸣笛设置云端状态」回读的
     AnnouncementType/Duration 变化时自动同步到本 select（App/其他设备
     改动后，HA 侧显示与持久化设置自动跟随云端）。
+    v3.9.0: 修复「改设置立马回弹」——上传云端进行中（_syncing=True）时
+    忽略云端回写回调（旧 chirp_cloud 会把刚选的值覆盖回旧值），并将
+    _save_cloud 串行化（连续快速修改时按序上传，避免读被回弹污染的
+    entry.options 上传旧值）。
     """
 
     _attr_has_entity_name = False
@@ -123,6 +128,9 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         self.entry = entry
         self.coordinator = coordinator
         self._settings = settings
+        # v3.9.0: 上传进行中标志 + 上传串行锁（防回弹/防并发竞态）
+        self._syncing = False
+        self._save_lock = asyncio.Lock()
         # v3.3.3: 云端同步监听（coordinator 每次数据更新后回调）
         self._cloud_unsub = self.coordinator.async_add_listener(self._on_cloud_update)
 
@@ -133,7 +141,13 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
             self._cloud_unsub = None
 
     def _on_cloud_update(self) -> None:
-        """云端设置变化 → 同步本地 select（幂等：与当前值不同才更新）。"""
+        """云端设置变化 → 同步本地 select（幂等：与当前值不同才更新）。
+
+        v3.9.0: 本实体正在上传云端（_syncing=True）时忽略——旧 chirp_cloud
+        尚未更新为最新值，回写会把用户刚选的值覆盖回旧值（回弹）。
+        """
+        if self._syncing:
+            return
         type_cn, duration = _cloud_pref(self.coordinator)
         if duration is not None:
             try:
@@ -161,43 +175,47 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         UserPreferenceV2 preference-by-groups），成功后回读云端
         preference 更新 chirp_cloud（「鸣笛设置云端状态」传感器），
         实现 App / HA / 云端三方同步；「保存鸣笛设置」按钮已删除。
+        v3.9.0: 整体持串行锁——连续快速修改按序上传；锁内重读
+        entry.options（上一笔可能已更新另一维度），保证每次上传携带
+        用户最后一次的完整设置。
         """
-        options: dict[str, Any] = {}
-        entry_id = getattr(self.coordinator, "entry_id", None)
-        if entry_id:
-            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
-            options = entry.options if entry else {}
-        duration = int(
-            options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
-            or DEFAULT_HONK_DURATION
-        )
-        chirp_name = options.get(CONF_CHIRP_TYPE) or DEFAULT_CHIRP_TYPE
-        if chirp_name in CHIRP_TYPE_OPTIONS:
-            chirp_type = CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
-        else:
-            chirp_type = 3
-        try:
-            await self.coordinator.api.save_honk_settings(
-                self.coordinator.vin, duration=duration, chirp_type=chirp_type
+        async with self._save_lock:
+            options: dict[str, Any] = {}
+            entry_id = getattr(self.coordinator, "entry_id", None)
+            if entry_id:
+                entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
+                options = entry.options if entry else {}
+            duration = int(
+                options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
+                or DEFAULT_HONK_DURATION
             )
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning(
-                "FordPass 鸣笛设置云端保存失败（本地设置仍生效）: %s", exc
+            chirp_name = options.get(CONF_CHIRP_TYPE) or DEFAULT_CHIRP_TYPE
+            if chirp_name in CHIRP_TYPE_OPTIONS:
+                chirp_type = CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
+            else:
+                chirp_type = 3
+            try:
+                await self.coordinator.api.save_honk_settings(
+                    self.coordinator.vin, duration=duration, chirp_type=chirp_type
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning(
+                    "FordPass 鸣笛设置云端保存失败（本地设置仍生效）: %s", exc
+                )
+                raise
+            _LOGGER.info(
+                "FordPass 鸣笛设置已即时上传云端（类型=%s 时长=%ss）",
+                CHIRP_TYPE_OPTIONS[chirp_type - 1], duration,
             )
-            raise
-        _LOGGER.info(
-            "FordPass 鸣笛设置已即时上传云端（类型=%s 时长=%ss）",
-            CHIRP_TYPE_OPTIONS[chirp_type - 1], duration,
-        )
-        # 回读云端 preference → 更新 chirp_cloud（「鸣笛设置云端状态」同步）
-        try:
-            pref = await self.coordinator.api.get_chirp_preference()
-            if isinstance(pref, dict) and pref:
-                data = dict(self.coordinator.data or {})
-                data["chirp_cloud"] = pref
-                self.coordinator.async_set_updated_data(data)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("FordPass 鸣笛设置云端回读失败: %s", exc)
+            # 回读云端 preference → 更新 chirp_cloud（「鸣笛设置云端状态」同步）
+            try:
+                pref = await self.coordinator.api.get_chirp_preference()
+                if isinstance(pref, dict) and pref:
+                    data = dict(self.coordinator.data or {})
+                    data["chirp_cloud"] = pref
+                    self.coordinator.async_set_updated_data(data)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("FordPass 鸣笛设置云端回读失败: %s", exc)
 
     @property
     def available(self) -> bool:
@@ -246,7 +264,12 @@ class FordPassHonkDurationSelect(_FordPassHonkSettingSelect):
         self._attr_current_option = f"{value} 秒"
         self.async_write_ha_state()
         # v3.3.4: 选择后即时上传福特账户云端（App/HA/云端三方同步）
-        await self._save_cloud()
+        # v3.9.0: 上传期间置 _syncing，屏蔽云端回写回调防回弹
+        self._syncing = True
+        try:
+            await self._save_cloud()
+        finally:
+            self._syncing = False
 
 
 class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
@@ -275,7 +298,12 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
         self._attr_current_option = option
         self.async_write_ha_state()
         # v3.3.4: 选择后即时上传福特账户云端（App/HA/云端三方同步）
-        await self._save_cloud()
+        # v3.9.0: 上传期间置 _syncing，屏蔽云端回写回调防回弹
+        self._syncing = True
+        try:
+            await self._save_cloud()
+        finally:
+            self._syncing = False
 
 def _cloud_temp(coordinator: FordPassCoordinator) -> int | None:
     """读云端远程空调目标温度（v3.4.5，候选组 RemoteClimateSetting）。"""
@@ -321,7 +349,12 @@ class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
         self._attr_current_option = f"{settings.get(CONF_REMOTE_TEMP, DEFAULT_REMOTE_TEMP)} °C"
 
     def _on_cloud_update(self) -> None:
-        """云端温度变化 → 同步本地 select（幂等）。"""
+        """云端温度变化 → 同步本地 select（幂等）。
+
+        v3.9.0: 上传中忽略云端回写（防回弹，与鸣笛设置同）。
+        """
+        if self._syncing:
+            return
         temp = _cloud_temp(self.coordinator)
         if temp is not None and temp in REMOTE_CLIMATE_TEMP_OPTIONS:
             cur = f"{temp} °C"
@@ -336,22 +369,27 @@ class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
         self._attr_current_option = f"{value} °C"
         self.async_write_ha_state()
         # v3.4.5: 选择后即时上传福特账户云端（App/HA/云端三方同步）
+        # v3.9.0: 上传期间置 _syncing，屏蔽云端回写回调防回弹
+        self._syncing = True
         try:
-            await self.coordinator.api.save_remote_climate_target_temp(value)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning(
-                "FordPass 远程空调目标温度云端保存失败（本地设置仍生效，通道待 EV 车型实测）: %s", exc,
+            try:
+                await self.coordinator.api.save_remote_climate_target_temp(value)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning(
+                    "FordPass 远程空调目标温度云端保存失败（本地设置仍生效，通道待 EV 车型实测）: %s", exc,
+                )
+                raise
+            _LOGGER.info(
+                "FordPass 远程空调目标温度已即时上传云端（%s°C，候选通道 RemoteClimateSetting/TargetTemp）", value,
             )
-            raise
-        _LOGGER.info(
-            "FordPass 远程空调目标温度已即时上传云端（%s°C，候选通道 RemoteClimateSetting/TargetTemp）", value,
-        )
-        # 回读云端 preference → 更新 remote_climate_cloud（云端同步）
-        try:
-            pref = await self.coordinator.api.get_remote_climate_preference()
-            if isinstance(pref, dict) and pref:
-                data = dict(self.coordinator.data or {})
-                data["remote_climate_cloud"] = pref
-                self.coordinator.async_set_updated_data(data)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("FordPass 远程空调目标温度云端回读失败: %s", exc)
+            # 回读云端 preference → 更新 remote_climate_cloud（云端同步）
+            try:
+                pref = await self.coordinator.api.get_remote_climate_preference()
+                if isinstance(pref, dict) and pref:
+                    data = dict(self.coordinator.data or {})
+                    data["remote_climate_cloud"] = pref
+                    self.coordinator.async_set_updated_data(data)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("FordPass 远程空调目标温度云端回读失败: %s", exc)
+        finally:
+            self._syncing = False
