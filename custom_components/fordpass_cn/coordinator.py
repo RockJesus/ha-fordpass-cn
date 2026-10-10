@@ -13,7 +13,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FordPassApi, FordPassApiError
-from .const import COORDINATE_WGS84, DOMAIN
+from .const import COORDINATE_WGS84, DOMAIN, PROBE_PERSIST_TTL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,6 +76,17 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._last_store = Store(
                 hass, 1, f"{DOMAIN}.{entry_id}.{vin[-6:]}.last_data"
             )
+        # v3.8.6: 探测结果持久化（HA Store）——探测类请求（命令白名单/
+        # 额外端点/cevs/家充桩）只在登录 setup 时执行，结果落盘；重启或
+        # 重新加载后 setup 直接复用（TTL 内不重探），避免每次 reload 白打
+        # 一批探测请求制造噪音（用户：每个账号登录时或重新加载时才 setup，
+        # 不要制造不必要的噪音）。
+        self._probe_store: Store | None = None
+        if entry_id:
+            self._probe_store = Store(
+                hass, 1, f"{DOMAIN}.{entry_id}.{vin[-6:]}.probe_cache"
+            )
+        self._probe_cache: dict[str, dict[str, Any]] = {}
         # v3.3.7: 云端 send-command 白名单（探测结果）——平台实体按此动态创建
         self.command_whitelist: list[str] | None = None
         # v3.4.5: 家充桩管理探测结果（None=无该功能/未探测成功）
@@ -96,26 +107,65 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return True, ent[1]
         return False, None
 
-    async def _cached_fetch(self, key: str, ttl: float, factory) -> Any:
+    async def _cached_fetch(
+        self, key: str, ttl: float, factory, persist: bool = False
+    ) -> Any:
         """TTL 缓存包装：命中直接返回旧值；失败保留旧值；成功写缓存。
 
         v3.4.2: ``factory`` 为协程工厂（如 ``lambda: api.get_x(vin)``）——
         只有 TTL 未命中（真正要发请求）时才创建协程并 await，避免
         TTL 命中时产生 "coroutine was never awaited" RuntimeWarning。
+        v3.8.6: ``persist=True`` 时三级缓存——内存 TTL → HA Store 持久化
+        TTL（重启/重载后 setup 复用，不再重探）→ factory → 写内存+落盘。
+        探测类请求（白名单/额外端点/cevs/家充桩）一律 persist=True；
+        常规轮询数据保持内存缓存（避免高频写盘）。
         """
         hit, old = self._cache_hit(key)
         if hit:
             return old
+        if persist and self._probe_cache:
+            ent = self._probe_cache.get(key)
+            if ent and time.time() < ent.get("expire", 0):
+                # 持久化命中：回填内存缓存（防止同轮重复读盘）
+                self._cache[key] = (time.monotonic() + ttl, ent["value"])
+                return ent["value"]
         try:
             val = await factory()
         except Exception as exc:  # noqa: BLE001 - best effort，失败不阻塞刷新
             self.logger.debug("FordPass %s fetch failed: %s", key, exc)
             if old is not None:
                 return old
+            if persist and self._probe_cache:
+                ent = self._probe_cache.get(key)
+                if ent:
+                    return ent["value"]
             return None
         if val is not None:
             self._cache[key] = (time.monotonic() + ttl, val)
+            if persist and self._probe_store is not None:
+                self._probe_cache[key] = {
+                    "expire": time.time() + ttl,
+                    "value": val,
+                }
+                try:
+                    await self._probe_store.async_save(self._probe_cache)
+                except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
+                    self.logger.debug("FordPass probe cache save failed: %s", exc)
         return val
+
+    async def _load_probe_cache(self) -> None:
+        """v3.8.6: 从 HA Store 读取探测结果持久化缓存（setup 时调用一次）。"""
+        if self._probe_store is None:
+            return
+        try:
+            data = await self._probe_store.async_load()
+            if isinstance(data, dict):
+                self._probe_cache = data
+                self.logger.debug(
+                    "FordPass probe cache loaded: %s entries", len(data)
+                )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass probe cache load failed: %s", exc)
 
     async def async_probe_capabilities(self) -> None:
         """探测云端命令白名单 + 新增 GET 端点结构（v3.3.7，尽力而为）。
@@ -123,16 +173,24 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         setup 阶段调用一次：成功后 command_whitelist 供各平台按命令创建
         实体（全车型自动适配）；失败保持 None，平台不创建新增实体
         （现有实体不受影响）。探测均为只读/幂等，不触发任何车辆动作。
+        v3.8.6: 探测结果持久化——重启/重载后 setup 先读 Store，TTL 内
+        直接复用（不再重探制造噪音）；TTL 过期或首次才真正探测。
         """
+        await self._load_probe_cache()
         try:
-            self.command_whitelist = await self.api.probe_command_whitelist(self.vin)
+            self.command_whitelist = await self._cached_fetch(
+                "whitelist", PROBE_PERSIST_TTL,
+                lambda: self.api.probe_command_whitelist(self.vin),
+                persist=True,
+            )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass capability probe failed: %s", exc)
             self.command_whitelist = None
         try:
             self.extra_probes = await self._cached_fetch(
-                "extra_probes", 86400,
+                "extra_probes", PROBE_PERSIST_TTL,
                 lambda: self.api.probe_extra_endpoints(self.vin),
+                persist=True,
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
@@ -145,27 +203,43 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v3.8.5: 按车型跳过探测——纯油(G)/柴油(D)车 cevs 三端点（预约出发/
         # 充电/命令状态）业务恒空且不创建实体（v3.8.2 创建规则），探测白打
         # 请求并制造 Impossible modulus 噪音；与创建规则对称：fuelType ∈
-        # 电/插混/混动才探测（登录后一次，结果进 _cached_fetch 缓存）。
-        try:
-            fuel = str(self.vehicle_info.get("fuelType") or "").upper()
-            if fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV"):
-                await self.api.probe_cevs_auto(self.vin)
-            else:
-                self.logger.info(
-                    "FordPass cevs probe skipped for fuelType %s",
-                    fuel or "unknown",
-                )
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass cevs auto probe failed: %s", exc)
-        self.cevs_diag = getattr(self.api, "cevs_diag", {})
-        # v3.7.24: 预约出发/充电探测结果（实体数据源，探测到数据才创建）
-        self.cevs_probe = getattr(self.api, "cevs_probe", {})
-        # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + 24h TTL
-        # 缓存（探测类请求绝不进入常规轮询，防福特云限流）；探测结果供
-        # sensor 按"探测到数据才创建"接入。失败/非家充桩车型保持 None。
+        # 电/插混/混动才探测。
+        # v3.8.6: 探测结果持久化（probe+diag 一并缓存）——reload 后 setup
+        # TTL 内复用，不重探。
+        fuel = str(self.vehicle_info.get("fuelType") or "").upper()
+        if fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV"):
+            try:
+                async def _cevs_factory():
+                    await self.api.probe_cevs_auto(self.vin)
+                    return {
+                        "probe": getattr(self.api, "cevs_probe", {}),
+                        "diag": getattr(self.api, "cevs_diag", {}),
+                    }
+
+                cevs = await self._cached_fetch(
+                    "cevs", PROBE_PERSIST_TTL, _cevs_factory, persist=True,
+                ) or {}
+                self.cevs_probe = cevs.get("probe", {})
+                self.cevs_diag = cevs.get("diag", {})
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass cevs auto probe failed: %s", exc)
+                self.cevs_probe = {}
+                self.cevs_diag = {}
+        else:
+            self.cevs_probe = {}
+            self.cevs_diag = {}
+            self.logger.info(
+                "FordPass cevs probe skipped for fuelType %s",
+                fuel or "unknown",
+            )
+        # v3.4.5: 家充桩管理（smartwallbox）端点探测——登录后一次 + TTL
+        # 持久化缓存（v3.8.6 起 reload 复用，不再重探；探测类请求绝不进入
+        # 常规轮询，防福特云限流）；探测结果供 sensor 按"探测到数据才创建"
+        # 接入。失败/非家充桩车型保持 None。
         self.smartwallbox = await self._cached_fetch(
-            "smartwallbox", 86400,
+            "smartwallbox", PROBE_PERSIST_TTL,
             lambda: self.api.probe_smartwallbox(self.vin),
+            persist=True,
         )
 
     async def async_load_last_data(self) -> None:
