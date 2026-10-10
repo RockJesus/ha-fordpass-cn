@@ -296,11 +296,8 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_binding", "默认充电桩", "default"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "最近充电记录", "record"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "家充桩充电状态", "status"))
-    # v3.7.6: 预约出发/充电探测诊断（cevs 域）——探测结果暴露为传感器，
-    # 无需导出日志即可从 HA 侧读取三端点成败与摘要。
-    # v3.7.18: 无条件创建（空时显示"未探测"，available 恒 True）——此前
-    # 依赖 setup 时 cevs_diag 非空，前段探测中断即不创建，实体缺失难排查。
-    sensors.append(FordPassCevsDiagSensor(coordinator))
+    # v3.8.3: 已移除「预约出发/充电探测诊断」传感器（用户要求不创建诊断
+    # 实体；探测仍执行，结果写 api.cevs_diag 供日志/排查）。
     # v3.7.24: 预约出发/充电业务传感器——探测到数据才创建
     # （cevs_probe 非空 = 端点返回真实 200）。
     # v3.8.2: 再按车型过滤——纯油/柴油车 cevs 端点同样返回 200 但业务
@@ -1723,47 +1720,6 @@ class FordPassCevsChargelogSensor(SensorEntity):
             attr["最近记录"] = json.dumps(logs[-1] if logs else {}, ensure_ascii=False)
         return attr
 
-
-class FordPassCevsDiagSensor(SensorEntity):
-    """预约出发/充电探测诊断传感器（v3.7.6，cevs 域）。
-
-    数据源 coordinator.cevs_diag = api.cevs_diag（probe_extra_endpoints
-    登录后执行，departuretimes/chargelogs/commandstatus 三端点 RSA 探测
-    结果：ok/rejected/failed + 摘要）。用途：HA 侧直接读取 cevs 探测
-    成败与错误消息（无需导出日志）；探测执行过即创建，永远可用。
-    """
-
-    _attr_has_entity_name = False
-    _attr_icon = "mdi:cloud-question"
-
-    def __init__(self, coordinator) -> None:
-        self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-cevs-diag"
-        self._attr_name = "预约出发/充电探测诊断"
-        self._attr_device_info = coordinator.device_info
-
-    @property
-    def available(self) -> bool:
-        return True
-
-    @property
-    def native_value(self) -> str:
-        diag = self.coordinator.cevs_diag or {}
-        if not diag:
-            return "未探测"
-        ok = sum(1 for v in diag.values() if v.startswith("ok"))
-        bad = len(diag) - ok
-        return f"{ok} 端点 ok / {bad} 端点异常"
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        attrs = dict(self.coordinator.cevs_diag or {})
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
-        return attrs
 
 class FordPassProbeSensor(SensorEntity):
     """只读探测端点摘要传感器（v3.4.6，探测数据驱动创建）。
