@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength, UnitOfPressure
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
@@ -539,10 +540,13 @@ class FordPassLocationSensor(SensorEntity):
 
 
 
-class FordPassRestoreMixin:
+class FordPassRestoreMixin(RestoreEntity):
     """v3.8.9: 重启/集成重载后先恢复最后已知状态显示（restore_state 机制），
     消除 unavailable 过渡态——实体在 coordinator 数据未就绪时返回恢复值，
     新数据到达后自动覆盖为实时值。
+
+    async_get_last_state() 是 RestoreEntity 提供的方法，普通 Entity 没有，
+    因此 mixin 必须继承 RestoreEntity（独立 mixin，与 Entity 无 MRO 冲突）。
     """
 
     _restored: str | None = None
