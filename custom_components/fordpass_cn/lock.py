@@ -19,6 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import capability
 from .const import CMD_LOCK, CMD_TRUNK_UNLOCK, CMD_UNLOCK, DOMAIN
 from .coordinator import FordPassCoordinator
+from .sensor import FordPassRestoreMixin
 
 
 async def async_setup_entry(
@@ -47,7 +48,7 @@ async def async_setup_entry(
     async_add_entities(locks)
 
 
-class FordPassLock(LockEntity):
+class FordPassLock(FordPassRestoreMixin, LockEntity):
     """Lock entity controlling the vehicle doors."""
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
@@ -66,7 +67,7 @@ class FordPassLock(LockEntity):
     def is_locked(self) -> bool:
         status = self.coordinator.data.get("vehiclestatus", {})
         value = status.get("lockStatus", {}).get("value")
-        return value == "LOCKED" if value else None
+        return self._restore_bool(value == "LOCKED" if value else None)
 
     async def async_lock(self, **kwargs: Any) -> None:
         await self.coordinator.run_command(CMD_LOCK)
@@ -75,10 +76,16 @@ class FordPassLock(LockEntity):
         await self.coordinator.run_command(CMD_UNLOCK)
 
     async def async_update(self) -> None:
-        await self.coordinator.async_request_refresh()
+        # v3.8.0: 锁状态由 coordinator 定时刷新驱动，实体轮询不再强制
+        # 全量刷新并阻塞等待——修复 "Updating fordpass_cn lock took longer
+        # than the scheduled update interval" 警告（轮询周期 < 刷新周期时
+        # 每次都要等全量刷新完成）。锁操作链路（run_command 内命令状态
+        # 轮询 + force_refresh）独立，不受影响。
+        if self.coordinator.data is None:
+            await self.coordinator.async_request_refresh()
 
 
-class FordPassTrunkLock(LockEntity):
+class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
     """后备箱锁（v3.0.1，由 switch 改为 lock）。
 
     is_locked=True = 后备箱已锁定；is_locked=False = 已解锁可开启。
@@ -113,7 +120,7 @@ class FordPassTrunkLock(LockEntity):
             return True
         if lock == "UNLOCKED":
             return False
-        return None
+        return self._restore_bool(None)
 
     async def async_lock(self, **kwargs: Any) -> None:
         """锁定后备箱：全车上锁（网关无独立 TrunkLock 命令）。"""
@@ -134,7 +141,7 @@ class FordPassTrunkLock(LockEntity):
         self.async_write_ha_state()
 
 
-class FordPassFrunkLock(LockEntity):
+class FordPassFrunkLock(FordPassRestoreMixin, LockEntity):
     """前备箱锁（v3.3.7，电马等车型——按云端命令白名单创建）。
 
     解锁 = 白名单 Frunk 开启类命令；锁定 = Frunk 关闭类命令。
