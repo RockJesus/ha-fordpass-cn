@@ -40,6 +40,7 @@ from .const import (
     HONK_AUTO_OFF_SECONDS,
 )
 from .coordinator import FordPassCoordinator
+from .sensor import FordPassRestoreMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ async def async_setup_entry(
     async_add_entities(switches)
 
 
-class FordPassWallboxChargeSwitch(SwitchEntity):
+class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
     """家充桩充电开关（v3.7.2）——开=charging/start/v2、关=charging/stop/v2。
 
     仅 smartwallbox 探测到绑定桩的车型创建（纯电/插混家充桩车型）；
@@ -118,7 +119,7 @@ class FordPassWallboxChargeSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._state
+        return self._restore_bool(self._state)
 
     def _wallbox_id(self) -> str | None:
         """从探测结果取默认桩 id。"""
@@ -166,7 +167,7 @@ class FordPassWallboxChargeSwitch(SwitchEntity):
         self.async_write_ha_state()
 
 
-class FordPassDepartureSwitch(SwitchEntity):
+class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
     """预约充电/预约出发开关（v3.5.0）：POST departuretimes/toggleon|off。
 
     departuretimes/retrieve 探测有数据才创建；状态取探测结果中的
@@ -197,7 +198,7 @@ class FordPassDepartureSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
-        return self._state
+        return self._restore_bool(self._state)
 
     async def async_update(self) -> None:
         data = self._probe()
@@ -253,7 +254,7 @@ def _wl_pair(cmds: list[str], *kws: str) -> tuple[str | None, str | None]:
     return on, off
 
 
-class _FordPassWlSwitch(SwitchEntity):
+class _FordPassWlSwitch(FordPassRestoreMixin, SwitchEntity):
     """白名单驱动的通用开关（v3.3.7，车型专属功能）。
 
     仅在云端命令白名单包含对应命令时创建；开/关分别发送匹配命令，
@@ -287,7 +288,7 @@ class _FordPassWlSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._state
+        return self._restore_bool(self._state)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         if not self._on_cmd:
@@ -304,7 +305,7 @@ class _FordPassWlSwitch(SwitchEntity):
         self.async_write_ha_state()
 
 
-class FordPassEngineSwitch(SwitchEntity):
+class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
     """Remote engine start / stop."""
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
@@ -323,7 +324,7 @@ class FordPassEngineSwitch(SwitchEntity):
     def is_on(self) -> bool:
         status = self.coordinator.data.get("vehiclestatus", {})
         value = status.get("remoteStartStatus", {}).get("value")
-        return bool(value) if value is not None else None
+        return self._restore_bool(bool(value) if value is not None else None)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.run_command(CMD_ENGINE_START)
@@ -362,7 +363,7 @@ class FordPassVAswitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._state
+        return self._restore_bool(self._state)
 
     def _duration(self) -> int:
         """读取鸣笛持续时长设置（与鸣笛寻车同源：config entry options）。"""
@@ -461,7 +462,7 @@ class FordPassVAswitch(SwitchEntity):
         self.async_write_ha_state()
 
 
-class FordPassLightSwitch(SwitchEntity):
+class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
     """灯光寻车开关（ZoneLightingON / ZoneLightingOFF）。
 
     灯光寻车是瞬时命令、车辆不回报灯光状态，开关状态为记忆值（assumed）。
@@ -489,7 +490,7 @@ class FordPassLightSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._state
+        return self._restore_bool(self._state)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         try:
@@ -508,7 +509,7 @@ class FordPassLightSwitch(SwitchEntity):
         self.async_write_ha_state()
 
 
-class FordPassHonkSwitch(SwitchEntity):
+class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
     """鸣笛寻车开关（v3.0.7，真实开/关双通道）。
 
     2026-10-01 静态逆向还原 App 官方协议（libapp.so, blutter）：
@@ -540,7 +541,7 @@ class FordPassHonkSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._state
+        return self._restore_bool(self._state)
 
     async def _auto_off(self, duration: int | None = None) -> None:
         """按本次触发时长自动复位；时长缺失/非法时回退 HONK_AUTO_OFF_SECONDS。"""

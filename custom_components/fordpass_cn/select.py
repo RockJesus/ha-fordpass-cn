@@ -35,6 +35,7 @@ from .const import (
     REMOTE_CLIMATE_TEMP_OPTIONS,
 )
 from .coordinator import FordPassCoordinator
+from .sensor import FordPassRestoreMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class _FordPassHonkSettingSelect(SelectEntity):
+class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
     """Base class: persist option to config entry options + memory settings.
 
     v3.3.3: 监听 coordinator 数据更新——「鸣笛设置云端状态」回读的
@@ -201,6 +202,11 @@ class _FordPassHonkSettingSelect(SelectEntity):
     @property
     def available(self) -> bool:
         return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+
+    @property
+    def current_option(self) -> str | None:
+        # v3.8.9: 重启/重载后 entry options 未加载完时恢复最后已知选项
+        return self._attr_current_option if self._attr_current_option is not None else self._restored
 
     def _persist(self, key: str, value: Any) -> None:
         """Write to memory settings + config entry options (survives restart)."""
