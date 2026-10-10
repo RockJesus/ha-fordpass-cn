@@ -203,7 +203,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # v3.7.10: cevs 加密链变体手动探测服务——初始探测只发 plain 单变体
     # （v3.7.9 一次 12 请求被福特云风控静默降级），其余变体（json_vin /
     # json_vin_xjw / aes_ecb）用本 service 人工逐个触发，每次 3 请求，
-    # 结果写 api.cevs_diag 由诊断传感器自读（防风控、无需重启发版）。
+    # 结果写 api.cevs_diag 供日志/排查（v3.8.3 起不再创建诊断实体）。
     async def _svc_probe_cevs_variant(call: ServiceCall) -> None:
         vname = str(call.data.get("variant", "plain"))
         for co in coordinators:
