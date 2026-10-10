@@ -44,15 +44,17 @@ DEFAULT_HONK_DURATION = 10
 # 鸣笛类型选项（App 设置页 5 种，按强度从弱到强）
 CHIRP_TYPE_OPTIONS = ["雨落荷叶", "急浪拍岸", "汽笛长鸣", "空谷回音", "声光共舞"]
 DEFAULT_CHIRP_TYPE = "汽笛长鸣"  # App 设置页默认选中项
-# 中文类型 → VehicleAnnouncementType（App 反编译枚举：chrip1=0/chirp2=1/
-# chirpHonk=2/honk=3/panic=4）；「保存鸣笛设置」上传云端的 AnnouncementType
+# 中文类型 → VehicleAnnouncementType（v3.9.6 用户实测校准：App 真实枚举
+# 为 chrip1=0/chirp2=1/honk=2/chirpHonk=3/panic=4——HA 设「汽笛长鸣」App
+# 显示「空谷回音」、设「空谷回音」App 显示「汽笛长鸣」，即 2↔3 写反，
+# 其余 0/1/4 对应正确）；「保存鸣笛设置」上传云端的 AnnouncementType
 # 值为枚举数字字符串（HAR 实证：{"preferenceType":"AnnouncementType",
 # "preferenceValue":"2"}）
 CHIRP_TO_ANNOUNCE = {
     "雨落荷叶": "0",
     "急浪拍岸": "1",
-    "汽笛长鸣": "2",
-    "空谷回音": "3",
+    "空谷回音": "2",
+    "汽笛长鸣": "3",
     "声光共舞": "4",
 }
 # 旧槽位 vehicleAnnouncementSoundType 历史值（枚举名）→ 中文（兼容回读）
@@ -63,15 +65,16 @@ ANNOUNCE_ENUM_CN = {
     "honk": "空谷回音",
     "panic": "声光共舞",
 }
-# 中文类型 → v5 honk 请求的 ChirpType 数字（0-4，与 App 枚举一致，v3.1.8）：
-# 0=chrip1 / 1=chirp2 / 2=chirpHonk / 3=honk / 4=panic。
+# 中文类型 → v5 honk 请求的 ChirpType 数字（0-4，与 App 枚举一致，v3.1.8；
+# v3.9.6 与 CHIRP_TO_ANNOUNCE 同步校准——同属 App 枚举体系，实测
+# honk=2/chirpHonk=3）：0=chrip1 / 1=chirp2 / 2=honk / 3=chirpHonk / 4=panic。
 # 注意：4（声光共舞 panic）在部分车型走独立的 /panic/{duration} 端点
 # （灯+喇叭警报），锐际实测 404（云端不支持）；其余 0-3 走 POST /honk。
 CHIRP_TO_TYPE = {
     "雨落荷叶": 0,
     "急浪拍岸": 1,
-    "汽笛长鸣": 2,
-    "空谷回音": 3,
+    "空谷回音": 2,
+    "汽笛长鸣": 3,
     "声光共舞": 4,
 }
 # 保存到 config entry options 的键
