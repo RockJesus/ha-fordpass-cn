@@ -390,5 +390,10 @@ LOGIN_MODE_PASSWORD = "password"
 DEFAULT_SCAN_INTERVAL_MINUTES = 30
 DEFAULT_CONF_FLOW_TITLE = "福特派互联"
 
+# v3.8.6: 探测类请求持久化 TTL（秒 = 7 天）——探测结果落盘，重启/重载后
+# setup 在 TTL 内复用（不再重探制造噪音），过期后才重新探测（捕捉车型
+# 云端能力变化）。
+PROBE_PERSIST_TTL = 604800.0
+
 # Platforms
 PLATFORMS = ["lock", "switch", "button", "sensor", "device_tracker", "select"]
