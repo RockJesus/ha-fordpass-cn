@@ -1253,9 +1253,10 @@ class FordPassApi:
 
     async def wait_command_complete(
         self, vin: str, command_id: str, command_type: str,
-        timeout: float = 60.0, poll: float = 2.0,
+        timeout: float = 60.0, poll: float = 5.0,
     ) -> tuple[bool, dict[str, Any] | None]:
         """Poll command-execution-status until ForceRefresh finishes (v2.7.1).
+        v3.8.0: poll 2s→5s（单命令最多 12 次而非 30 次，防福特云限流）。
 
         Verified from the official app capture (2026-09-29): after
         send-command returns a commandId, the app polls

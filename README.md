@@ -71,6 +71,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 <details>
 <summary>📜 版本历史（点击展开）</summary>
+- **v3.8.0**：**版本号回归合规链**——此前 3.7.10~3.7.24 段内超 9 违规，本次按规则从 3.7.9 进位（3.7.9→3.8.0，十进制逐位、段内每数字≤9）；修复 lock 平台 `Updating fordpass_cn lock took longer than the scheduled update interval` 警告（实体轮询不再强制全量刷新并阻塞等待，锁状态由 coordinator 定时刷新驱动）；命令状态轮询 2s→5s（单命令最多 12 次请求，防福特云限流）
 - **v3.7.24**：**接入预约出发/充电实体（cevs 域核心突破）**——cevs 场景白盒密钥 + vin 字段实证有效：departuretimes（isEnabled/日历计划/同步状态）与 chargelogs（充电记录/下次充电时间）三请求探测全部 200；新增「预约出发」「充电记录」传感器（探测到数据才创建，全车型能力驱动）；commandstatus 仅缺 commandId 业务字段（非加密问题）；版本号十进制 +1（3.7.23→3.7.24）
 - **v3.7.23**：**cevs 字段名回退**——DTO 反序列化错误实证三端点必填字段为 `vin`（v3.7.22 的 encryptedVin 报 Unrecognized field / Missing required creator property 'vin'，`CommandStatusV2Request` 类名暴露）；恢复 vin 字段并保持 cevs 场景密钥密文；版本号十进制 +1（3.7.22→3.7.23）
 - **v3.7.22**：**cevs body 字段修复**——whitebox cevs 场景密钥已解出 vin（v3.7.20），commandstatus 解密成功但仍报缺字段；按 vcs 域通用字段名将 body 改 `encryptedVin`+`xjw`（原 "vin" 字段未被 DTO 识别）；修复 wbk helper 内 `_is_err_resp` NameError（嵌套函数引用）；版本号十进制 +1（3.7.21→3.7.22）
