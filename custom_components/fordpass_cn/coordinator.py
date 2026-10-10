@@ -357,21 +357,21 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # ---- v3.4.1 防限流优化：以下均走 TTL 缓存，慢变数据命中即复用，
         # 不发请求；请求失败保留旧缓存（最后已知状态），不阻塞主刷新。
         # （v3.4.2: 传协程工厂，TTL 命中时不创建协程，杜绝 RuntimeWarning）
-        # Best-effort location（track_location 开启时；LBS 独立网关，
-        # 车停着坐标不变 → 15 分钟 TTL）
+        # 位置 LBS（track_location 开启时；v3.8.8: 跟随状态刷新间隔每轮
+        # 刷新——不再固定 15 分钟 TTL，与车辆状态同步；失败保留最后已知
+        # 坐标，避免 device_tracker / 定位传感器丢位置）
         if self.track_location:
-            loc = await self._cached_fetch(
-                "location", 900,
-                lambda: self.api.get_location(self.vin, self.coordinate_system),
-            )
-            if isinstance(loc, dict) and loc.get("lat"):
-                data["location"] = loc
-            elif (self.data or {}).get("location"):
-                # v3.4.3: LBS 偶发失败时保留上一轮有效坐标，
-                # 避免 device_tracker / 定位传感器丢位置（保留最后已知状态）
+            try:
+                loc = await self.api.get_location(self.vin, self.coordinate_system)
+                if isinstance(loc, dict) and loc.get("lat"):
+                    data["location"] = loc
+                elif (self.data or {}).get("location"):
+                    data["location"] = (self.data or {}).get("location")
+                else:
+                    data["location"] = None
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass location fetch failed: %s", exc)
                 data["location"] = (self.data or {}).get("location")
-            else:
-                data["location"] = None
         # Vehicle health alerts（30 分钟 TTL；失败保留旧列表/清空，
         # TTL 命中天然抑制重试——取代旧"连续失败 2 次抑制 1h"逻辑）
         alerts = await self._cached_fetch(
@@ -382,14 +382,20 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data["ota_setting"] = await self._cached_fetch(
             "ota_setting", 21600, lambda: self.api.get_ota_setting(self.vin)
         )
-        # 服务信息端点（保养计划 12h / 召回 24h / SIM 6h / WiFi 15min TTL）
+        # 服务信息端点（保养计划 12h / 召回 24h / SIM 6h TTL；WiFi 状态
+        # v3.8.8 起跟随状态刷新间隔每轮刷新，不再固定 15 分钟）
         for key, ttl, factory in (
             ("maintenance_plan", 43200, lambda: self.api.get_maintenance_plan(self.vin)),
             ("recall", 86400, lambda: self.api.get_recall(self.vin)),
             ("sim_info", 21600, lambda: self.api.get_sim_info(self.vin)),
-            ("wifi_status", 900, lambda: self.api.get_wifi_status(self.vin)),
         ):
             data[key] = await self._cached_fetch(key, ttl, factory)
+        # 车载 WiFi 状态（v3.8.8: 跟随状态刷新间隔每轮刷新；失败保留旧值）
+        try:
+            data["wifi_status"] = await self.api.get_wifi_status(self.vin)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass wifi_status fetch failed: %s", exc)
+            data["wifi_status"] = (self.data or {}).get("wifi_status")
         # 鸣笛设置云端查询（UserPreferenceV2，1 小时 TTL——用户改设置时
         # select 已即时上云+本地写入，此查询仅作初始化同步）
         data["chirp_cloud"] = await self._cached_fetch(
