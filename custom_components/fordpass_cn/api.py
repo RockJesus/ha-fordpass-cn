@@ -1550,7 +1550,7 @@ class FordPassApi:
                     # v3.7.20: wbk_cevs_* 用 cevs 场景专用密钥（服务器按
                     # cevs 场景解密，x_api 场景密文报 bad key）
                     if vname.startswith("wbk_cevs_"):
-                        cevs_crypto = FordPassCrypto.get(scene="cevs")
+                        cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
                         iv = None if vname == "wbk_cevs_plain" else bytes.fromhex(xjw_now)
                         enc, xjw2 = await asyncio.to_thread(
                             lambda: cevs_crypto.encrypt_field(vin, iv),
@@ -1785,7 +1785,7 @@ class FordPassApi:
         self.cevs_probe: dict[str, Any] = {}
         try:
             _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-            cevs_crypto = FordPassCrypto.get(scene="cevs")
+            cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
             for name, path, body in (
                 ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
                 ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
