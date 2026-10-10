@@ -538,7 +538,38 @@ class FordPassLocationSensor(SensorEntity):
         return self._last_known or "定位不可用"
 
 
-class FordPassSensor(SensorEntity):
+
+class FordPassRestoreMixin:
+    """v3.8.9: 重启/集成重载后先恢复最后已知状态显示（restore_state 机制），
+    消除 unavailable 过渡态——实体在 coordinator 数据未就绪时返回恢复值，
+    新数据到达后自动覆盖为实时值。
+    """
+
+    _restored: str | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            self._restored = last.state
+
+    def _restore_bool(self, live: bool | None) -> bool | None:
+        """bool 状态兜底（is_locked/is_on）：live 有效返回 live，
+        否则按 HA 状态机文本（locked/unlocked、on/off）解析恢复值。"""
+        if live is not None:
+            return live
+        if self._restored is None:
+            return None
+        return self._restored.lower() in ("on", "locked", "true", "1")
+
+    def _restore_str(self, live):
+        """字符串状态兜底（sensor/select/device_tracker）：live 有效返回
+        live，否则返回恢复值。"""
+        if live is not None:
+            return live
+        return self._restored
+
+
+class FordPassSensor(FordPassRestoreMixin, SensorEntity):
     def __init__(self, coordinator, key, label, unit, device_class, icon, path,
                  round_value: bool = False, enum_map: dict | None = None,
                  multiplier: float | None = None, transform=None,
@@ -612,6 +643,9 @@ class FordPassSensor(SensorEntity):
     def native_value(self):
         status = self.coordinator.data.get("vehiclestatus", {})
         value = _first_leaf(status, self._paths)
+        if value is None:
+            # v3.8.9: 重启/重载后数据未就绪时恢复最后已知状态，消除 unavailable
+            return self._restored
         if isinstance(value, (list, dict)):
             if isinstance(value, list) and value and all(isinstance(x, str) for x in value):
                 value = "、".join(value)

@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import FordPassCoordinator
+from .sensor import FordPassRestoreMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ async def async_setup_entry(
     async_add_entities([FordPassDeviceTracker(c) for c in coordinators])
 
 
-class FordPassDeviceTracker(TrackerEntity):
+class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-tracker"
@@ -49,6 +50,14 @@ class FordPassDeviceTracker(TrackerEntity):
     def source_type(self) -> str:
         """Return the tracker source type (GPS)."""
         return "gps"
+
+    @property
+    def state(self) -> str | None:
+        # v3.8.9: 重启/重载后坐标未就绪时恢复最后已知位置状态，消除 unavailable
+        live = super().state
+        if live not in (None, "unknown"):
+            return live
+        return self._restored if self._restored is not None else live
 
     @property
     def _location(self) -> dict | None:
