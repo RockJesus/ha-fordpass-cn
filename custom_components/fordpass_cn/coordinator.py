@@ -147,6 +147,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.coordinate_system = coordinate_system
         # 最近一次成功拉取的时间（v2.7.8），暴露为传感器 last_poll 属性
         self.last_poll: datetime | None = None
+        # v4.0.3: 活动日志去重状态（同摘要 15s 窗口内不重复写，防并发双条）
+        self._last_logbook_at: datetime | None = None
+        self._last_logbook_msg: str | None = None
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
         # v3.4.1: active_alerts 频率由 TTL 缓存控制（30 分钟）——取代旧
         # "_alerts_fail/_alerts_hold_until 连续失败 2 次抑制 1h" 逻辑
@@ -553,24 +556,32 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
-        # v3.9.9: 每次轮询成功写一条活动日志（logbook）——即使所有实体
-        # 状态与上次一致（HA 不产生 state_changed 事件、活动日志无记录），
-        # 也显式记录一条，让用户能从活动日志确认"轮询按间隔执行了"。
-        # v4.0.1: message 携带本次轮询后的关键实体状态摘要（门锁/点火/
-        # 油量/续航/里程/车窗/车门/出行），活动日志直接可见每次刷新后的状态。
-        # 服务调用轻量（写 DB），create_task 不阻塞刷新；失败不影响主流程。
+        # v4.0.3: 活动日志 15s 去重——并发刷新（手动按钮立即 force_refresh 与
+        # 自动轮询撞车 / 命令完成后二次拉取）会在几秒内写两条相同摘要，既刷屏
+        # 又无意义。同摘要且距上次写入 <15s 时跳过；轮询间隔 ≥5 分钟，正常
+        # 记录不受影响，每条轮询仍按间隔显示。
         try:
-            self.hass.async_create_task(
-                self.hass.services.async_call(
-                    "logbook",
-                    "log",
-                    {
-                        "name": self._vehicle_name or "福特派互联",
-                        "message": _status_summary(data),
-                        "domain": DOMAIN,
-                    },
+            summary = _status_summary(data)
+            now = datetime.now()
+            last_at = self._last_logbook_at
+            if (
+                last_at is None
+                or (now - last_at).total_seconds() >= 15
+                or summary != self._last_logbook_msg
+            ):
+                self.hass.async_create_task(
+                    self.hass.services.async_call(
+                        "logbook",
+                        "log",
+                        {
+                            "name": self._vehicle_name or "福特派互联",
+                            "message": summary,
+                            "domain": DOMAIN,
+                        },
+                    )
                 )
-            )
+                self._last_logbook_at = now
+                self._last_logbook_msg = summary
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
         return data
