@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.5**：**修复 cevs 探测 NameError**——业务错误判断函数 `_is_err_resp` 原为 `probe_extra_endpoints` 内嵌套函数，却被 `_probe_cevs_variant_once`/`probe_cevs_variant` 三处引用（会 NameError，v3.7.22 只修了 wbk 一处另两处漏改）；已提升为模块级函数，全部引用统一解析
 - **v4.0.4**：**消除白盒加密初始化阻塞**——unicorn ELF 解析与 key 加载（CPU 密集）在 setup 时统一预初始化为线程执行（x_api/cevs/lbs 三场景），后续请求直接命中单例，事件循环零阻塞；修复了此前首次加载可能出现的 `Detected blocking call` 警告（open/import_module）
 - **v4.0.3**：**消除活动日志成对记录与多余请求**——手动"刷新车辆状态"在命令完成后不再二次强制刷新（旧版会在无新鲜快照时兜底再拉一次，造成成对双条活动日志 + 双倍福特云请求）；活动日志增加 15 秒去重（并发刷新只记一条），每次轮询仍按间隔显示状态摘要
 - **v4.0.2**：**机油寿命永不 unknown（数据源兜底）**——预测诊断端点（prognostic）云端暂缺该车数据时（iolm/归零月份/剩余公里全空），自动兜底读取车辆状态内的机油寿命实际值（oilLifeActual），仍显示百分比；prognostic 有值则优先（含归零月份/剩余公里属性），升级后旧实体自动恢复显示
