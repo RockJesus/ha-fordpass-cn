@@ -10,6 +10,8 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 > ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
 
+> ⚠️ 本集成包含逆向工程所得的私有二进制与密钥素材（`data/libwbsk_crypto_tool.so`、`data/whitebox_keys_for_prod.json`），仅用于个人研究；若相关权利方要求移除，作者将配合下架。密钥轮换后需发布新版本适配。
+
 ## 功能特性
 
 - **双登录方式**：手机号短信验证码登录（无需密码）或用户名密码登录（Azure B2C 官方流程），配置时可自由选择。> 注意：用户名密码登录走微软 Azure AD B2C 网关，其风控可能拦截非浏览器自动化请求（返回 `AADB2C: An exception has occurred` 或 567）；如遇到此类失败，请改用短信验证码登录（登录后令牌自动续期，无需频繁重登）。
@@ -74,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.19**：**manifest loggers 清理 + 合规声明**——移除无效的 `unicorn` logger 声明（unicorn 库不注册同名 logger，pyelftools 的才是 `elftools`）； README 免责声明补充私有二进制/密钥素材分发声明与密钥轮换影响说明
 - **v4.0.18**：**字典重复键与冗余变量清理**——sensor 各状态映射删除 `True/False` 与 `1/0` 哈希重复键（值相同行为不变）；api 4 处无 raise 的 `except ... as err` 改回裸 except（v4.0.16 引入的多余绑定）
 - **v4.0.17**：**车辆状态重试补超时 + 出行摘要删死代码**——get_vehicle_status 重试 except 加入 `asyncio.TimeoutError`（ForceRefresh 后慢响应截断正是超时 场景，此前最需重试的异常不在范围）；`_status_summary` 出行分支删除永不成立 的 `s=="不可用"` 死代码
 - **v4.0.16**：**B904 异常链修复**——except 内 raise 补全原因链：网关非文本 响应用 `from None`（新异常不携带 codec 噪音），JSONDecodeError 包装用 `from err`（保留解码失败原因），共 10 处
