@@ -584,8 +584,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or (now - last_at).total_seconds() >= 15
                 or summary != self._last_logbook_msg
             ):
-                self.hass.async_create_task(
-                    self.hass.services.async_call(
+                # v4.0.13: 由 async_create_task 改为直接 await——此前 task 内部
+                # async_call 的异常无人捕获（外层 try 只包创建动作），logbook
+                # 服务调用失败会留下"Task exception was never retrieved"噪音；
+                # await 后异常落进下方 except，刷新流程不受影响。
+                # 每轮轮询仍写入（用户诉求：活动日志可见每次轮询状态摘要），
+                # 15s 去重仅防手动刷新与自动轮询撞车的重复条目。
+                try:
+                    await self.hass.services.async_call(
                         "logbook",
                         "log",
                         {
@@ -594,7 +600,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "domain": DOMAIN,
                         },
                     )
-                )
+                except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
+                    self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
                 self._last_logbook_at = now
                 self._last_logbook_msg = summary
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
