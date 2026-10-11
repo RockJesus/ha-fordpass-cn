@@ -272,6 +272,16 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinate_system = entry.options.get(
         CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
     )
+    # v4.0.0: 仅"调度相关选项"（刷新间隔/定位/坐标系）变化才更新并立即刷新。
+    # 鸣笛设置/远程空调温度等业务 select 每次云端同步写入 entry.options 也会
+    # 触发本 listener——旧版无条件 async_request_refresh 导致每轮主轮询后
+    # 10 秒（Debouncer cooldown）又打一轮福特云请求，产生双轮双 logbook，
+    # 既浪费请求量又制造噪音。快照比较：业务设置变化时三项不变 → 直接跳过。
+    store = hass.data[DOMAIN][entry.entry_id]
+    snapshot = (interval, track_location, coordinate_system)
+    if store.get("_opt_snapshot") == snapshot:
+        return
+    store["_opt_snapshot"] = snapshot
     for coordinator in coordinators:
         coordinator.update_interval = timedelta(minutes=interval)
         coordinator.track_location = bool(entry.options.get("track_location", True))
