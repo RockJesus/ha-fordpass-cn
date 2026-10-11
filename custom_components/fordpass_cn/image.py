@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import hashlib
 
 import aiohttp
 
@@ -28,7 +30,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
-    return os.path.join(hass.config.path("www"), "fordpass_cn", f"{vin}{suffix}.png")
+    """v4.0.14: VIN 白名单校验——VIN 直接拼路径存在路径穿越风险（../../）。
+
+    云端字段异常/被篡改时用 sha1 摘要兜底作文件名（稳定唯一），杜绝把
+    用户可控字符写进 www 对外目录路径。
+    """
+    safe = vin if re.fullmatch(r"[A-Za-z0-9]{6,20}", vin) else hashlib.sha1(vin.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(hass.config.path("www"), "fordpass_cn", f"{safe}{suffix}.png")
 
 
 def _read_local(path: str) -> bytes | None:
