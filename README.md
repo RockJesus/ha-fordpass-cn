@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.15**：**lint 冗余清理**——删除 api.py 重复 `import uuid`、重复 `@staticmethod`、6 处空 f-string、未使用 import（PATH_CRCC_PROFILE / button 5 项 / select time），删除 button.py 未使用变量 `resp`，lambda 默认参数绑定加 noqa（B008 误报）——全部行为不变
 - **v4.0.14**：**VIN 文件名白名单校验**——车辆图片本地路径对 VIN 做 `[A-Za-z0-9]{6,20}` 白名单，异常值改用 sha1 摘要兜底文件名，消除路径穿越风险
 - **v4.0.13**：**logbook 写入改为直接 await**——原 `async_create_task(async_call)` 的 task 内部异常无人捕获（服务调用失败会留 Task exception 噪音），改为 await 后 异常落入保护分支，刷新流程不受影响；每轮轮询仍写入活动日志（可见每次轮询状态 摘要），15s 去重保留
 - **v4.0.12**：**账户级端点共享缓存**——chirp_cloud（鸣笛设置云端状态）/remote_climate_cloud（空调温度）/messages_summary（未读消息）提为 api 实例级（账号级）TTL 缓存 + per-key 并发锁：多 VIN 账号每车 coordinator 并发刷新时账户级端点只发一次网络请求，其余车复用，防福特云限流（chirp 60s / climate 3600s / messages 1800s）
