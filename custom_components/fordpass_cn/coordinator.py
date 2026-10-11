@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 import logging
+import re
 import time
 from typing import Any
 
@@ -16,6 +17,97 @@ from .api import FordPassApi, FordPassApiError
 from .const import COORDINATE_WGS84, DOMAIN, PROBE_PERSIST_TTL
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _status_summary(data: dict[str, Any]) -> str:
+    """轮询后关键实体状态摘要（v4.0.1：随活动日志展示每次刷新后的状态）。
+
+    从 vehicle-status 原始字段提取门锁/点火/油量/续航/里程/车窗/车门/出行
+    等用户关心的核心状态，拼成一行可读摘要；字段缺失或值无意义时跳过该项。
+    """
+    vs = (data or {}).get("vehiclestatus")
+    if not isinstance(vs, dict):
+        return "车辆状态刷新成功"
+
+    def val(node):
+        return (node or {}).get("value") if isinstance(node, dict) else node
+
+    def win_state(v):
+        if isinstance(v, str):
+            s = v.strip().lower().replace("_", " ")
+            if s in ("fully closed", "closed", "close"):
+                return "已关闭"
+            if s in ("fully open", "fully opened", "open"):
+                return "未关闭（全开）"
+            m = re.search(r"(\d+)\s*percent", s)
+            if m:
+                return f"未关闭 {int(m.group(1))}%"
+            return None
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            pct = int(v)
+            return "已关闭" if pct <= 0 else f"未关闭 {pct}%"
+        return None
+
+    parts: list[str] = []
+    lock = val(vs.get("lockStatus"))
+    if lock is not None:
+        parts.append("门锁：" + ("已锁定" if lock in ("LOCKED", 1, "1", True) else "已解锁"))
+    ign = val(vs.get("ignitionStatus"))
+    if ign is not None:
+        s = str(ign).lower()
+        parts.append("点火：" + ("已启动" if s in ("on", "run", "running", "1") else "已熄火"))
+    fuel = vs.get("fuel") or {}
+    fl = fuel.get("fuelLevel")
+    if fl is not None:
+        try:
+            parts.append(f"油量：{float(fl):.1f}%")
+        except (TypeError, ValueError):
+            parts.append(f"油量：{fl}%")
+    dte = fuel.get("distanceToEmpty")
+    if dte is not None:
+        try:
+            parts.append(f"续航：{int(float(dte))} km")
+        except (TypeError, ValueError):
+            parts.append(f"续航：{dte} km")
+    odo = val(vs.get("odometer"))
+    if odo is not None:
+        try:
+            parts.append(f"里程：{int(float(odo))} km")
+        except (TypeError, ValueError):
+            parts.append(f"里程：{odo} km")
+    wp = vs.get("windowPosition") or {}
+    win_states: list[str] = []
+    for _k, node in wp.items():
+        if isinstance(node, dict):
+            st = win_state(val(node))
+            if st and st != "已关闭":
+                win_states.append(st)
+    if wp:
+        parts.append("车窗：" + ("全部关闭" if not win_states else "、".join(dict.fromkeys(win_states))))
+    ds = vs.get("doorStatus") or {}
+    DOOR_CN = {
+        "driverDoor": "主驾门",
+        "passengerDoor": "副驾门",
+        "leftRearDoor": "左后门",
+        "rightRearDoor": "右后门",
+        "hoodDoor": "前机舱盖",
+        "tailgateDoor": "尾门",
+        "innerTailgateDoor": "内尾门",
+    }
+    open_doors: list[str] = []
+    for k, cn in DOOR_CN.items():
+        v = val(ds.get(k))
+        if v is not None and str(v).lower() not in ("closed", "close", "locked", "0"):
+            open_doors.append(cn)
+    if ds:
+        parts.append("车门：" + ("全部关闭" if not open_doors else "、".join(open_doors)))
+    oaa = val(vs.get("outandAbout"))
+    if oaa is not None:
+        s = str(oaa)
+        parts.append(
+            "出行：" + ("已泊车" if "NotAvailable" in s else ("外出中" if ("Available" in s or s == "不可用") else s))
+        )
+    return "车辆状态刷新成功 | " + " | ".join(parts) if parts else "车辆状态刷新成功"
 
 
 class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -464,6 +556,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v3.9.9: 每次轮询成功写一条活动日志（logbook）——即使所有实体
         # 状态与上次一致（HA 不产生 state_changed 事件、活动日志无记录），
         # 也显式记录一条，让用户能从活动日志确认"轮询按间隔执行了"。
+        # v4.0.1: message 携带本次轮询后的关键实体状态摘要（门锁/点火/
+        # 油量/续航/里程/车窗/车门/出行），活动日志直接可见每次刷新后的状态。
         # 服务调用轻量（写 DB），create_task 不阻塞刷新；失败不影响主流程。
         try:
             self.hass.async_create_task(
@@ -472,7 +566,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "log",
                     {
                         "name": self._vehicle_name or "福特派互联",
-                        "message": "车辆状态刷新成功",
+                        "message": _status_summary(data),
                         "domain": DOMAIN,
                     },
                 )
