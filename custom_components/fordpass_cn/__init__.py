@@ -14,6 +14,7 @@ import voluptuous as vol
 
 from .api import FordPassApi, FordPassApiError
 from . import capability
+from .wbsk import FordPassCrypto
 from .const import (
     CONF_ACCESS_TOKEN,
     CONF_CHIRP_TYPE,
@@ -84,6 +85,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if not vehicles:
         raise RuntimeError("No vehicles found on this FordPass account")
+
+    # v4.0.4: 预热白盒密码学单例（x_api/cevs/lbs_p2c 三个场景）——unicorn
+    # ELF 解析与 key 文件加载是 CPU 密集且会阻塞事件循环的初始化，统一放在
+    # 线程中完成（api 请求路径的 encrypt/decrypt 均已 to_thread，此处是
+    # 双保险：此后任何 self.crypto 访问直接命中已初始化单例，事件循环零阻塞，
+    # 防止未来新增未包裹 to_thread 的调用路径造成 blocking call 回归）。
+    for scene in ("x_api", "cevs", "lbs_p2c"):
+        try:
+            await asyncio.to_thread(FordPassCrypto.get, None, scene)
+        except Exception as exc:  # noqa: BLE001 - 预热失败不阻断 setup
+            _LOGGER.warning("FordPass crypto warmup %s failed: %s", scene, exc)
 
     # v3.1.6: 多 VIN 支持——账号下每一辆车建立独立的 coordinator / 设备 /
     # 实体组。各平台按各自车型的 vehicle-status 数据创建实体（无效字段不建），
