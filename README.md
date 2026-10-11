@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.7**：**消除闭包晚绑定（B023）**——7 处 `asyncio.to_thread(lambda ...)` 引用外层循环变量（v/key/inner/cevs_crypto/iv）改为默认参数绑定（lambda 默认参数定义时求值），不再依赖 to_thread 提交即执行的巧合，杜绝线程切换竞态风险
 - **v4.0.6**：**get_vehicles 解密失败兜底**——车辆列表某辆车任一字段（encryptedVin/NickName/Licenseplate）解密失败时保留密文原值并记 debug，不再中断整个账号加载（原实现单字段失败 → 整账号 ConfigEntryNotReady，殃及其他正常车辆）
 - **v4.0.5**：**修复 cevs 探测 NameError**——业务错误判断函数 `_is_err_resp` 原为 `probe_extra_endpoints` 内嵌套函数，却被 `_probe_cevs_variant_once`/`probe_cevs_variant` 三处引用（会 NameError，v3.7.22 只修了 wbk 一处另两处漏改）；已提升为模块级函数，全部引用统一解析
 - **v4.0.4**：**消除白盒加密初始化阻塞**——unicorn ELF 解析与 key 加载（CPU 密集）在 setup 时统一预初始化为线程执行（x_api/cevs/lbs 三场景），后续请求直接命中单例，事件循环零阻塞；修复了此前首次加载可能出现的 `Detected blocking call` 警告（open/import_module）
