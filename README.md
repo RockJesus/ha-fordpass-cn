@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.13**：**logbook 写入改为直接 await**——原 `async_create_task(async_call)` 的 task 内部异常无人捕获（服务调用失败会留 Task exception 噪音），改为 await 后 异常落入保护分支，刷新流程不受影响；每轮轮询仍写入活动日志（可见每次轮询状态 摘要），15s 去重保留
 - **v4.0.12**：**账户级端点共享缓存**——chirp_cloud（鸣笛设置云端状态）/remote_climate_cloud（空调温度）/messages_summary（未读消息）提为 api 实例级（账号级）TTL 缓存 + per-key 并发锁：多 VIN 账号每车 coordinator 并发刷新时账户级端点只发一次网络请求，其余车复用，防福特云限流（chirp 60s / climate 3600s / messages 1800s）
 - **v4.0.11**：**修复 reauth 流程**——补上缺失的 `_get_reauth_entry()` 方法（此前 reauth 走到 `_finish_login` 必然 AttributeError 崩溃）；reauth 时校验登录账号与原 entry 手机号一致，不一致直接中止并提示删除重配，防止新账号 token写入旧账号 entry 造成实体/VIN 错配
 - **v4.0.10**：**修复发布物遗漏 api.py/wbsk.py**——v4.0.5/6/7/8 对 api.py、wbsk.py 的改动未列入发布 CHANGED，线上一直是旧文件（v4.0.9 coordinator import FordPassProbeRejected 才暴露 ImportError，集成 not loaded）；本版补齐两文件，v4.0.5-4.0.9 全部 api/wbsk 修复（_is_err_resp 模块级、get_vehicles 解密兜底、B023 闭包绑定、场景实例缓存、ProbeRejected）一次到位
