@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.16**：**B904 异常链修复**——except 内 raise 补全原因链：网关非文本 响应用 `from None`（新异常不携带 codec 噪音），JSONDecodeError 包装用 `from err`（保留解码失败原因），共 10 处
 - **v4.0.15**：**lint 冗余清理**——删除 api.py 重复 `import uuid`、重复 `@staticmethod`、6 处空 f-string、未使用 import（PATH_CRCC_PROFILE / button 5 项 / select time），删除 button.py 未使用变量 `resp`，lambda 默认参数绑定加 noqa（B008 误报）——全部行为不变
 - **v4.0.14**：**VIN 文件名白名单校验**——车辆图片本地路径对 VIN 做 `[A-Za-z0-9]{6,20}` 白名单，异常值改用 sha1 摘要兜底文件名，消除路径穿越风险
 - **v4.0.13**：**logbook 写入改为直接 await**——原 `async_create_task(async_call)` 的 task 内部异常无人捕获（服务调用失败会留 Task exception 噪音），改为 await 后 异常落入保护分支，刷新流程不受影响；每轮轮询仍写入活动日志（可见每次轮询状态 摘要），15s 去重保留

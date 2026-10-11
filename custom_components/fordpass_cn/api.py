@@ -478,7 +478,7 @@ class FordPassApi:
                 )
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
-                )
+                ) from None
             self._log.debug("FordPass %s -> %s %s", path, resp.status, text[:2000])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
@@ -500,10 +500,10 @@ class FordPassApi:
                 return None
             try:
                 data = json.loads(text)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as err:
                 if raw:
                     return text
-                raise FordPassApiError(resp.status, f"non-JSON response: {text[:200]}")
+                raise FordPassApiError(resp.status, f"non-JSON response: {text[:200]}") from err
         if isinstance(data, dict):
             # Business-layer token expiry: the gateway answers HTTP 200 with
             # {"status":600,"error":"Swap token failed {…Cat2 token expired…}",
@@ -767,7 +767,7 @@ class FordPassApi:
                 )
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
-                )
+                ) from None
             self._log.debug("FordPass v5 honk POST -> %s %s", resp.status, text[:500])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
@@ -786,7 +786,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as err:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass v5 honk token refresh failed: %s", exc)
@@ -799,7 +799,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as err:
                 return {"raw": text}
 
     async def va_command(
@@ -845,7 +845,7 @@ class FordPassApi:
                 )
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
-                )
+                ) from None
             self._log.debug("FordPass v5 panic POST -> %s %s", resp.status, text[:300])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
@@ -864,7 +864,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as err:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass v5 panic token refresh failed: %s", exc)
@@ -877,7 +877,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as err:
                 return {"raw": text}
 
     async def honk_cancel_command(self, vin: str) -> dict[str, Any]:
@@ -904,7 +904,7 @@ class FordPassApi:
                 )
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
-                )
+                ) from None
             self._log.debug("FordPass v5 honk DELETE -> %s %s", resp.status, text[:500])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
@@ -923,7 +923,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as err:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass v5 honk token refresh failed: %s", exc)
@@ -936,7 +936,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as err:
                 return {"raw": text}
 
     async def announcestatus(self, vin: str, command_id: str) -> dict[str, Any]:
@@ -962,7 +962,7 @@ class FordPassApi:
                 )
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
-                )
+                ) from None
             self._log.debug(
                 "FordPass v5 announcestatus -> %s %s", resp.status, text[:500]
             )
@@ -983,7 +983,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as err:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error(
@@ -998,7 +998,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as err:
                 return {"raw": text}
 
     async def capability_v4(self, vin: str) -> dict[str, Any]:
@@ -2383,14 +2383,14 @@ class FordPassApi:
                 )
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
-                )
+                ) from None
             self._log.debug("FordPass third-party-token -> %s %s", resp.status, text[:300])
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
         try:
             data = json.loads(text)
-        except json.JSONDecodeError:
-            raise FordPassApiError(resp.status, f"non-JSON token response: {text[:200]}")
+        except json.JSONDecodeError as err:
+            raise FordPassApiError(resp.status, f"non-JSON token response: {text[:200]}") from err
         inner = data.get("data", {})
         enc_token = inner.get("encryptedAccessToken")
         if not enc_token:
@@ -2463,14 +2463,14 @@ class FordPassApi:
                 )
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
-                )
+                ) from None
             self._log.debug("FordPass LBS -> %s %s", resp.status, text[:500])
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
         try:
             data = json.loads(text)
-        except json.JSONDecodeError:
-            raise FordPassApiError(resp.status, f"non-JSON LBS response: {text[:200]}")
+        except json.JSONDecodeError as err:
+            raise FordPassApiError(resp.status, f"non-JSON LBS response: {text[:200]}") from err
         inner = data.get("data", data)
         if not inner.get("iv") or not inner.get("lat"):
             return inner
