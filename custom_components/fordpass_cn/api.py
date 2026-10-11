@@ -374,6 +374,31 @@ class FordPassApi:
         # 存这里（ok/rejected/failed + 摘要），coordinator 暴露给诊断
         # 传感器，HA 侧可直接读取（无需导出日志）。
         self.cevs_diag: dict[str, str] = {}
+        # v4.0.12: 账户级端点共享缓存（chirp_cloud / remote_climate_cloud /
+        # messages_summary 等 UserPreference 账户级数据）——api 实例按账号
+        # 维度（entry）创建，多 VIN 账号每车一个 coordinator 并发刷新时，
+        # 账户级端点只发一次网络请求，其余车直接复用；锁保证并发 miss
+        # 时单飞（防风控）。
+        self._account_cache: dict[str, tuple[float, Any]] = {}
+        self._account_locks: dict[str, asyncio.Lock] = {}
+
+    async def _account_cached(
+        self, key: str, ttl: float, factory
+    ) -> Any:
+        """v4.0.12: 账户级 TTL 缓存——命中直接返回；并发 miss 时经 per-key
+        锁只放行一次网络请求，其余协程等待后复用结果。"""
+        now = time.monotonic()
+        ent = self._account_cache.get(key)
+        if ent and now < ent[0]:
+            return ent[1]
+        lock = self._account_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            ent = self._account_cache.get(key)
+            if ent and time.monotonic() < ent[0]:
+                return ent[1]
+            val = await factory()
+            self._account_cache[key] = (time.monotonic() + ttl, val)
+            return val
 
     @property
     def crypto(self) -> FordPassCrypto:
@@ -1095,7 +1120,13 @@ class FordPassApi:
 
         GET /api/cnxapi-pds/v1/user/preference-list?timestamp=&sign=（与鸣笛
         设置同一查询通道）。返回 {preferenceType: preferenceValue} 或 {}。
+        v4.0.12: 账户级共享缓存（TTL 3600s）——多车账号 setup 探测只发一次。
         """
+        return await self._account_cached(
+            "remote_climate_preference", 3600, self._remote_climate_fetch
+        )
+
+    async def _remote_climate_fetch(self) -> dict[str, Any]:
         try:
             data = await self._request("GET", PATH_USER_PREF_LIST, query={})
         except FordPassApiError:
@@ -1121,7 +1152,12 @@ class FordPassApi:
         （仅两键——不带 encryptedVin/xjw；2026-10-02 实测 200 回读
         VehicleAnnouncementSetting 组已存值）。
         返回 {groupName, userPreferences: [...]} 或 {}（无数据）。
+        v4.0.12: 账户级共享缓存（TTL 60s）——多车账号每车每轮只发一次请求，
+        其余车复用；App 改动后 ≤60s 内 HA 同步（原"每轮真拉"语义近似保留）。
         """
+        return await self._account_cached("chirp_preference", 60, self._chirp_pref_fetch)
+
+    async def _chirp_pref_fetch(self) -> dict[str, Any]:
         try:
             data = await self._request("GET", PATH_USER_PREF_LIST, query={})
         except FordPassApiError:
@@ -1204,8 +1240,12 @@ class FordPassApi:
         （_request 自动附加）。响应 data.summary.{allRedDotStatus,
         unReadCategoryId, unReadCategoryDescription, readMessageSubject}
         + data.categories[]。
+        v4.0.12: 账户级共享缓存（TTL 1800s，与 coordinator 调用一致）——
+        多车账号下多车共用同一份消息摘要，只发一次请求。
         """
-        return await self._request("GET", PATH_MESSAGES_SUMMARY)
+        return await self._account_cached(
+            "messages_summary", 1800, lambda: self._request("GET", PATH_MESSAGES_SUMMARY)
+        )
 
     # ------------------------------------------------------------ 空调滤芯（v3.1.7）
     async def get_air_filter_status(self, vin: str) -> dict[str, Any]:
