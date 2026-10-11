@@ -44,6 +44,35 @@ LOGIN_MODE_LABELS = {
     LOGIN_MODE_PASSWORD: "用户名密码登录",
 }
 
+COORDINATE_LABELS = {
+    COORDINATE_WGS84: "WGS-84（官方地图/OSM 精确）",
+    COORDINATE_GCJ02: "GCJ-02（高德/腾讯地图）",
+}
+
+# 集成偏好表单（状态刷新间隔 / 位置跟踪 / 坐标系）——OptionsFlow 与
+# reconfigure 共用，避免两份 schema 漂移。
+def _preference_schema(defaults: dict) -> vol.Schema:
+    return vol.Schema(
+        {
+            # v2.7.8: scan interval is entered in MINUTES (default 30).
+            vol.Required(
+                CONF_SCAN_INTERVAL,
+                default=defaults.get(
+                    CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1440)),
+            vol.Optional(
+                "track_location", default=defaults.get("track_location", True)
+            ): bool,
+            vol.Optional(
+                CONF_COORDINATE_SYSTEM,
+                default=defaults.get(
+                    CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
+                ),
+            ): vol.In(COORDINATE_LABELS),
+        }
+    )
+
 STEP_LOGIN_MODE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_LOGIN_MODE, default=LOGIN_MODE_SMS): vol.In(
@@ -246,6 +275,33 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.OptionsFlow:
         return FordPassOptionsFlow(config_entry)
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """处理 HA 前端"重新配置"入口（v3.9.7 修复）。
+
+        根因：HA 2026.x 前端在集成卡片点"配置/选项"默认启动
+        reconfigure flow，而本 flow 此前只实现了 OptionsFlow，未实现
+        async_step_reconfigure → 保存返回 400 "Handler FordPassConfigFlow
+        doesn't support step reconfigure" → 用户设置的任何选项（如状态
+        刷新间隔）都无法写入 entry.options（实测 entry.options 恒为空）。
+
+        这里复用偏好表单，提交后写入 entry.options（与 async_setup_entry /
+        async_update_options 读取的字段一致），并触发 update_listener
+        （async_update_options）即时应用，无需重启。
+        """
+        entry = self._get_reconfigure_entry()
+        if user_input is not None:
+            self.hass.config_entries.async_update_entry(
+                entry,
+                options=dict(user_input),
+            )
+            return self.async_abort(reason="reconfigure_successful")
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_preference_schema(entry.options),
+        )
+
 
 class FordPassOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
@@ -254,31 +310,7 @@ class FordPassOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
-        data = self._config_entry.options
-        coordinate_labels = {
-            COORDINATE_WGS84: "WGS-84（官方地图/OSM 精确）",
-            COORDINATE_GCJ02: "GCJ-02（高德/腾讯地图）",
-        }
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    # v2.7.8: scan interval is entered in MINUTES (default 30).
-                    vol.Required(
-                        CONF_SCAN_INTERVAL,
-                        default=data.get(
-                            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES
-                        ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1440)),
-                    vol.Optional(
-                        "track_location", default=data.get("track_location", True)
-                    ): bool,
-                    vol.Optional(
-                        CONF_COORDINATE_SYSTEM,
-                        default=data.get(
-                            CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
-                        ),
-                    ): vol.In(coordinate_labels),
-                }
-            ),
+            data_schema=_preference_schema(self._config_entry.options),
         )
