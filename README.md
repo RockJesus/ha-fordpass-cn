@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.20**：**循环变量与 zip strict 清理**——`_swb_find` 循环变量 `k` 保留使用、`_swb_list` 未用变量改 `_k`（B007）；wbsk 两处 `zip()` 显式 `strict=False`（尾块长度不等属预期，B905）
 - **v4.0.19**：**manifest loggers 清理 + 合规声明**——移除无效的 `unicorn` logger 声明（unicorn 库不注册同名 logger，pyelftools 的才是 `elftools`）； README 免责声明补充私有二进制/密钥素材分发声明与密钥轮换影响说明
 - **v4.0.18**：**字典重复键与冗余变量清理**——sensor 各状态映射删除 `True/False` 与 `1/0` 哈希重复键（值相同行为不变）；api 4 处无 raise 的 `except ... as err` 改回裸 except（v4.0.16 引入的多余绑定）
 - **v4.0.17**：**车辆状态重试补超时 + 出行摘要删死代码**——get_vehicle_status 重试 except 加入 `asyncio.TimeoutError`（ForceRefresh 后慢响应截断正是超时 场景，此前最需重试的异常不在范围）；`_status_summary` 出行分支删除永不成立 的 `s=="不可用"` 死代码
