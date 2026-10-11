@@ -135,7 +135,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                                  "ARMED": "被盗声光报警中", 0: "解除报警", 1: "被盗声光报警中",
                                  "0": "解除报警", "1": "被盗声光报警中",
                                  }),
-        FordPassSensor(coordinator, "remote_start", "远程启动状态", None, None, "mdi:engine", ["remoteStartStatus"], enum_map={1: "已远程启动", 0: "未远程启动", "1": "已远程启动", "0": "未远程启动", True: "已远程启动", "false": "未远程启动"}),
+        FordPassSensor(coordinator, "remote_start", "远程启动状态", None, None, "mdi:engine", ["remoteStartStatus"], enum_map={1: "已远程启动", 0: "未远程启动", "1": "已远程启动", "0": "未远程启动", "false": "未远程启动"}),
     ]
     # 车辆异常警示：v2.6.5 起合并为单一实体 —— 优先读 vha/activealert
     # 真实告警（明文中文标题）；接口不可用/无数据时回退 PrmtAlarmEvent
@@ -275,7 +275,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     if coordinator.data.get("ota_setting"):
         sensors.append(FordPassOtaSettingSensor(coordinator))
     # v3.1.4: 服务信息（保养计划/召回/SIM/WiFi）——拉取成功才创建
-    for key, cls, label in (
+    for key, cls, _label in (
         ("maintenance_plan", FordPassMaintenancePlanSensor, "保养计划"),
         ("recall", FordPassRecallSensor, "召回信息"),
         ("sim_info", FordPassSimSensor, "SIM 卡"),
@@ -1572,7 +1572,7 @@ def _swb_find(node, key: str):
 def _swb_list(node):
     """递归找第一个充电桩（wallbox/charger）对象列表（v3.4.5）。"""
     if isinstance(node, dict):
-        for k, v in node.items():
+        for _k, v in node.items():
             if isinstance(v, list) and v and all(isinstance(x, dict) for x in v) and any(
                 str(kk).lower() in ("wallboxid", "wallbox", "chargerid", "serialnumber",
                                     "serialno", "equipmentid")

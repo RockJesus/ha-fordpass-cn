@@ -188,7 +188,7 @@ class FordPassCrypto:
             data = self._pkcs7(text.encode("utf-8"))
             prev, out = iv, b""
             for i in range(0, len(data), 16):
-                blk = bytes(a ^ b for a, b in zip(data[i:i + 16], prev))
+                blk = bytes(a ^ b for a, b in zip(data[i:i + 16], prev, strict=False))
                 c = self._block(blk, "encrypt")
                 out += c
                 prev = c
@@ -201,7 +201,7 @@ class FordPassCrypto:
             out = b""
             for i in range(0, len(ct), 16):
                 mid = self._block(ct[i:i + 16], "decrypt")
-                out += bytes(a ^ b for a, b in zip(mid, prev))
+                out += bytes(a ^ b for a, b in zip(mid, prev, strict=False))
                 prev = ct[i:i + 16]
             pad = out[-1]
             return out[:-pad].decode("utf-8")
