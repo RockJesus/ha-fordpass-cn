@@ -1115,6 +1115,14 @@ class FordPassOilLifeSensor(_ServiceInfoSensor):
     def _format(self, data: dict) -> str | None:
         payload = data.get("data") if isinstance(data, dict) else None
         iolm = payload.get("iolm") if isinstance(payload, dict) else None
+        # v4.0.2: prognostic 全 null（云端暂无该车预测数据）时，兜底读
+        # vehicle-status oil.oilLifeActual（每次刷新都有），保证机油寿命
+        # 实体永不 unknown；prognostic 有值仍优先（含归零月份/剩余公里）。
+        if iolm is None:
+            vs = (self.coordinator.data or {}).get("vehiclestatus")
+            oil = vs.get("oil") if isinstance(vs, dict) else None
+            if isinstance(oil, dict):
+                iolm = oil.get("oilLifeActual")
         if iolm is None:
             return None
         parts = [f"{int(iolm)}%"]
