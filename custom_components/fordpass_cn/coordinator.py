@@ -461,4 +461,22 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
+        # v3.9.9: 每次轮询成功写一条活动日志（logbook）——即使所有实体
+        # 状态与上次一致（HA 不产生 state_changed 事件、活动日志无记录），
+        # 也显式记录一条，让用户能从活动日志确认"轮询按间隔执行了"。
+        # 服务调用轻量（写 DB），create_task 不阻塞刷新；失败不影响主流程。
+        try:
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "logbook",
+                    "log",
+                    {
+                        "name": self._vehicle_name or "福特派互联",
+                        "message": "车辆状态刷新成功",
+                        "domain": DOMAIN,
+                    },
+                )
+            )
+        except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
+            self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
         return data

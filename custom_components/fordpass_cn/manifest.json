@@ -17,5 +17,5 @@
     "unicorn==2.1.4",
     "pyelftools==0.29"
   ],
-  "version": "3.9.8"
+  "version": "3.9.9"
 }
