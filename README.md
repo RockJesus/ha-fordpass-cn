@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.18**：**字典重复键与冗余变量清理**——sensor 各状态映射删除 `True/False` 与 `1/0` 哈希重复键（值相同行为不变）；api 4 处无 raise 的 `except ... as err` 改回裸 except（v4.0.16 引入的多余绑定）
 - **v4.0.17**：**车辆状态重试补超时 + 出行摘要删死代码**——get_vehicle_status 重试 except 加入 `asyncio.TimeoutError`（ForceRefresh 后慢响应截断正是超时 场景，此前最需重试的异常不在范围）；`_status_summary` 出行分支删除永不成立 的 `s=="不可用"` 死代码
 - **v4.0.16**：**B904 异常链修复**——except 内 raise 补全原因链：网关非文本 响应用 `from None`（新异常不携带 codec 噪音），JSONDecodeError 包装用 `from err`（保留解码失败原因），共 10 处
 - **v4.0.15**：**lint 冗余清理**——删除 api.py 重复 `import uuid`、重复 `@staticmethod`、6 处空 f-string、未使用 import（PATH_CRCC_PROFILE / button 5 项 / select time），删除 button.py 未使用变量 `resp`，lambda 默认参数绑定加 noqa（B008 误报）——全部行为不变

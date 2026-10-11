@@ -786,7 +786,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError as err:
+                        except json.JSONDecodeError:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass v5 honk token refresh failed: %s", exc)
@@ -799,7 +799,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError as err:
+            except json.JSONDecodeError:
                 return {"raw": text}
 
     async def va_command(
@@ -864,7 +864,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError as err:
+                        except json.JSONDecodeError:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass v5 panic token refresh failed: %s", exc)
@@ -877,7 +877,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError as err:
+            except json.JSONDecodeError:
                 return {"raw": text}
 
     async def honk_cancel_command(self, vin: str) -> dict[str, Any]:
@@ -923,7 +923,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError as err:
+                        except json.JSONDecodeError:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error("FordPass v5 honk token refresh failed: %s", exc)
@@ -936,7 +936,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError as err:
+            except json.JSONDecodeError:
                 return {"raw": text}
 
     async def announcestatus(self, vin: str, command_id: str) -> dict[str, Any]:
@@ -983,7 +983,7 @@ class FordPassApi:
                             return {}
                         try:
                             return json.loads(text2)
-                        except json.JSONDecodeError as err:
+                        except json.JSONDecodeError:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
                     self._log.error(
@@ -998,7 +998,7 @@ class FordPassApi:
                 return {}
             try:
                 return json.loads(text)
-            except json.JSONDecodeError as err:
+            except json.JSONDecodeError:
                 return {"raw": text}
 
     async def capability_v4(self, vin: str) -> dict[str, Any]:
