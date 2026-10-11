@@ -77,6 +77,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v3.9.x（最新）</summary>
 
+- **v3.9.9**：**活动日志记录轮询**——每次状态刷新成功（自动轮询或手动刷新）都在 HA 活动日志写一条"车辆状态刷新成功"记录；即使所有实体状态与上次一致（HA 默认不产生 state_changed 事件、活动日志无痕），也能从活动日志确认轮询按间隔执行
 - **v3.9.8**：**HA 2026.x API 兼容性审计修复**——① 新增 `async_step_reauth`（token 401/403 失效时自动触发重新认证，更新 token 不卸载集成、不删实体）；② setup 失败改抛 `ConfigEntryNotReady`（临时故障由 HA 自动重试，不再直接报错）；③ manifest `loggers` 修正为 requirements 依赖包（unicorn/elftools）
 - **v3.9.7**：**修复"选项保存不生效"（entry.options 恒为空）**——HA 2026.x 前端"配置"入口默认走 reconfigure 流程，而集成未实现 `async_step_reconfigure`（保存返回 400），导致状态刷新间隔等选项永远无法写入；新增 reconfigure 步骤复用偏好表单（刷新间隔/位置跟踪/坐标系），保存即写入 options 并即时生效
 - **v3.9.6**：**修复鸣笛类型「汽笛长鸣 ↔ 空谷回音」映射互换**——用户实测校准 App 真实枚举（honk=2/chirpHonk=3），CHIRP_TO_ANNOUNCE 与 CHIRP_TO_TYPE 的 2/3 已对调，HA ↔ App 双向同步及实际鸣笛音效一致
