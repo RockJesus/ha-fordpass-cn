@@ -13,7 +13,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import FordPassApi, FordPassApiError
+from .api import FordPassApi, FordPassApiError, FordPassProbeRejected
 from .const import COORDINATE_WGS84, DOMAIN, PROBE_PERSIST_TTL
 
 _LOGGER = logging.getLogger(__name__)
@@ -226,7 +226,22 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return ent["value"]
         try:
             val = await factory()
+        except FordPassProbeRejected as exc:
+            # v4.0.9: 确定性能力缺失（业务拒绝/404）——落盘 None 并返回：
+            # TTL 内不再重探（reload 不制造 6 次 404 噪音），与"瞬时故障"
+            # 严格区分。
+            self.logger.debug("FordPass %s probe rejected: %s", key, exc)
+            self._cache[key] = (time.monotonic() + ttl, None)
+            if persist and self._probe_store is not None:
+                self._probe_cache[key] = {"expire": time.time() + ttl, "value": None}
+                try:
+                    await self._probe_store.async_save(self._probe_cache)
+                except Exception as save_exc:  # noqa: BLE001
+                    self.logger.debug("FordPass probe cache save failed: %s", save_exc)
+            return None
         except Exception as exc:  # noqa: BLE001 - best effort，失败不阻塞刷新
+            # v4.0.9: 网络瞬时故障/空响应等异常**不落盘**——下次 reload 重探，
+            # 避免把瞬时故障错误钉死 7 天。
             self.logger.debug("FordPass %s fetch failed: %s", key, exc)
             if old is not None:
                 return old
@@ -237,19 +252,19 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         if val is not None:
             self._cache[key] = (time.monotonic() + ttl, val)
-        # v3.8.7: 探测类失败（val=None，如 404=车型无该功能）也持久化——
-        # v3.8.6 只缓存非 None 结果，smartwallbox 探测失败没落盘，reload
-        # 每次重探 6 次 404（用户日志实证）。探测"完成但无数据"=能力缺失，
-        # TTL 内复用 None 不再重探；异常（raise，网络瞬时失败）仍不缓存。
-        if persist and self._probe_store is not None:
-            self._probe_cache[key] = {
-                "expire": time.time() + ttl,
-                "value": val,
-            }
-            try:
-                await self._probe_store.async_save(self._probe_cache)
-            except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
-                self.logger.debug("FordPass probe cache save failed: %s", exc)
+            # v4.0.9: 落盘只发生在"探测成功有数据"（本分支）或
+            # FordPassProbeRejected（确定性能力缺失，落盘 None）——
+            # val=None 的其它来源（空响应/网络瞬时失败）不再落盘，
+            # 下次 reload 重探，避免把瞬时故障钉死 7 天。
+            if persist and self._probe_store is not None:
+                self._probe_cache[key] = {
+                    "expire": time.time() + ttl,
+                    "value": val,
+                }
+                try:
+                    await self._probe_store.async_save(self._probe_cache)
+                except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
+                    self.logger.debug("FordPass probe cache save failed: %s", exc)
         return val
 
     async def _load_probe_cache(self) -> None:
