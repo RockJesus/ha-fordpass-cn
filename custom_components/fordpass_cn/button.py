@@ -370,12 +370,16 @@ class FordPassButton(ButtonEntity):
                     self.coordinator.async_set_updated_data(
                         {"status": vs, "vehiclestatus": vs}
                     )
-                    return
-                # Fallback: fetch vehicle-status once more.
-                try:
-                    await self.coordinator.force_refresh()
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning("FordPass fallback refresh failed: %s", exc)
+                else:
+                    # v4.0.3: 不再兜底 force_refresh()。上方的立即 force_refresh
+                    # 已拉取最新状态并写入活动日志；wait 无新鲜快照（命令仍在
+                    # 执行/超时）时保持该结果即可，下次自动轮询会更新。旧版
+                    # 在这里再 force_refresh() 一次 → 双 logbook + 双福特云
+                    # 请求（12:21 0.6s / 13:00 9.6s 成对条目根因）。
+                    _LOGGER.info(
+                        "FordPass ForceRefresh: no fresh payload yet, "
+                        "keeping immediate refresh result"
+                    )
             else:
                 # 发送失败（resp=None）已在上面打过 warning，这里不再重复；
                 # 仅在响应存在但缺少 commandId（接口结构变化）时提醒。
