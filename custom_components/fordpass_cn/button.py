@@ -27,18 +27,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
 from .const import (
-    CHIRP_TYPE_OPTIONS,
-    CMD_ASU_SETTING,
+        CMD_ASU_SETTING,
     CMD_AUTO_REFRESH,
     CMD_CENTRAL_LIGHTING,
     CMD_OTA_SCHEDULE,
     CMD_REFRESH_STATUS,
     CMD_TRAILER_CHECK_START,
     CMD_TRAILER_CHECK_STOP,
-    CMD_VA_CANCEL,
-    CMD_VA_INIT,
-    CONF_CHIRP_TYPE,
-    CONF_HONK_DURATION,
     DOMAIN,
 )
 from .api import extract_remote_image_url
@@ -441,7 +436,7 @@ class FordPassManualRefreshButton(ButtonEntity):
         await asyncio.sleep(30)
         # 3) 手动拉取最新状态（ForceRefresh）+ 立即刷新实体
         try:
-            resp = await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)
+            await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 手动拉取最新状态失败: %s", exc)
             raise
