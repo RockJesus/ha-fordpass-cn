@@ -22,7 +22,6 @@ import re
 import time
 import uuid
 import urllib.parse
-import uuid
 from typing import Any
 
 import aiohttp
@@ -58,7 +57,6 @@ from .const import (
     PATH_CCFEATURES,
     PATH_CHARGELOGS_RETRIEVE,
     PATH_COMMAND_STATUS,
-    PATH_CRCC_PROFILE,
     PATH_CVFEATURES,
     PATH_CEVS_COMMAND_STATUS,
     CEVS_RSA_PUBKEYS,
@@ -650,7 +648,7 @@ class FordPassApi:
                             # （B023）——lambda 默认参数在定义时求值，杜绝
                             # 依赖 asyncio.to_thread 提交即执行的巧合。
                             v[key] = await asyncio.to_thread(
-                                lambda val=v.get(key), x=xjw: self.crypto.decrypt_field(val, x)
+                                lambda val=v.get(key), x=xjw: self.crypto.decrypt_field(val, x)  # noqa: B008 - lambda 默认参数绑定（B023 修复的正确模式，B008 对 lambda 误报）
                             )
                         except Exception as exc:  # noqa: BLE001
                             self._log.debug(
@@ -1498,7 +1496,6 @@ class FordPassApi:
         return None
 
     @staticmethod
-    @staticmethod
     def _rsa_encrypt_cevs(payload: bytes, pubkey_pem: str) -> str:
         """RSA/ECB/PKCS1v15 加密（v3.7.4，cevs 域；v3.7.9 支持 payload 变体）。
 
@@ -1524,12 +1521,12 @@ class FordPassApi:
           vinxjw  = RSA(VIN + xjw)（组合串，混合加密标准形态）
         """
         variants: list[tuple[str, bytes]] = [
-            (f"k1_plain", vin.encode("utf-8")),
-            (f"k2_plain", vin.encode("utf-8")),
-            (f"k3_plain", vin.encode("utf-8")),
-            (f"k1_vinxjw", (vin + xjw).encode("utf-8")),
-            (f"k2_vinxjw", (vin + xjw).encode("utf-8")),
-            (f"k3_vinxjw", (vin + xjw).encode("utf-8")),
+            ("k1_plain", vin.encode("utf-8")),
+            ("k2_plain", vin.encode("utf-8")),
+            ("k3_plain", vin.encode("utf-8")),
+            ("k1_vinxjw", (vin + xjw).encode("utf-8")),
+            ("k2_vinxjw", (vin + xjw).encode("utf-8")),
+            ("k3_vinxjw", (vin + xjw).encode("utf-8")),
         ]
         return variants
 
