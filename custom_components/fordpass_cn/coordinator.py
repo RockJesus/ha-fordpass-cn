@@ -105,7 +105,7 @@ def _status_summary(data: dict[str, Any]) -> str:
     if oaa is not None:
         s = str(oaa)
         parts.append(
-            "出行：" + ("已泊车" if "NotAvailable" in s else ("外出中" if ("Available" in s or s == "不可用") else s))
+            "出行：" + ("已泊车" if "NotAvailable" in s else ("外出中" if "Available" in s else s))  # v4.0.17: 删死代码 s=="不可用"
         )
     return "车辆状态刷新成功 | " + " | ".join(parts) if parts else "车辆状态刷新成功"
 

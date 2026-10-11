@@ -687,7 +687,7 @@ class FordPassApi:
                     )
                     return result
                 return inner
-            except (FordPassApiError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            except (FordPassApiError, json.JSONDecodeError, UnicodeDecodeError, asyncio.TimeoutError) as exc:  # v4.0.17: 补超时——ForceRefresh 后偶发慢响应被截断正是超时场景
                 if attempt == 1:
                     self._log.warning(
                         "FordPass vehicle-status 瞬时异常（第 1 次，2 秒后重试）: %s",
