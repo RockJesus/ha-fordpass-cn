@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.11**：**修复 reauth 流程**——补上缺失的 `_get_reauth_entry()` 方法（此前 reauth 走到 `_finish_login` 必然 AttributeError 崩溃）；reauth 时校验登录账号与原 entry 手机号一致，不一致直接中止并提示删除重配，防止新账号 token写入旧账号 entry 造成实体/VIN 错配
 - **v4.0.10**：**修复发布物遗漏 api.py/wbsk.py**——v4.0.5/6/7/8 对 api.py、wbsk.py 的改动未列入发布 CHANGED，线上一直是旧文件（v4.0.9 coordinator import FordPassProbeRejected 才暴露 ImportError，集成 not loaded）；本版补齐两文件，v4.0.5-4.0.9 全部 api/wbsk 修复（_is_err_resp 模块级、get_vehicles 解密兜底、B023 闭包绑定、场景实例缓存、ProbeRejected）一次到位
 - **v4.0.9**：**探测缓存区分业务拒绝与瞬时故障**——新增 `FordPassProbeRejected`专用异常：业务拒绝（errorCode/status≠0/200）与 HTTP 400/404 视为确定性能力缺失，落盘持久化缓存（TTL 内不重探）；网关瞬时空响应/网络错误不再落盘（reload 重探），修复此前把瞬时故障错误钉死 7 天的问题（探测端点空响应被长期缓存为无能力）
 - **v4.0.8**：**白盒密码学按场景实例缓存**——`FordPassCrypto.get` 由全局单例改为按身份（key_file#scene）的实例字典缓存：x_api/cevs/lbs_p2c/lbs 各场景独立实例与独立锁，切换场景不再重建 Unicorn 引擎（数十毫秒级），消除多场景并发下不同实例锁同时跑 Unicorn 的竞态
