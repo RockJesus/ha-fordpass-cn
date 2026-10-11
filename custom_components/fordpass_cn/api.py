@@ -283,6 +283,24 @@ def compute_lbs_sign(body: dict[str, Any], timestamp_ms: int) -> str:
     return base64.b64encode(digest).decode("ascii").upper()
 
 
+def _is_err_resp(data: dict) -> bool:
+    """业务错误响应判断：errorCode/error 字段存在或 status 非 0/200 → 车型无能力。
+
+    v4.0.5: 提升为模块级（原为 probe_extra_endpoints 内嵌套函数，被
+    _probe_cevs_variant_once / probe_cevs_variant 引用会 NameError——
+    v3.7.22 注释只修了 wbk 一处，另两处漏改）。
+    """
+    if "errorCode" in data or "error" in data:
+        return True
+    st = data.get("status")
+    if isinstance(st, (int, str)):
+        try:
+            return int(st) not in (0, 200)
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
 
 _IMAGE_URL_KEYS = (
     "imageUrl", "picUrl", "photoUrl", "pictureUrl", "thumbnailUrl", "url",
@@ -331,6 +349,15 @@ class FordPassApiError(Exception):
         super().__init__(message or f"FordPass error ({code})")
         self.code = code
         self.message = message
+
+
+class FordPassProbeRejected(FordPassApiError):
+    """探测端点返回业务拒绝（errorCode/error 或 status≠0/200）——车型无能力。
+
+    v4.0.9: 与"空响应/网络错误"区分：拒绝=确定性能力缺失，coordinator 会
+    把它持久化缓存（TTL 内不再重探）；其它异常（网关瞬时空响应等）不落盘，
+    避免把瞬时故障错误钉死 7 天。
+    """
 
 
 class FordPassApi:
@@ -589,7 +616,21 @@ class FordPassApi:
             if xjw:
                 for key in ("encryptedVin", "encryptedNickName", "encryptedLicenseplate"):
                     if v.get(key):
-                        v[key] = await asyncio.to_thread(lambda: self.crypto.decrypt_field(v[key], xjw))
+                        # v4.0.6: 解密失败兜底——单字段失败保留密文原值并记
+                        # debug，不中断整个 get_vehicles（否则任意一辆车任一
+                        # 字段解密失败 → 整个账号 ConfigEntryNotReady 无法
+                        # 加载，殃及其他正常车辆）。
+                        try:
+                            # v4.0.7: 默认参数绑定 v[key]/xjw，消除闭包晚绑定
+                            # （B023）——lambda 默认参数在定义时求值，杜绝
+                            # 依赖 asyncio.to_thread 提交即执行的巧合。
+                            v[key] = await asyncio.to_thread(
+                                lambda val=v.get(key), x=xjw: self.crypto.decrypt_field(val, x)
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            self._log.debug(
+                                "FordPass vehicle field %s decrypt failed: %s", key, exc
+                            )
             vehicles.append(v)
         return vehicles
 
@@ -610,10 +651,11 @@ class FordPassApi:
                 )
                 inner = data.get("data", {})
                 if inner.get("encryptedResponseBody"):
+                    # v4.0.7: 默认参数绑定消除闭包晚绑定（B023，inner 在
+                    # for attempt 循环内每轮重新赋值）。
                     plain = await asyncio.to_thread(
-                        lambda: self.crypto.decrypt_field(
-                            inner["encryptedResponseBody"], inner["xjw"]
-                        )
+                        lambda body=inner["encryptedResponseBody"], x=inner["xjw"]:
+                        self.crypto.decrypt_field(body, x)
                     )
                     result = json.loads(plain)
                     self._log.debug(
@@ -1400,6 +1442,11 @@ class FordPassApi:
                     "FordPass command whitelist (%d): %s", len(cmds), ", ".join(cmds)
                 )
                 return cmds
+            # v4.0.9: 非标准 400/404 = 确定性能力缺失（网关拒绝探测命令/
+            # 路由不存在）→ 抛 ProbeRejected 让 coordinator 落盘缓存，
+            # TTL 内不再重探；其它错误码保持返回 None（不落盘，reload 重探）。
+            if exc.code in (400, 404):
+                raise FordPassProbeRejected(exc.code, msg[:200]) from exc
             self._log.debug(
                 "FordPass whitelist probe non-standard 400: %s", msg[:200]
             )
@@ -1460,8 +1507,9 @@ class FordPassApi:
             self._log.debug("FordPass probe %s wbk_%s failed: %s", name, vname, exc)
             return
         if isinstance(data, dict) and data:
-            # v3.7.22: 内联业务错误判断（_is_err_resp 是 probe_extra_endpoints
-            # 内的嵌套函数，模块级 helper 引用会 NameError）
+            # v4.0.5: _is_err_resp 已提升为模块级函数（曾为 probe_extra_endpoints
+            # 嵌套函数，模块级 helper 引用会 NameError；v3.7.22 只修 wbk 一处，
+            # rsa/wbk 循环另两处漏改）——此处保持内联语义一致，统一走模块级
             is_err = (
                 "errorCode" in data or "error" in data
                 or str(data.get("status")) not in ("0", "200", "None")
@@ -1553,12 +1601,15 @@ class FordPassApi:
                         cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
                         iv = None if vname == "wbk_cevs_plain" else bytes.fromhex(xjw_now)
                         enc, xjw2 = await asyncio.to_thread(
-                            lambda: cevs_crypto.encrypt_field(vin, iv),
+                            # v4.0.7: 默认参数绑定消除闭包晚绑定（B023，
+                            # cevs_crypto/iv 在外层 for name,path,body 循环内
+                            # 每轮重新赋值）。
+                            lambda c=cevs_crypto, iv=iv: c.encrypt_field(vin, iv),
                         )
                     else:
                         iv = None if vname == "wbk_plain" else bytes.fromhex(xjw_now)
                         enc, xjw2 = await asyncio.to_thread(
-                            lambda: self.crypto.encrypt_field(vin, iv),
+                            lambda iv=iv: self.crypto.encrypt_field(vin, iv),
                         )
                     # v3.7.22: wbk_cevs_ev 用 encryptedVin 字段名（vcs 域通用）
                     if vname == "wbk_cevs_ev":
@@ -1627,17 +1678,6 @@ class FordPassApi:
         对每个端点先 GET（onlinernr 等实证可用的保持原样零额外请求），
         GET 404/失败再试 POST 空 body，成功即缓存该端点的请求形态。
         """
-
-        def _is_err_resp(data: dict) -> bool:
-            if "errorCode" in data or "error" in data:
-                return True
-            st = data.get("status")
-            if isinstance(st, (int, str)):
-                try:
-                    return int(st) not in (0, 200)
-                except (TypeError, ValueError):
-                    pass
-            return False
 
         # v3.5.6: 值结构 (path, post_body 模板, allow_post)。
         # 日志实证（2026-10-09 v3.5.5）：多数端点 GET 404、POST body 缺字段
@@ -1715,17 +1755,34 @@ class FordPassApi:
                         data = await self._request("POST", path, body=b)
                     else:
                         data = await self._request("GET", path)
+                except FordPassProbeRejected:
+                    raise
+                except FordPassApiError as exc:
+                    # v4.0.9: HTTP 404 = 确定性能力缺失（v3.5.5 实测：探测
+                    # 端点路由对无能力车型返回 404）——转为 ProbeRejected 让
+                    # coordinator 落盘缓存（TTL 内不重探）；其它错误码（5xx/
+                    # 网关抖动）保持不落盘，下次 reload 重探。
+                    if exc.code in (404,):
+                        raise FordPassProbeRejected(exc.code, str(exc)) from exc
+                    self._log.debug("FordPass probe %s %s failed: %s", name, method, exc)
+                    continue
                 except Exception as exc:  # noqa: BLE001 - 探测失败只记录
                     self._log.debug("FordPass probe %s %s failed: %s", name, method, exc)
                     continue
                 if isinstance(data, dict) and data:
                     if _is_err_resp(data):
-                        # 业务拒绝（车型无能力）不试下一种形态
+                        # v4.0.9: 业务拒绝（车型无能力）抛专用异常——coordinator
+                        # 据此落盘持久化缓存（TTL 内不再重探）；不再 return None
+                        # 与"空响应/网络错误"混为一谈（旧实现把瞬时故障也钉死
+                        # 7 天）。
+                        msg = json.dumps(data, ensure_ascii=False)[:200]
                         self._log.info(
                             "FordPass probe %s %s -> (rejected: %s)",
-                            name, method, json.dumps(data, ensure_ascii=False)[:200],
+                            name, method, msg,
                         )
-                        return None
+                        raise FordPassProbeRejected(
+                            data.get("status") or data.get("errorCode"), msg
+                        )
                     self._log.info(
                         "FordPass probe %s %s -> %s",
                         name, method, json.dumps(data, ensure_ascii=False)[:600],
@@ -1735,11 +1792,28 @@ class FordPassApi:
             return None
 
         result: dict[str, Any] = {}
+        any_rejected = False
+
+        async def _probe_loop(items, signed):
+            """探测全部端点：拒绝/失败只影响该端点（继续探测其余）；
+            返回 (结果dict, 是否有确定性拒绝)。"""
+            nonlocal any_rejected
+            got: dict[str, Any] = {}
+            for name, spec in items:
+                try:
+                    data = await _probe(name, spec, signed=signed)
+                    if data:
+                        got[name] = data
+                except FordPassProbeRejected as exc:
+                    # v4.0.9: 端点级拒绝不中断探测；整体在方法结尾按
+                    # any_rejected + 无任何数据 决定是否向 coordinator
+                    # 抛拒绝（落盘 None）。
+                    any_rejected = True
+                    self._log.debug("FordPass probe %s rejected: %s", name, exc)
+            return got
+
         # 车辆级端点：带 encryptedVin/xjw 签名
-        for name, spec in probes.items():
-            data = await _probe(name, spec, signed=True)
-            if data:
-                result[name] = data
+        result.update(await _probe_loop(probes, signed=True))
         # 账号级探测结果 api 实例级缓存（v3.5.2）：多 VIN 账号每车一个
         # coordinator 并发探测时仅首车发网络请求，其余车直接复用——
         # 符合风控"探测类请求只在登录后执行一次并缓存"（防福特云限流）
@@ -1747,13 +1821,13 @@ class FordPassApi:
         if account_cache is not None:
             result.update(account_cache)
         else:
-            account_res: dict[str, Any] = {}
-            for name, spec in account_probes.items():
-                data = await _probe(name, spec, signed=False)
-                if data:
-                    account_res[name] = data
+            account_res: dict[str, Any] = await _probe_loop(account_probes, signed=False)
             self._account_probe_cache = dict(account_res)
             result.update(account_res)
+        # v4.0.9: 全部端点无数据但存在确定性拒绝 → 抛拒绝让 coordinator
+        # 落盘 None（车型无能力，TTL 内不重探）；部分端点有数据则正常返回。
+        if not result and any_rejected:
+            raise FordPassProbeRejected("all", "all probe endpoints rejected (no capability)")
         # v3.7.4/3.7.5: cevs 域 RSA 探测变体——原白盒 AES 密文/明文 vin 均被
         # 服务器 RSA 解密失败（Impossible modulus）；v3.7.4 日志实证 RSA 密文
         # vin 通过 modulus 校验（不再 Impossible modulus），DTO 报

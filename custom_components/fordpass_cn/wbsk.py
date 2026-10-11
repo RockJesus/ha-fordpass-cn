@@ -47,23 +47,29 @@ def _load_key_hex(path: str, scene: str = "x_api") -> tuple[str, str]:
 class FordPassCrypto:
     """Thread-safe wrapper around the emulated white-box block cipher."""
 
-    _instance: "FordPassCrypto | None" = None
+    # v4.0.8: 全局单例改为按身份（key_file#scene）的实例字典缓存——每个场景
+    # （x_api/cevs/lbs_p2c/lbs）各持一个实例与各自的实例锁，切换场景不再
+    # 重建整个 Unicorn 引擎（加载 ELF/映射内存/重定位，数十毫秒级），也
+    # 不存在"get 返回他场景实例后两个线程各持不同实例锁同时跑 Unicorn"
+    # 的竞态。
+    _instances: dict[str, "FordPassCrypto"] = {}
     _lock = threading.Lock()
-    _instance_key: str | None = None
 
     @classmethod
     def get(cls, key_file: str | None = None, scene: str = "x_api") -> "FordPassCrypto":
-        """Singleton; key_file + scene select the white-box key. The default
-        is the main prod key (x_api); the LBS gateway uses its own key
-        (lbs_p2c for request fields, lbs for response fields)."""
+        """Per-identity instance cache; key_file + scene select the white-box key.
+        The default is the main prod key (x_api); the LBS gateway uses its own
+        key (lbs_p2c for request fields, lbs for response fields), cevs uses
+        the shared-session key."""
         identity = f"{key_file or _KEY_PATH}#{scene}"
-        if cls._instance is None or cls._instance_key != identity:
+        inst = cls._instances.get(identity)
+        if inst is None:
             with cls._lock:
-                if cls._instance is None or cls._instance_key != identity:
+                inst = cls._instances.get(identity)
+                if inst is None:
                     inst = cls(key_file, scene)
-                    cls._instance = inst
-                    cls._instance_key = identity
-        return cls._instance
+                    cls._instances[identity] = inst
+        return inst
 
     def __init__(self, key_file: str | None = None, scene: str = "x_api") -> None:
         from elftools.elf.elffile import ELFFile
