@@ -41,7 +41,8 @@
       "unknown": "发生未知错误，请查看 Home Assistant 日志中的 fordpass_cn 记录"
     },
     "abort": {
-      "already_configured": "该手机号已配置"
+      "already_configured": "该手机号已配置",
+      "reauth_phone_mismatch": "重新认证账号与原手机号不一致，请删除后重新配置集成"
     }
   },
   "options": {

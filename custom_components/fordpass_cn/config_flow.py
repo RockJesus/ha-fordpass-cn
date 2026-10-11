@@ -154,9 +154,26 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_user(user_input)
 
     def _finish_login(self, mode: str, tokens: dict) -> FlowResult:
-        """登录成功后的收尾（v3.9.8）：reauth 更新 entry；否则创建 entry。"""
+        """登录成功后的收尾（v3.9.8）：reauth 更新 entry；否则创建 entry。
+
+        v4.0.11: reauth 分支先校验登录账号与原 entry 手机号一致——换账号
+        reauth 会把新账号 token 写进旧账号 entry，导致实体绑旧 VIN、token
+        属新账号的错配；不一致直接 abort（提示需删除重配）。
+        """
         if self._reauth:
             entry = self._get_reauth_entry()
+            old_phone = entry.data.get(CONF_PHONE)
+            if old_phone and self._phone:
+                try:
+                    same = _normalize_phone(self._phone) == _normalize_phone(old_phone)
+                except Exception:  # noqa: BLE001 - 归一化失败则保守比较原文
+                    same = self._phone == old_phone
+                if not same:
+                    _LOGGER.error(
+                        "FordPass reauth phone mismatch: %s != %s",
+                        self._phone, old_phone,
+                    )
+                    return self.async_abort(reason="reauth_phone_mismatch")
             self.hass.config_entries.async_update_entry(
                 entry,
                 data={
@@ -184,6 +201,21 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
             },
         )
+
+    def _get_reauth_entry(self):
+        """v4.0.11: 解析 reauth 对应的原 config entry。
+
+        此前该方法不存在（AttributeError），reauth 走到 _finish_login 必然
+        崩溃；entry_id 经 __init__.py async_init(data={"entry_id": ...})
+        传入，flow context 或 init_data 兜底读取。
+        """
+        entry_id = self.context.get("entry_id") or (self.init_data or {}).get("entry_id")
+        if not entry_id:
+            raise ValueError("reauth: missing entry_id in flow context")
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            raise ValueError(f"reauth: entry {entry_id} not found")
+        return entry
 
     async def async_step_phone(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
