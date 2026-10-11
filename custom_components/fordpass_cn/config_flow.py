@@ -115,6 +115,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._phone: str | None = None
         self._xjw: str | None = None
         self._username: str | None = None
+        # v3.9.8: reauth（token 过期重新认证）标记——登录流程最终动作
+        # 由"创建 entry"改为"更新已有 entry 的 token + abort"。
+        self._reauth: bool = False
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
@@ -138,6 +141,50 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"login_modes": "、".join(LOGIN_MODE_LABELS.values())},
         )
 
+    async def async_step_reauth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """token 过期后的重新认证（v3.9.8）。
+
+        __init__.py 检测到 401 时触发 SOURCE_REAUTH flow；复用登录方式
+        选择 → 手机验证码/密码登录，成功后更新已有 entry 的 token 并
+        abort（不重建 entry，实体保留）。
+        """
+        self._reauth = True
+        return await self.async_step_user(user_input)
+
+    def _finish_login(self, mode: str, tokens: dict) -> FlowResult:
+        """登录成功后的收尾（v3.9.8）：reauth 更新 entry；否则创建 entry。"""
+        if self._reauth:
+            entry = self._get_reauth_entry()
+            self.hass.config_entries.async_update_entry(
+                entry,
+                data={
+                    **entry.data,
+                    CONF_LOGIN_MODE: mode,
+                    CONF_PHONE: self._phone,
+                    CONF_USERNAME: self._username,
+                    "access_token": tokens["access_token"],
+                    "refresh_token": tokens["refresh_token"],
+                },
+            )
+            return self.async_abort(reason="reauth_successful")
+        return self.async_create_entry(
+            title=(self._phone or self._username) or DOMAIN,
+            data={
+                CONF_LOGIN_MODE: mode,
+                CONF_PHONE: self._phone,
+                CONF_USERNAME: self._username,
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+            },
+            options={
+                CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
+                "track_location": True,
+                CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
+            },
+        )
+
     async def async_step_phone(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -145,8 +192,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._phone.isdigit() or len(self._phone) != 11:
                 errors["base"] = "bad_phone"
             else:
-                await self.async_set_unique_id(self._phone)
-                self._abort_if_unique_id_configured()
+                if not self._reauth:
+                    await self.async_set_unique_id(self._phone)
+                    self._abort_if_unique_id_configured()
                 session = async_get_clientsession(self.hass)
                 api = FordPassApi(session, _LOGGER)
                 try:
@@ -198,20 +246,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
                 _LOGGER.exception("unexpected error during login: %s", err)
             else:
-                return self.async_create_entry(
-                    title=self._phone or DOMAIN,
-                    data={
-                        CONF_LOGIN_MODE: LOGIN_MODE_SMS,
-                        CONF_PHONE: self._phone,
-                        "access_token": tokens["access_token"],
-                        "refresh_token": tokens["refresh_token"],
-                    },
-                    options={
-                        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
-                        "track_location": True,
-                        CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
-                    },
-                )
+                return self._finish_login(LOGIN_MODE_SMS, tokens)
         return self.async_show_form(
             step_id="code",
             data_schema=STEP_CODE_SCHEMA,
@@ -226,8 +261,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._username.isdigit() or len(self._username) != 11:
                 errors["base"] = "bad_username"
             else:
-                await self.async_set_unique_id(self._username)
-                self._abort_if_unique_id_configured()
+                if not self._reauth:
+                    await self.async_set_unique_id(self._username)
+                    self._abort_if_unique_id_configured()
                 session = async_get_clientsession(self.hass)
                 api = FordPassApi(session, _LOGGER)
                 try:
@@ -248,20 +284,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     # The password itself is never persisted — only the
                     # exchanged JWTs, exactly like the SMS login.
-                    return self.async_create_entry(
-                        title=self._username or DOMAIN,
-                        data={
-                            CONF_LOGIN_MODE: LOGIN_MODE_PASSWORD,
-                            CONF_USERNAME: self._username,
-                            "access_token": tokens["access_token"],
-                            "refresh_token": tokens["refresh_token"],
-                        },
-                        options={
-                            CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
-                            "track_location": True,
-                            CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
-                        },
-                    )
+                    return self._finish_login(LOGIN_MODE_PASSWORD, tokens)
         return self.async_show_form(
             step_id="password",
             data_schema=STEP_PASSWORD_SCHEMA,
