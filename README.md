@@ -74,6 +74,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.0.9**：**探测缓存区分业务拒绝与瞬时故障**——新增 `FordPassProbeRejected`专用异常：业务拒绝（errorCode/status≠0/200）与 HTTP 400/404 视为确定性能力缺失，落盘持久化缓存（TTL 内不重探）；网关瞬时空响应/网络错误不再落盘（reload 重探），修复此前把瞬时故障错误钉死 7 天的问题（探测端点空响应被长期缓存为无能力）
 - **v4.0.8**：**白盒密码学按场景实例缓存**——`FordPassCrypto.get` 由全局单例改为按身份（key_file#scene）的实例字典缓存：x_api/cevs/lbs_p2c/lbs 各场景独立实例与独立锁，切换场景不再重建 Unicorn 引擎（数十毫秒级），消除多场景并发下不同实例锁同时跑 Unicorn 的竞态
 - **v4.0.7**：**消除闭包晚绑定（B023）**——7 处 `asyncio.to_thread(lambda ...)` 引用外层循环变量（v/key/inner/cevs_crypto/iv）改为默认参数绑定（lambda 默认参数定义时求值），不再依赖 to_thread 提交即执行的巧合，杜绝线程切换竞态风险
 - **v4.0.6**：**get_vehicles 解密失败兜底**——车辆列表某辆车任一字段（encryptedVin/NickName/Licenseplate）解密失败时保留密文原值并记 debug，不再中断整个账号加载（原实现单字段失败 → 整账号 ConfigEntryNotReady，殃及其他正常车辆）
