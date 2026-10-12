@@ -1769,6 +1769,8 @@ class FordPassApi:
             "ota_reddot": (PATH_OTA_REDDOT, {"__skip_encrypted_vin__": True}, True),
             # v3.5.1: 车辆级端点（search-vehicle-device-list 按车辆签名）
             "device_list": (PATH_DEVICE_LIST, None, True),
+            # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认，GET 只读）
+            "cmcc_traffic": (PATH_CMCC_TRAFFIC, None, False),
         }
         # v3.5.1: 账号级端点。v3.5.6 实证——GET 全 404（v3.5.1/3.5.2 移除
         # 车辆参数后仍 404 → 路由为 POST-only）；POST body 需

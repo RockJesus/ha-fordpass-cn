@@ -344,6 +344,9 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("messages_v2", "消息中心 v2", "messages_v2"),
             ("share_list", "车辆共享列表", "share_list"),
             ("device_list", "车辆设备列表", "device_list"),
+            # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认，
+            # 探测到数据才创建，全车型自动适配）
+            ("cmcc_traffic", "移动流量商城", "cmcc"),
             # v3.6.2: 待开发清单补全（mcm 消息中心 v3 / 用户级红点）
             ("mcm_messages_v3", "消息中心", "mcm_messages"),
             ("user_reddot", "红点状态", "user_reddot"),
@@ -1885,6 +1888,14 @@ class FordPassProbeSensor(SensorEntity):
                 if u is not None:
                     return str(u)
                 return "暂无 3D 车型图"
+            if self._kind == "cmcc":
+                # v4.2.6: 移动流量商城 H5 地址（CDS 域只读探测，字段名按
+                # 逆向 keys 多候选提取；探测有 URL 才创建）
+                u = (_swb_find(data, "url") or _swb_find(data, "h5Url")
+                     or _swb_find(data, "trafficUrl") or _swb_find(data, "cmccUrl"))
+                if u is not None:
+                    return str(u)
+                return "暂无流量商城"
             if self._kind == "schedule":
                 lst = _swb_list(data)
                 if lst:
