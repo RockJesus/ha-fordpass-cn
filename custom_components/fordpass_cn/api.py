@@ -505,22 +505,28 @@ class FordPassApi:
                     return text
                 raise FordPassApiError(resp.status, f"non-JSON response: {text[:200]}") from err
         if isinstance(data, dict):
-            # Business-layer token expiry: the gateway answers HTTP 200 with
-            # {"status":600,"error":"Swap token failed {…Cat2 token expired…}",
-            #  "errorCode":"100502"} once the internal Cat2 token lapses
-            # (observed 2026-09-29 after the ForceRefresh flow succeeded).
-            # Treat it exactly like an HTTP 401: refresh once and retry.
+            # Business-layer token expiry: the gateway answers HTTP 200 with a
+            # business status code once the token lapses. Observed variants:
+            #   {"status":600,"error":"Swap token failed {…Cat2 token expired…}",
+            #    "errorCode":"100502"}  (2026-09-29, ForceRefresh flow)
+            #   {"status":401,"error":"…verify token error:. JwtValidationException:
+            #    …Jwt expired at <ts>…","errorCode":"100505"}  (2026-10-12, honk
+            #    settings cloud save — select platform surfaced the warning)
+            # Both mean the access token lapsed mid-flight; treat exactly like an
+            # HTTP 401: refresh once and retry.
             status = data.get("status")
             error = str(data.get("error") or "")
             if (
-                status == 600
+                status in (401, 600)
                 and "token" in error.lower()
                 and self._refresh_token
                 and not self._retrying
             ):
                 self._retrying = True
                 try:
-                    self._log.debug("FordPass Cat2 token expired, refreshing once")
+                    self._log.debug(
+                        "FordPass business-layer token expired (status=%s), refreshing once", status
+                    )
                     new = await self.refresh_token(self._refresh_token)
                     self._access_token = new["access_token"]
                     if self.on_token_refresh is not None:

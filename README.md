@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.2.3**：**修复鸣笛设置云端保存 JWT 过期不刷新**——网关在 HTTP 200 内返回业务层 `status:401`（errorCode 100505，`Jwt expired`）时此前只认 `status:600` 才刷新，导致过期后保存直接失败；现业务层 `status∈(401,600)` 且错误含 `token` 即刷新一次重试（与 HTTP 401 同策略），保存/回读自动自愈
 - **v4.2.2**：**历史违规版本清理**——删除 v3.7.10~3.7.24（15 个段内超 9 违规的 release/tag，功能早已并入 v3.8.0+），GitHub 全版本序列回归合规； 本版仅文档变更，行为不变
 - **v4.2.1**：**接入 ruff CI**——`.github/workflows/ruff.yml` 在 push/PR 时 执行 `ruff check --select F,E9,B --ignore E501 .`，防止回归
 - **v4.2.0**：**循环变量与 zip strict 清理**——`_swb_find` 循环变量 `k` 保留使用、`_swb_list` 未用变量改 `_k`（B007）；wbsk 两处 `zip()` 显式 `strict=False`（尾块长度不等属预期，B905）
