@@ -250,6 +250,9 @@ PATH_CEVS_COMMAND_STATUS = "/api/cevs/v2/commandstatus/retrieve"
 #   departuretimes/deleteall 清空全部预约出发/充电计划（body: data 包装+白盒
 #   加密；集成侧与 retrieve 同构：vin=cevs 场景密文 + xjw，raw_body 无外层签名）
 PATH_DEPARTURE_DELETE_ALL = "/api/cevs/v2/departuretimes/deleteall"
+# v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认——CDS 域
+#   GET vehicle/search-cmcc-traffic-h5-url，只读，keys data/status）
+PATH_CMCC_TRAFFIC = "/api/cnxapi-cds/v1/vehicle/search-cmcc-traffic-h5-url"
 
 # v3.7.4: cevs 域 RSA 加密候选公钥（App encryptByRSA 用公钥加密敏感字段后
 # POST；集成原白盒 AES 密文被服务器 RSA 解密失败 → Impossible modulus）。
