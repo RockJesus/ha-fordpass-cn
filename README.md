@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.2.5**：**v5 声光警报方法对齐逆向**——6.16.0 Dart 深度反编译确认 `panic/{paniconduration}` 为 PUT（sendPanicCommand）/DELETE（sendPanicCancelCommand），此前误用 POST 且无取消通道；现对齐 PUT 并新增「取消声光警报」（panic_cancel_command），公共 v5 请求封装 `_v5_verb` 统一 401 刷新重试（锐际不支持该通道，走 InitialVA 不受影响）
 - **v4.2.4**：**接入预约出发/充电清空（cevs 写操作）**——依据 6.16.0 Dart 深度反编译（`departuretimes/deleteall`，POST + body `data` 包装+白盒加密）新增「清空预约出发/充电」按钮：body 与 retrieve 同构（vin=cevs 场景白盒 AES 密文 + xjw，raw_body 无外层签名，v3.7.23 实证 DTO 必填字段为 vin）；仅 cevs 车型（fuelType ∈ E/P/H 系）且探测到预约计划数据才创建，纯油/柴油车不创建
 - **v4.2.3**：**修复鸣笛设置云端保存 JWT 过期不刷新**——网关在 HTTP 200 内返回业务层 `status:401`（errorCode 100505，`Jwt expired`）时此前只认 `status:600` 才刷新，导致过期后保存直接失败；现业务层 `status∈(401,600)` 且错误含 `token` 即刷新一次重试（与 HTTP 401 同策略），保存/回读自动自愈
 - **v4.2.2**：**历史违规版本清理**——删除 v3.7.10~3.7.24（15 个段内超 9 违规的 release/tag，功能早已并入 v3.8.0+），GitHub 全版本序列回归合规； 本版仅文档变更，行为不变

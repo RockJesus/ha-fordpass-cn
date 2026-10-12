@@ -833,14 +833,31 @@ class FordPassApi:
         return await self.send_command(vin, command_type, cmd_spec)
 
     async def panic_command(self, vin: str, duration: int = 10) -> dict[str, Any]:
-        """POST /api/vehicles/v5/{vin}/panic/{paniconduration} — 声光共舞。
+        """PUT /api/vehicles/v5/{vin}/panic/{paniconduration} — 声光共舞。
 
-        App 的 FordPanicCommand（v3.1.8 还原）：灯+喇叭警报，duration 直接
+        v4.2.5 方法对齐 6.16.0 Dart 深度反编译：sendPanicCommand 为 PUT
+        （此前误用 POST，网关对支持 panic 的车型会 405）。duration 直接
         写在路径里。锐际实测 404（云端不支持该通道），调用方应捕获
         FordPassApiError(404) 并向用户明确提示车型不支持。
         """
-        url = V5_BASE_URL + PATH_V5_PANIC.format(vin=vin, duration=duration)
-        async with self._session.request("POST", url, headers=self._headers()) as resp:
+        return await self._v5_verb("PUT", PATH_V5_PANIC.format(vin=vin, duration=duration),
+                                   "panic")
+
+    async def panic_cancel_command(self, vin: str, duration: int = 10) -> dict[str, Any]:
+        """DELETE /api/vehicles/v5/{vin}/panic/{paniconduration} — 取消声光警报。
+
+        v4.2.5：6.16.0 逆向确认 sendPanicCancelCommand 为 DELETE（此前缺失）。
+        """
+        return await self._v5_verb("DELETE", PATH_V5_PANIC.format(vin=vin, duration=duration),
+                                   "panic-cancel")
+
+    async def _v5_verb(self, method: str, url: str, what: str) -> dict[str, Any]:
+        """v5 直控通用请求封装（v4.2.5 重构）：任意 HTTP 方法 + 401 刷新重试。
+
+        6.16.0 Dart 反编译确认 v5 命令方法语义化（PUT=执行、DELETE=取消/反向、
+        POST=鸣笛、GET=轮询），各命令通道共用本封装避免重复 401 分支。
+        """
+        async with self._session.request(method, url, headers=self._headers()) as resp:
             try:
                 text = await resp.text()
             except UnicodeDecodeError:
@@ -852,7 +869,7 @@ class FordPassApi:
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
-            self._log.debug("FordPass v5 panic POST -> %s %s", resp.status, text[:300])
+            self._log.debug("FordPass v5 %s %s -> %s %s", what, method, resp.status, text[:300])
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
                 try:
@@ -861,7 +878,7 @@ class FordPassApi:
                     if self.on_token_refresh is not None:
                         self.on_token_refresh(new["access_token"])
                     async with self._session.request(
-                        "POST", url, headers=self._headers()
+                        method, url, headers=self._headers()
                     ) as resp2:
                         text2 = await resp2.text()
                         if resp2.status >= 400:
@@ -873,7 +890,7 @@ class FordPassApi:
                         except json.JSONDecodeError:
                             return {"raw": text2}
                 except Exception as exc:  # noqa: BLE001
-                    self._log.error("FordPass v5 panic token refresh failed: %s", exc)
+                    self._log.error("FordPass v5 %s token refresh failed: %s", what, exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
                     self._retrying = False
