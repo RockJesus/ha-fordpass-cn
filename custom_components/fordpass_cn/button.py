@@ -143,6 +143,15 @@ async def async_setup_entry(
         # v3.7.2: 家充桩解绑按钮——smartwallbox 探测到绑定桩才创建
         if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
             buttons.append(FordPassWallboxUnbindButton(coordinator))
+        # v4.2.4: 清空预约出发/充电——cevs 写操作（6.16.0 逆向确认
+        # departuretimes/deleteall）。仅 cevs 车型（fuelType ∈ E/P/H 系）
+        # 且探测到预约计划数据才创建；纯油/柴油车不创建（探测 200 ≠ 车型
+        # 支持，业务恒空，见 references/entity-vehicle-creation.md）。
+        _cevs_probe = getattr(coordinator, "cevs_probe", {}) or {}
+        _fuel = str(coordinator.vehicle_info.get("fuelType") or "").upper()
+        _cevs_supported = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
+        if _cevs_supported and _cevs_probe.get("departuretimes"):
+            buttons.append(FordPassCevsDeleteAllButton(coordinator))
     async_add_entities(buttons)
 
 
@@ -483,6 +492,47 @@ class FordPassAirFilterResetButton(ButtonEntity):
             await self.coordinator.force_refresh()
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 空调滤芯重置后刷新失败: %s", exc)
+
+
+class FordPassCevsDeleteAllButton(ButtonEntity):
+    """清空全部预约出发/充电计划（v4.2.4）。
+
+    逆向 6.16.0（Dart 深度反编译）：POST /api/cevs/v2/departuretimes/
+    deleteall（deleteAllScheduledDepartureTimesV2）——预约出发/充电是一套
+    完整 CRUD（retrieve/save/deleteall/toggle），此前集成只接了只读+toggle，
+    写操作缺失。body 与 retrieve 同构：vin=cevs 场景白盒密文 + xjw，
+    raw_body 无外层签名（v3.7.23 实证 DTO 必填字段为 vin）。
+    仅 cevs 车型（fuelType ∈ E/P/H 系）且探测到预约计划数据才创建；
+    纯油/柴油车不创建（探测 200 ≠ 车型支持，业务恒空）。
+    """
+
+    _attr_icon = "mdi:calendar-remove"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-cevs_deleteall"
+        self._attr_name = "清空预约出发/充电"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # 不随福特云刷新失败而不可用
+
+    async def async_press(self) -> None:
+        _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.vin)
+        try:
+            resp = await self.coordinator.api.cevs_delete_all_departures(
+                self.coordinator.vin
+            )
+            _LOGGER.info("FordPass 预约清空结果: %s", str(resp)[:300])
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 预约清空失败: %s", exc)
+            raise
+        try:
+            await self.coordinator.force_refresh()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 预约清空后刷新失败: %s", exc)
 
 
 class FordPassImageButton(ButtonEntity):

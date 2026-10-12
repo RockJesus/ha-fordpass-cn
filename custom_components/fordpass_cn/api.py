@@ -1926,6 +1926,35 @@ class FordPassApi:
             self.cevs_diag["auto_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
             self._log.info("FordPass cevs auto probe error: %s", exc)
 
+    async def _cevs_write(
+        self, vin: str, path: str, extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """cevs 域写操作公共封装（v4.2.4，6.16.0 Dart 反编译确认）。
+
+        与 probe_cevs_auto 成功变体（wbk_cevs_shared，v3.7.20/23 实证服务器
+        按 cevs 场景解密）同构：body = {"vin": cevs场景白盒AES密文, "xjw": IV
+        hex, ...extra}，raw_body=True（cevs 域 DTO 拒绝外层 timestamp/sign）。
+        """
+        cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
+        enc, xjw = await asyncio.to_thread(lambda: cevs_crypto.encrypt_field(vin))
+        b: dict[str, Any] = {"vin": enc, "xjw": xjw}
+        if extra:
+            b.update(extra)
+        data = await self._request("POST", path, b, raw_body=True)
+        return data if isinstance(data, dict) else {"raw": data}
+
+    async def cevs_delete_all_departures(self, vin: str) -> dict[str, Any]:
+        """清空全部预约出发/充电计划。
+
+        逆向 6.16.0（Dart 深度反编译）：POST /api/cevs/v2/departuretimes/
+        deleteall（deleteAllScheduledDepartureTimesV2，body 键 data）。删除后
+        由按钮触发状态刷新让实体回读新值。
+        """
+        result = await self._cevs_write(vin, PATH_DEPARTURE_DELETE_ALL)
+        self._log.info("FordPass cevs deleteall -> %s",
+                       json.dumps(result, ensure_ascii=False)[:400])
+        return result
+
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
         """探测家充桩管理（smartwallbox）端点结构（只读/幂等，v3.4.5）。
 

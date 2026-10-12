@@ -246,6 +246,10 @@ PATH_DEPARTURE_TOGGLE_OFF = "/api/cevs/v2/departuretimes/toggleoff"
 # v3.7.4: cevs 域命令状态查询（只读，APK 6.16.0 逆向）——
 #   commandstatus/retrieve 检索预约/充电命令执行状态
 PATH_CEVS_COMMAND_STATUS = "/api/cevs/v2/commandstatus/retrieve"
+# v4.2.4: cevs 域写操作（6.16.0 Dart 反编译确认方法/键）——
+#   departuretimes/deleteall 清空全部预约出发/充电计划（body: data 包装+白盒
+#   加密；集成侧与 retrieve 同构：vin=cevs 场景密文 + xjw，raw_body 无外层签名）
+PATH_DEPARTURE_DELETE_ALL = "/api/cevs/v2/departuretimes/deleteall"
 
 # v3.7.4: cevs 域 RSA 加密候选公钥（App encryptByRSA 用公钥加密敏感字段后
 # POST；集成原白盒 AES 密文被服务器 RSA 解密失败 → Impossible modulus）。
