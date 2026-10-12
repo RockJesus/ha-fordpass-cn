@@ -76,18 +76,18 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
-- **v4.0.21**：**接入 ruff CI**——`.github/workflows/ruff.yml` 在 push/PR 时 执行 `ruff check --select F,E9,B --ignore E501 .`，防止回归
-- **v4.0.20**：**循环变量与 zip strict 清理**——`_swb_find` 循环变量 `k` 保留使用、`_swb_list` 未用变量改 `_k`（B007）；wbsk 两处 `zip()` 显式 `strict=False`（尾块长度不等属预期，B905）
-- **v4.0.19**：**manifest loggers 清理 + 合规声明**——移除无效的 `unicorn` logger 声明（unicorn 库不注册同名 logger，pyelftools 的才是 `elftools`）； README 免责声明补充私有二进制/密钥素材分发声明与密钥轮换影响说明
-- **v4.0.18**：**字典重复键与冗余变量清理**——sensor 各状态映射删除 `True/False` 与 `1/0` 哈希重复键（值相同行为不变）；api 4 处无 raise 的 `except ... as err` 改回裸 except（v4.0.16 引入的多余绑定）
-- **v4.0.17**：**车辆状态重试补超时 + 出行摘要删死代码**——get_vehicle_status 重试 except 加入 `asyncio.TimeoutError`（ForceRefresh 后慢响应截断正是超时 场景，此前最需重试的异常不在范围）；`_status_summary` 出行分支删除永不成立 的 `s=="不可用"` 死代码
-- **v4.0.16**：**B904 异常链修复**——except 内 raise 补全原因链：网关非文本 响应用 `from None`（新异常不携带 codec 噪音），JSONDecodeError 包装用 `from err`（保留解码失败原因），共 10 处
-- **v4.0.15**：**lint 冗余清理**——删除 api.py 重复 `import uuid`、重复 `@staticmethod`、6 处空 f-string、未使用 import（PATH_CRCC_PROFILE / button 5 项 / select time），删除 button.py 未使用变量 `resp`，lambda 默认参数绑定加 noqa（B008 误报）——全部行为不变
-- **v4.0.14**：**VIN 文件名白名单校验**——车辆图片本地路径对 VIN 做 `[A-Za-z0-9]{6,20}` 白名单，异常值改用 sha1 摘要兜底文件名，消除路径穿越风险
-- **v4.0.13**：**logbook 写入改为直接 await**——原 `async_create_task(async_call)` 的 task 内部异常无人捕获（服务调用失败会留 Task exception 噪音），改为 await 后 异常落入保护分支，刷新流程不受影响；每轮轮询仍写入活动日志（可见每次轮询状态 摘要），15s 去重保留
-- **v4.0.12**：**账户级端点共享缓存**——chirp_cloud（鸣笛设置云端状态）/remote_climate_cloud（空调温度）/messages_summary（未读消息）提为 api 实例级（账号级）TTL 缓存 + per-key 并发锁：多 VIN 账号每车 coordinator 并发刷新时账户级端点只发一次网络请求，其余车复用，防福特云限流（chirp 60s / climate 3600s / messages 1800s）
-- **v4.0.11**：**修复 reauth 流程**——补上缺失的 `_get_reauth_entry()` 方法（此前 reauth 走到 `_finish_login` 必然 AttributeError 崩溃）；reauth 时校验登录账号与原 entry 手机号一致，不一致直接中止并提示删除重配，防止新账号 token写入旧账号 entry 造成实体/VIN 错配
-- **v4.0.10**：**修复发布物遗漏 api.py/wbsk.py**——v4.0.5/6/7/8 对 api.py、wbsk.py 的改动未列入发布 CHANGED，线上一直是旧文件（v4.0.9 coordinator import FordPassProbeRejected 才暴露 ImportError，集成 not loaded）；本版补齐两文件，v4.0.5-4.0.9 全部 api/wbsk 修复（_is_err_resp 模块级、get_vehicles 解密兜底、B023 闭包绑定、场景实例缓存、ProbeRejected）一次到位
+- **v4.2.1**：**接入 ruff CI**——`.github/workflows/ruff.yml` 在 push/PR 时 执行 `ruff check --select F,E9,B --ignore E501 .`，防止回归
+- **v4.2.0**：**循环变量与 zip strict 清理**——`_swb_find` 循环变量 `k` 保留使用、`_swb_list` 未用变量改 `_k`（B007）；wbsk 两处 `zip()` 显式 `strict=False`（尾块长度不等属预期，B905）
+- **v4.1.9**：**manifest loggers 清理 + 合规声明**——移除无效的 `unicorn` logger 声明（unicorn 库不注册同名 logger，pyelftools 的才是 `elftools`）； README 免责声明补充私有二进制/密钥素材分发声明与密钥轮换影响说明
+- **v4.1.8**：**字典重复键与冗余变量清理**——sensor 各状态映射删除 `True/False` 与 `1/0` 哈希重复键（值相同行为不变）；api 4 处无 raise 的 `except ... as err` 改回裸 except（v4.1.6 引入的多余绑定）
+- **v4.1.7**：**车辆状态重试补超时 + 出行摘要删死代码**——get_vehicle_status 重试 except 加入 `asyncio.TimeoutError`（ForceRefresh 后慢响应截断正是超时 场景，此前最需重试的异常不在范围）；`_status_summary` 出行分支删除永不成立 的 `s=="不可用"` 死代码
+- **v4.1.6**：**B904 异常链修复**——except 内 raise 补全原因链：网关非文本 响应用 `from None`（新异常不携带 codec 噪音），JSONDecodeError 包装用 `from err`（保留解码失败原因），共 10 处
+- **v4.1.5**：**lint 冗余清理**——删除 api.py 重复 `import uuid`、重复 `@staticmethod`、6 处空 f-string、未使用 import（PATH_CRCC_PROFILE / button 5 项 / select time），删除 button.py 未使用变量 `resp`，lambda 默认参数绑定加 noqa（B008 误报）——全部行为不变
+- **v4.1.4**：**VIN 文件名白名单校验**——车辆图片本地路径对 VIN 做 `[A-Za-z0-9]{6,20}` 白名单，异常值改用 sha1 摘要兜底文件名，消除路径穿越风险
+- **v4.1.3**：**logbook 写入改为直接 await**——原 `async_create_task(async_call)` 的 task 内部异常无人捕获（服务调用失败会留 Task exception 噪音），改为 await 后 异常落入保护分支，刷新流程不受影响；每轮轮询仍写入活动日志（可见每次轮询状态 摘要），15s 去重保留
+- **v4.1.2**：**账户级端点共享缓存**——chirp_cloud（鸣笛设置云端状态）/remote_climate_cloud（空调温度）/messages_summary（未读消息）提为 api 实例级（账号级）TTL 缓存 + per-key 并发锁：多 VIN 账号每车 coordinator 并发刷新时账户级端点只发一次网络请求，其余车复用，防福特云限流（chirp 60s / climate 3600s / messages 1800s）
+- **v4.1.1**：**修复 reauth 流程**——补上缺失的 `_get_reauth_entry()` 方法（此前 reauth 走到 `_finish_login` 必然 AttributeError 崩溃）；reauth 时校验登录账号与原 entry 手机号一致，不一致直接中止并提示删除重配，防止新账号 token写入旧账号 entry 造成实体/VIN 错配
+- **v4.1.0**：**修复发布物遗漏 api.py/wbsk.py**——v4.0.5/6/7/8 对 api.py、wbsk.py 的改动未列入发布 CHANGED，线上一直是旧文件（v4.0.9 coordinator import FordPassProbeRejected 才暴露 ImportError，集成 not loaded）；本版补齐两文件，v4.0.5-4.0.9 全部 api/wbsk 修复（_is_err_resp 模块级、get_vehicles 解密兜底、B023 闭包绑定、场景实例缓存、ProbeRejected）一次到位
 - **v4.0.9**：**探测缓存区分业务拒绝与瞬时故障**——新增 `FordPassProbeRejected`专用异常：业务拒绝（errorCode/status≠0/200）与 HTTP 400/404 视为确定性能力缺失，落盘持久化缓存（TTL 内不重探）；网关瞬时空响应/网络错误不再落盘（reload 重探），修复此前把瞬时故障错误钉死 7 天的问题（探测端点空响应被长期缓存为无能力）
 - **v4.0.8**：**白盒密码学按场景实例缓存**——`FordPassCrypto.get` 由全局单例改为按身份（key_file#scene）的实例字典缓存：x_api/cevs/lbs_p2c/lbs 各场景独立实例与独立锁，切换场景不再重建 Unicorn 引擎（数十毫秒级），消除多场景并发下不同实例锁同时跑 Unicorn 的竞态
 - **v4.0.7**：**消除闭包晚绑定（B023）**——7 处 `asyncio.to_thread(lambda ...)` 引用外层循环变量（v/key/inner/cevs_crypto/iv）改为默认参数绑定（lambda 默认参数定义时求值），不再依赖 to_thread 提交即执行的巧合，杜绝线程切换竞态风险
