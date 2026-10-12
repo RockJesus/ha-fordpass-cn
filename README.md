@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.2.2**：**历史违规版本清理**——删除 v3.7.10~3.7.24（15 个段内超 9 违规的 release/tag，功能早已并入 v3.8.0+），GitHub 全版本序列回归合规； 本版仅文档变更，行为不变
 - **v4.2.1**：**接入 ruff CI**——`.github/workflows/ruff.yml` 在 push/PR 时 执行 `ruff check --select F,E9,B --ignore E501 .`，防止回归
 - **v4.2.0**：**循环变量与 zip strict 清理**——`_swb_find` 循环变量 `k` 保留使用、`_swb_list` 未用变量改 `_k`（B007）；wbsk 两处 `zip()` 显式 `strict=False`（尾块长度不等属预期，B905）
 - **v4.1.9**：**manifest loggers 清理 + 合规声明**——移除无效的 `unicorn` logger 声明（unicorn 库不注册同名 logger，pyelftools 的才是 `elftools`）； README 免责声明补充私有二进制/密钥素材分发声明与密钥轮换影响说明
@@ -127,7 +128,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 - **v3.8.1**：**修复 setup 期间 blocking call**——cevs 场景白盒密钥初始化（读 .so / unicorn 加载 / 读密钥 json）原在事件循环内同步执行（HA 日志 `Detected blocking call to open/import_module`），改为 `asyncio.to_thread` 异步化（首次初始化在线程执行，后续加密走既有线程池+锁）；修复后集成启动不再阻塞事件循环
 
-- **v3.8.0**：**版本号回归合规链**——此前 3.7.10~3.7.24 段内超 9 违规，本次按规则从 3.7.9 进位（3.7.9→3.8.0，十进制逐位、段内每数字≤9）；修复 lock 平台 `Updating fordpass_cn lock took longer than the scheduled update interval` 警告（实体轮询不再强制全量刷新并阻塞等待，锁状态由 coordinator 定时刷新驱动）；命令状态轮询 2s→5s（单命令最多 12 次请求，防福特云限流）
+- **v3.8.0**：**版本号回归合规链**——此前 3.7.10~3.7.24 段内超 9 违规（其 release/tag 已于 2026-10-12 全部删除，功能已并入本版及后续），本次按规则从 3.7.9 进位（3.7.9→3.8.0，十进制逐位、段内每数字≤9）；修复 lock 平台 `Updating fordpass_cn lock took longer than the scheduled update interval` 警告（实体轮询不再强制全量刷新并阻塞等待，锁状态由 coordinator 定时刷新驱动）；命令状态轮询 2s→5s（单命令最多 12 次请求，防福特云限流）
 </details>
 
 <details>
