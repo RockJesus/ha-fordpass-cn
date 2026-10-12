@@ -86,11 +86,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not vehicles:
         raise RuntimeError("No vehicles found on this FordPass account")
 
-    # v4.0.4: 预热白盒密码学单例（x_api/cevs/lbs_p2c 三个场景）——unicorn
-    # ELF 解析与 key 文件加载是 CPU 密集且会阻塞事件循环的初始化，统一放在
-    # 线程中完成（api 请求路径的 encrypt/decrypt 均已 to_thread，此处是
-    # 双保险：此后任何 self.crypto 访问直接命中已初始化单例，事件循环零阻塞，
-    # 防止未来新增未包裹 to_thread 的调用路径造成 blocking call 回归）。
+    # v4.2.7: 预热白盒密码学单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
+    # 查表实现（v4.2.7 起不再加载 ELF/.so/Unicorn）。表加载与 key 文件读取
+    # 仍统一放在线程中完成，双保险防止未来新增未包裹 to_thread 的调用路径
+    # 造成 blocking call 回归。
     for scene in ("x_api", "cevs", "lbs_p2c"):
         try:
             await asyncio.to_thread(FordPassCrypto.get, None, scene)

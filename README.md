@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.0.x（最新）</summary>
 
+- **v4.2.7**：**白盒加密内核纯 Python 化（移除 Unicorn 依赖）**——依据 `libwbsk_crypto_tool.so`（App 6.16.0）100% 破译逆向成果（11 张导出表 + 纯 Python 等价实现，模式入口 24/24、skb 协议 8/8、CBC/解密链路全量验证），将加密内核从 Unicorn CPU 模拟替换为**纯 Python 查表**：集成侧 9 场景 × 6 样本对旧实现等价性验证 ALL PASS + .so 机器码已知向量锚点一致；同时**移除 unicorn/pyelftools 依赖**（manifest requirements 清空），消除 HA 事件循环 blocking call（`open(.so)`/`import unicorn`），`data/` 目录由 .so 改为 11 张白盒导出表（约 390KB）。对外接口（`encrypt_field/decrypt_field`、场景密钥流 240B、CBC+PKCS7+base64）零变化，登录/加密字段行为不变
 - **v4.2.6**：**接入移动流量商城 H5 地址传感器**——6.16.0 独立逆向确认 CDS 域 `search-cmcc-traffic-h5-url`（GET 只读）；探测到 URL 才创建（全车型自动适配），值多候选提取（url/h5Url/trafficUrl/cmccUrl）
 - **v4.2.5**：**v5 声光警报方法对齐逆向**——6.16.0 Dart 深度反编译确认 `panic/{paniconduration}` 为 PUT（sendPanicCommand）/DELETE（sendPanicCancelCommand），此前误用 POST 且无取消通道；现对齐 PUT 并新增「取消声光警报」（panic_cancel_command），公共 v5 请求封装 `_v5_verb` 统一 401 刷新重试（锐际不支持该通道，走 InitialVA 不受影响）
 - **v4.2.4**：**接入预约出发/充电清空（cevs 写操作）**——依据 6.16.0 Dart 深度反编译（`departuretimes/deleteall`，POST + body `data` 包装+白盒加密）新增「清空预约出发/充电」按钮：body 与 retrieve 同构（vin=cevs 场景白盒 AES 密文 + xjw，raw_body 无外层签名，v3.7.23 实证 DTO 必填字段为 vin）；仅 cevs 车型（fuelType ∈ E/P/H 系）且探测到预约计划数据才创建，纯油/柴油车不创建
