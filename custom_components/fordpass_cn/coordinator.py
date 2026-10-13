@@ -704,9 +704,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         try:
             reg = self.hass.helpers.entity_registry.async_get(self.hass)
-            for entry in reg.async_entries_for_domain(DOMAIN):
+            # v4.4.5: HAOS 2026.10 已移除 EntityRegistry.async_entries_for_domain
+            # （v3.6.5 同款坑：sensor 清理段当时已改 reg.entities.values() 过滤；
+            # v4.4.4 引入本方法时重踩——该方法抛 AttributeError 被 except 吞掉，
+            # 导致 logbook 事件 entity_id 恒为 None，集成设备页活动仍不可见）。
+            # 改用 reg.entities.values() 过滤 platform==DOMAIN（等价、全版本兼容）。
+            for entry in reg.entities.values():
                 if (
-                    entry.unique_id
+                    entry.platform == DOMAIN
+                    and entry.unique_id
                     and entry.unique_id.startswith(f"{self.vin}-")
                     and entry.disabled_by is None
                 ):
