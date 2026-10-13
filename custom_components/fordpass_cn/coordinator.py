@@ -695,12 +695,34 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
         return data
 
+    async def _async_get_vehicle_entity_id(self) -> str | None:
+        """查找本车辆任一已启用实体（v4.4.4：logbook 事件关联实体，UI 设备页可见）。
+
+        集成活动日志写入时不带 entity_id → logbook 事件 entity_id=None →
+        HA 前端「集成设备 → 活动」按设备过滤看不到。这里从 registry 取本车
+        （unique_id 以 vin 开头）任意一个启用实体关联事件。
+        """
+        try:
+            reg = self.hass.helpers.entity_registry.async_get(self.hass)
+            for entry in reg.async_entries_for_domain(DOMAIN):
+                if (
+                    entry.unique_id
+                    and entry.unique_id.startswith(f"{self.vin}-")
+                    and entry.disabled_by is None
+                ):
+                    return entry.entity_id
+        except Exception:  # noqa: BLE001 - 取实体失败不阻塞活动写入
+            self.logger.debug("fordpass_cn vehicle entity lookup failed", exc_info=True)
+        return None
+
     async def _log_activity(self, message: str) -> None:
         """活动日志写入（v4.3.8 抽取）：成功摘要/失败原因/暂无数据实体共用。
 
         15s 去重防并发双条（手动刷新与自动轮询撞车）；不同消息不受去重限制。
         logbook 失败不影响数据刷新（v4.0.13：直接 await，异常落进调用方
         except，不留 "Task exception was never retrieved" 噪音）。
+        v4.4.4: 写入时关联车辆实体（entity_id）——不带 entity_id 的事件在
+        HA 前端集成设备页活动标签不可见（entity_id=None 被设备过滤）。
         """
         now = datetime.now()
         last_at = self._last_logbook_at
@@ -711,15 +733,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ):
             return
         try:
-            await self.hass.services.async_call(
-                "logbook",
-                "log",
-                {
-                    "name": self._vehicle_name or "福特派互联",
-                    "message": message,
-                    "domain": DOMAIN,
-                },
-            )
+            service_data: dict[str, Any] = {
+                "name": self._vehicle_name or "福特派互联",
+                "message": message,
+                "domain": DOMAIN,
+            }
+            if entity_id := await self._async_get_vehicle_entity_id():
+                service_data["entity_id"] = entity_id
+            await self.hass.services.async_call("logbook", "log", service_data)
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
         self._last_logbook_at = now
