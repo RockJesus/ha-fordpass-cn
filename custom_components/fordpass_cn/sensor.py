@@ -405,6 +405,16 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             # 车辆分享能力/历史（cnesl-user 账号级只读）：
             ("share_capability", "车辆分享能力", "share_capability"),
             ("share_history", "车辆分享历史", "share_history"),
+            # v4.3.6: 136 未接入清单第二轮筛选——剩余只读业务端点补全
+            # （探测到数据才创建，与现有实体不重复）：
+            ("evss_payment_summary", "充电支付汇总", "evss_payment_summary"),
+            ("evss_invoiceables", "可开票充电订单", "evss_invoiceables"),
+            ("evss_events_v3", "充电事件", "evss_events_v3"),
+            ("evss_evaluate_url", "充电订单评价链接", "evss_evaluate_url"),
+            ("wallbox_ble_vehicles", "家充桩 BLE 车辆信息", "wallbox_ble_vehicles"),
+            ("app_init_settings", "应用设置信息", "app_init_settings"),
+            ("vehicle_model_masterdata", "车型主数据", "vehicle_model_masterdata"),
+            ("user_login_status", "用户登录状态", "user_login_status"),
         ):
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
@@ -2526,6 +2536,65 @@ class FordPassProbeSensor(SensorEntity):
                 if lst:
                     return f"{len(lst)} 条分享记录"
                 return "暂无分享记录"
+            # ---- v4.3.6: 136 未接入清单第二轮筛选补全 ----
+            if self._kind == "evss_payment_summary":
+                st = (_swb_find(data, "payStatus") or _swb_find(data, "status")
+                      or _swb_find(data, "paymentStatus"))
+                if st is not None:
+                    return {"PAID": "已支付", "UNPAID": "未支付", "PENDING": "待支付",
+                            "SUCCESS": "支付成功", "FAILED": "支付失败"}.get(str(st), str(st))
+                amt = (_swb_find(data, "totalAmount") or _swb_find(data, "amount")
+                       or _swb_find(data, "payAmount"))
+                if amt is not None:
+                    return f"应付 {amt}"
+                return "暂无支付汇总"
+            if self._kind == "evss_invoiceables":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 笔可开票订单"
+                return "暂无待开票订单"
+            if self._kind == "evss_events_v3":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条充电事件"
+                return "暂无充电事件"
+            if self._kind == "evss_evaluate_url":
+                u = (_swb_find(data, "evaluateUrl") or _swb_find(data, "url")
+                     or _swb_find(data, "h5Url"))
+                if u is not None:
+                    return str(u)
+                return "暂无评价链接"
+            if self._kind == "wallbox_ble_vehicles":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 辆 BLE 车辆"
+                return "暂无 BLE 车辆信息"
+            if self._kind == "app_init_settings":
+                v = (_swb_find(data, "version") or _swb_find(data, "appVersion")
+                     or _swb_find(data, "settingVersion"))
+                if v is not None:
+                    return str(v)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 项设置"
+                return "暂无应用设置"
+            if self._kind == "vehicle_model_masterdata":
+                n = (_swb_find(data, "modelName") or _swb_find(data, "name")
+                     or _swb_find(data, "vehicleModelName"))
+                if n is not None:
+                    return str(n)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 款车型主数据"
+                return "暂无车型主数据"
+            if self._kind == "user_login_status":
+                st = (_swb_find(data, "loginStatus") or _swb_find(data, "status")
+                      or _swb_find(data, "loginState"))
+                if st is not None:
+                    return {"1": "已登录", "0": "未登录", "true": "已登录",
+                            "false": "未登录", "LOGIN": "已登录", "LOGOUT": "未登录"}.get(
+                        str(st), str(st))
+                return "登录状态未知"
         except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
             return "解析失败"
         return None
