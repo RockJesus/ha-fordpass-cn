@@ -445,15 +445,16 @@ class FordPassManualRefreshButton(ButtonEntity):
         # 端点 TTL 缓存强制全量真拉（保养/召回/SIM/OTA/滤芯/ccfeatures/
         # prognostic/告警/消息一次性更新到最新），与 App 下拉刷新一致。
         try:
-            await self.hass.services.async_call(
-                "logbook",
-                "log",
-                {
-                    "name": self.coordinator._vehicle_name or "福特派互联",
-                    "message": "手动刷新已触发（全量）：请求车机上报最新状态（约 30 秒后完成）",
-                    "domain": DOMAIN,
-                },
-            )
+            service_data = {
+                "name": self.coordinator._vehicle_name or "福特派互联",
+                "message": "手动刷新已触发（全量）：请求车机上报最新状态（约 30 秒后完成）",
+                "domain": DOMAIN,
+            }
+            # v4.4.4: 关联车辆实体——不带 entity_id 的 logbook 事件在集成
+            # 设备页活动标签不可见（entity_id=None 被设备过滤）。
+            if ent := await self.coordinator._async_get_vehicle_entity_id():
+                service_data["entity_id"] = ent
+            await self.hass.services.async_call("logbook", "log", service_data)
         except Exception as exc:  # noqa: BLE001 - logbook 失败不影响刷新
             _LOGGER.warning("FordPass manual refresh logbook failed: %s", exc)
         # 1) 请求车机刷新状态（上报云端）
