@@ -635,6 +635,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 也写活动（用户要求"包括不可用活动"）——纯油车充电域/无绑定桩等
         # 实体常驻显示「暂无数据」，活动日志同步可见（数量稳定，15s 去重
         # 只在首次写入；实体数据变化后自动恢复明细，不再写"暂无数据"）。
+        # v4.3.9: 按车型创建——充电域实体纯油/柴油车不再创建（不统计不写
+        # 活动，避免"无用实体"噪音）；仅统计实际创建的实体（全车型通用 +
+        # 电/混动车的充电域）。
         try:
             _probe_names = {
                 "wallbox_bound": "家充桩绑定", "wallbox_info": "家充桩墙盒详情",
@@ -650,13 +653,25 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "vehicle_model_masterdata": "车型主数据",
                 "user_login_status": "用户登录状态",
             }
+            _charge_kinds = ("wallbox_bound", "wallbox_info", "wallbox_records_v2",
+                             "evss_order_status", "evss_apps_info", "evss_usage_notice",
+                             "vpoi_status", "vpoi_saved",
+                             "evss_payment_summary", "evss_invoiceables",
+                             "evss_events_v3", "evss_evaluate_url",
+                             "wallbox_ble_vehicles")
+            _fuel = str(self.vehicle_info.get("fuelType") or "").upper()
+            _charge_ok = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
             ep = self.extra_probes or {}
-            empty = [n for k, n in _probe_names.items() if not ep.get(k)]
+            empty = [
+                n for k, n in _probe_names.items()
+                if not ep.get(k)
+                and (k not in _charge_kinds or _charge_ok)
+            ]
             if empty:
                 shown = "、".join(empty[:5])
                 more = f" 等 {len(empty)} 项" if len(empty) > 5 else ""
                 await self._log_activity(
-                    f"{len(empty)} 个实体暂无数据（车型未开通）：{shown}{more}"
+                    f"{len(empty)} 个实体暂无数据（未开通）：{shown}{more}"
                 )
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
