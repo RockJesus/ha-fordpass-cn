@@ -434,6 +434,25 @@ class FordPassManualRefreshButton(ButtonEntity):
 
     async def async_press(self) -> None:
         vin = self.coordinator.vin
+        # v4.4.0: 点击立即写活动——完整流程（车机上报 30s + 拉取 + 刷新实体）
+        # 需数十秒到数分钟，此前要等 force_refresh 完成才写摘要，用户点击后
+        # 活动记录器长时间无条目（"点了没反应"）。现在点击即写「已触发」，
+        # 完成后 coordinator 再写成功摘要（失败走 v4.3.8 失败活动路径）。
+        # v4.4.1: logbook 失败改 warning 诊断（v4.4.0/4.4.1 发布漏发 button.py
+        # 致本段未上线，system_log 无特征日志定位）。
+        # v4.4.2: 补发 button.py 到 main；移除诊断特征日志，仅异常时 warning。
+        try:
+            await self.hass.services.async_call(
+                "logbook",
+                "log",
+                {
+                    "name": self.coordinator._vehicle_name or "福特派互联",
+                    "message": "手动刷新已触发：请求车机上报最新状态（约 30 秒后完成）",
+                    "domain": DOMAIN,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - logbook 失败不影响刷新
+            _LOGGER.warning("FordPass manual refresh logbook failed: %s", exc)
         # 1) 请求车机刷新状态（上报云端）
         try:
             await self.coordinator.api.send_command(vin, CMD_AUTO_REFRESH)
