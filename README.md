@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.3.x（最新）</summary>
 
+- **v4.4.4**：**活动日志关联车辆实体 + 修复探测端点从未真跑**——① 集成活动（手动刷新「已触发」/刷新成功摘要/暂无数据）写入 logbook 时关联车辆实体 entity_id：此前事件 entity_id=None，HA 前端「集成设备 → 活动」按设备过滤看不到（全局日志面板有但设备页无）——本版起设备页活动完整可见；② 修复 api.py 多行 import 漏 31 个常量（PATH_CMCC_TRAFFIC/PATH_FPOSB_HISTORY/PATH_ACTIVE_ALERT_LIST 等）导致的 NameError：移动流量/维保预约/主动告警/EVSS/分享/家充桩扩展/充电站收藏等探测端点因此从未真跑（异常被 except 静默吞掉），本版补齐导入后恢复正常探测
 - **v4.4.3**：**复刻 App 下拉刷新（全量刷新）**——「手动刷新车辆状态」按钮此前只刷新主状态 + TTL 命中的慢变数据（保养 12h/SIM 6h/OTA 6h/滤芯 6h/ccfeatures 24h/召回 24h/告警 30min/消息 30min 在有效期内直接复用旧值，不发请求），与 App 下拉刷新（一次拿全车最新状态）不一致；本版 `force_refresh(force_all=True)` 绕过全部慢变端点 TTL 缓存强制真拉，一次点击 = App 下拉刷新等价（位置/主状态/告警/OTA/保养/召回/SIM/WiFi/鸣笛/滤芯/能力/预测诊断/未读消息全量更新），探测类端点（cevs/家充桩等）保持 setup 一次性探测 + 持久化缓存不进全量刷新（风控）。成功摘要同步标注全量
 - **v4.4.2**：**修复 v4.4.0/v4.4.1 发布漏发 button.py**——v4.4.0 手动刷新即时活动（点击写「手动刷新已触发」）因发布脚本 CHANGED 缺 button.py 未上线（manifest 版本已更新但按钮代码未推 main）；本版补发含该功能的 button.py、移除诊断特征日志。教训：改动的每个平台文件必须进 CHANGED
 - **v4.4.1**：**手动刷新活动诊断版**——v4.4.0 实测「手动刷新已触发」条目未写入，本版 logbook 写入失败由 debug 改 warning（进 system_log）并加 v4.4.1 特征日志，定位原因（文件未落盘 vs async_call 失败）后修复
