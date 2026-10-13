@@ -61,6 +61,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Apply option changes (scan interval / location tracking) without restart
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
+    # v4.2.9: options 为空（旧版本前端保存失败/从未保存过，实测 entry
+    # options 恒为 {}）时，落盘默认选项——让"选项/重新配置"表单有真实
+    # 默认值、快照比较与 update_listener 有据可依，用户后续设置才能
+    # 正确读写。仅当 options 完全为空时补默认，用户已保存的值原样保留，
+    # 绝不覆盖。async_update_entry 会触发 update_listener，此时
+    # coordinator 尚未建立，由 async_update_options 的 guard 兜底
+    # （"options saved before entry loaded"，下次 setup 生效）。
+    if not entry.options:
+        try:
+            hass.config_entries.async_update_entry(
+                entry,
+                options={
+                    CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
+                    "track_location": True,
+                    CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 落盘失败不阻断 setup
+            _LOGGER.warning("fordpass_cn default options persist failed: %s", exc)
+
     try:
         vehicles = await api.get_vehicles()
     except asyncio.TimeoutError as err:
