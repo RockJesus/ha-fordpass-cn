@@ -199,16 +199,28 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         用户最后一次的完整设置。
         """
         async with self._save_lock:
-            options: dict[str, Any] = {}
+            # v4.3.1: 改读内存 honk_settings（权威来源），entry.options 仅
+            # 兜底旧版残留——旧版读 entry.options，v4.3.1 起业务字段不再
+            # 写 options，若继续读 options 会把默认值上传云端（改设置失效）。
+            settings: dict[str, Any] = {}
             entry_id = getattr(self.coordinator, "entry_id", None)
+            if entry_id:
+                payload = self.coordinator.hass.data.get(DOMAIN, {}).get(entry_id) or {}
+                settings = payload.get("honk_settings") or {}
+            options: dict[str, Any] = {}
             if entry_id:
                 entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
                 options = entry.options if entry else {}
             duration = int(
-                options.get(CONF_HONK_DURATION, DEFAULT_HONK_DURATION)
+                settings.get(CONF_HONK_DURATION)
+                or options.get(CONF_HONK_DURATION)
                 or DEFAULT_HONK_DURATION
             )
-            chirp_name = options.get(CONF_CHIRP_TYPE) or DEFAULT_CHIRP_TYPE
+            chirp_name = (
+                settings.get(CONF_CHIRP_TYPE)
+                or options.get(CONF_CHIRP_TYPE)
+                or DEFAULT_CHIRP_TYPE
+            )
             if chirp_name in CHIRP_TYPE_OPTIONS:
                 chirp_type = CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
             else:
@@ -246,10 +258,22 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         return self._attr_current_option if self._attr_current_option is not None else self._restored
 
     def _persist(self, key: str, value: Any) -> None:
-        """Write to memory settings + config entry options (survives restart)."""
+        """Write to memory settings only (v4.3.1).
+
+        v4.3.1 根因修复：旧版把业务设置同步写进 config entry options
+        （async_update_entry）——每次云端同步回调（setup 时的
+        _on_cloud_update）都触发 update_listener（async_update_options）：
+        ①打一条"options updated"日志；②快照未初始化时误判变化并
+        async_request_refresh，制造 setup 后的额外整轮福特云请求；
+        ③HA 对 options 写入可能触发 entry 重载，重载后 entry.options
+        若在写入瞬间不含调度字段（scan_interval 等），调度设置回退默认
+        30 分钟——用户实测"刷新间隔设置失效、被重置"。
+        业务设置（鸣笛类型/时长等）持久化的权威来源是**福特账户云端**
+        （preference-list，_save_cloud 已上传、_on_cloud_update 已回读
+        恢复），不再落 entry.options；调度设置（刷新间隔/位置跟踪）由
+        options flow 单独管理，两者彻底分离，互不干扰。
+        """
         self._settings[key] = value
-        new_options = {**self.entry.options, key: value}
-        self.hass.config_entries.async_update_entry(self.entry, options=new_options)
         _LOGGER.info(
             "FordPass 鸣笛设置 %s -> %s（已保存）", key, value
         )
