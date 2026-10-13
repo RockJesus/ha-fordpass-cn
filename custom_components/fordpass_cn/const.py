@@ -253,6 +253,23 @@ PATH_DEPARTURE_DELETE_ALL = "/api/cevs/v2/departuretimes/deleteall"
 # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认——CDS 域
 #   GET vehicle/search-cmcc-traffic-h5-url，只读，keys data/status）
 PATH_CMCC_TRAFFIC = "/api/cnxapi-cds/v1/vehicle/search-cmcc-traffic-h5-url"
+# v4.3.3: fposb 4S 维保预约（cnjvsl-fposb/v2，全车型只读探测）——
+#   osbhistory 预约历史 / osbbookingdetail 预约详情 / availableresource
+#   可用资源（门店·工位·时间）/ sainfo 服务顾问 / puddetail 取送车订单详情
+PATH_FPOSB_HISTORY = "/api/cnjvsl-fposb/v2/book/query/osbhistory"
+PATH_FPOSB_BOOKING_DETAIL = "/api/cnjvsl-fposb/v2/book/query/osbbookingdetail"
+PATH_FPOSB_AVAILABLE_RESOURCE = "/api/cnjvsl-fposb/v2/book/query/availableresource"
+PATH_FPOSB_SA_INFO = "/api/cnjvsl-fposb/v2/book/query/sainfo"
+PATH_FPOSB_PUD_DETAIL = "/api/cnjvsl-fposb/v2/book/pudorder/puddetail"
+# v4.3.3: evss 充电站/免密支付（仅电/插混/混动车型探测创建）——
+#   accounts 账户 / chargers/v1/info 充电站信息 / chargers/v2/parking 停车位 /
+#   chargers/v2/events/order 充电订单事件 / freepassword 免密支付状态·通知
+PATH_EVSS_ACCOUNTS = "/api/evss/accounts/v3"
+PATH_EVSS_CHARGER_INFO = "/api/evss/chargers/v1/info"
+PATH_EVSS_PARKING = "/api/evss/chargers/v2/parking"
+PATH_EVSS_ORDER_EVENTS = "/api/evss/chargers/v2/events/order"
+PATH_EVSS_FREEPASS_STATUS = "/api/evss/freepassword/v1/status"
+PATH_EVSS_FREEPASS_NOTICE = "/api/evss/freepassword/v1/notice"
 
 # v3.7.4: cevs 域 RSA 加密候选公钥（App encryptByRSA 用公钥加密敏感字段后
 # POST；集成原白盒 AES 密文被服务器 RSA 解密失败 → Impossible modulus）。
