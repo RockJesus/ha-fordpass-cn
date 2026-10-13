@@ -100,8 +100,13 @@ async def async_setup_entry(
     # v3.6.5: HAOS 2026.10 移除 EntityRegistry.async_entries_for_domain，
     # 改用 reg.entities.values() 过滤 platform==DOMAIN（等价）。
     reg_entries = [e for e in reg.entities.values() if e.platform == DOMAIN]
-    _LOGGER.debug("sensor cleanup: registry=%d new_ids=%d", len(reg_entries), len(new_ids))
-    for entry_ in reg_entries:
+    # v4.3.0: 日志口径修正——registry 计数只统计 sensor.* 条目
+    # （此前打印全 domain 实体数 80，含 lock/switch/button/tracker/image/
+    # select 等 16 个非 sensor，与"只清理 sensor 实体"的实际行为不符，
+    # 易误导排查）。
+    sensor_regs = [e for e in reg_entries if e.entity_id.startswith("sensor.")]
+    _LOGGER.debug("sensor cleanup: registry=%d new_ids=%d", len(sensor_regs), len(new_ids))
+    for entry_ in sensor_regs:
         if not entry_.entity_id.startswith("sensor."):
             continue
         if entry_.platform != DOMAIN:
