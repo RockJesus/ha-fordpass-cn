@@ -298,6 +298,23 @@ PATH_USER_AUTH_STATUS = "/api/cnxapi-vds/v1/vehicles/search-vehicle-user-auth-st
 PATH_SRS_PROFILE = "/api/cnxapi-cds/v1/vehicles/search-srs-profile"
 # 传感器影子（cnjvsl-sensor-mapping/v2/sensor/shadow）
 PATH_SENSOR_SHADOW = "/api/cnjvsl-sensor-mapping/v2/sensor/shadow"
+
+# v4.3.5: 逆向 228 端点比对后未接入的只读 GET 端点补全（全部无需抓包——
+# 标准 R3 签名 GET，探测到数据才创建实体）。来源：6.16.0 APK 端点全集
+# 归一化 diff（2026-10-13），与现有实体不重复、非变体、非 App 专用。
+# --- 家充桩只读扩展（smartwallbox，探测到绑定桩才创建） ---
+PATH_SMARTWALLBOX_BOUND = "/api/smartwallbox/processor/binding/myBoundWallbox/v3"
+PATH_SMARTWALLBOX_INFO = "/api/smartwallbox/processor/binding/wallboxInfo/v3"
+PATH_SMARTWALLBOX_RECORDS_V2 = "/api/smartwallbox/processor/charging/records/list/v2"
+# --- 充电域只读扩展（evss/vpoi，仅电/插混/混动探测到数据才创建） ---
+PATH_EVSS_ORDER_STATUS = "/api/evss/chargers/v2/events/orderStatus"
+PATH_EVSS_APPS_INFO = "/api/evss/apps/v1/info"
+PATH_EVSS_USAGE_NOTICE = "/api/evss/chargers/v1/events/usage-notice"
+PATH_VPOI_STATUS = "/api/vpoi/chargestations/v3/status/"
+PATH_VPOI_SAVED = "/api/vpoi/chargestations/v3/saved"
+# --- OTA 协议（全车型，只读） ---
+PATH_OTA_AGREEMENTS = "/api/alert/v1/search-ota-agreements"
+
 # 行车记录仪视频（pds/v1 视频录制/查询）
 PATH_VIDEO_START = "/api/cnxapi-pds/v1/start-video-recording"
 PATH_VIDEO_STOP = "/api/cnxapi-pds/v1/stop-video-recording"
@@ -310,6 +327,9 @@ PATH_USER_VEHICLES = "/api/cnxapi-vds/v5/uservehicles"
 PATH_MESSAGES_V2_PAGE = "/api/cnxapi-message/app/messages/v2/page"
 # 车辆共享列表（cnesl-user 只读——他人授权访问状态）
 PATH_SHARE_LIST = "/api/cnesl-user/v1/search-vehicle-share-list"
+# v4.3.5: 车辆分享能力/分享历史（cnesl-user 只读探测，探测到数据才创建）
+PATH_SHARE_CAPABILITY = "/api/cnesl-user/v1/search-vehicle-share-capability"
+PATH_SHARE_HISTORY = "/api/cnesl-user/v1/search-vehicle-share-history-list"
 # 车辆设备列表（vds/v1/search-vehicle-device-list）
 PATH_DEVICE_LIST = "/api/cnxapi-vds/v1/search-vehicle-device-list"
 

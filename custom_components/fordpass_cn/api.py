@@ -1867,6 +1867,20 @@ class FordPassApi:
             "device_list": (PATH_DEVICE_LIST, None, True),
             # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认，GET 只读）
             "cmcc_traffic": (PATH_CMCC_TRAFFIC, None, False),
+            # v4.3.5: 逆向 228 端点比对后未接入的只读端点补全（全部无需抓包
+            # ——GET + 标准签名，探测到数据才创建，与现有实体不重复）。
+            # 家充桩只读扩展（smartwallbox，探测到绑定桩才创建）：
+            "wallbox_bound": (PATH_SMARTWALLBOX_BOUND, None, True),
+            "wallbox_info": (PATH_SMARTWALLBOX_INFO, None, True),
+            "wallbox_records_v2": (PATH_SMARTWALLBOX_RECORDS_V2, None, True),
+            # 充电域只读扩展（evss/vpoi，电/插混/混动探测到数据才创建）：
+            "evss_order_status": (PATH_EVSS_ORDER_STATUS, None, True),
+            "evss_apps_info": (PATH_EVSS_APPS_INFO, None, True),
+            "evss_usage_notice": (PATH_EVSS_USAGE_NOTICE, None, True),
+            "vpoi_status": (PATH_VPOI_STATUS, None, True),
+            "vpoi_saved": (PATH_VPOI_SAVED, None, True),
+            # OTA 协议（全车型只读）：
+            "ota_agreements": (PATH_OTA_AGREEMENTS, None, True),
         }
         # v3.5.1: 账号级端点。v3.5.6 实证——GET 全 404（v3.5.1/3.5.2 移除
         # 车辆参数后仍 404 → 路由为 POST-only）；POST body 需
@@ -1881,6 +1895,10 @@ class FordPassApi:
             # 用户级红点（cnesl-user，账号级只读）。探测到数据才创建。
             "mcm_messages_v3": (PATH_MCM_MESSAGES_V3, None, True),
             "user_reddot": (PATH_USER_REDDOT, None, True),
+            # v4.3.5: 车辆分享能力/分享历史（cnesl-user 账号级只读，探测到
+            # 数据才创建——分享功能为静态触顶，探测一次即知是否支持）。
+            "share_capability": (PATH_SHARE_CAPABILITY, None, True),
+            "share_history": (PATH_SHARE_HISTORY, None, True),
             # v3.7.2: 车辆授权管理列表（vehicle-user-auth 查询该车辆授权用户，
             # 只读；非授权/无数据的车型不创建）。公共充电探测（纯电/插混专属，
             # 位置相关无参探测失败→不创建，全车型安全）：
