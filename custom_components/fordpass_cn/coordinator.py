@@ -208,7 +208,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return False, None
 
     async def _cached_fetch(
-        self, key: str, ttl: float, factory, persist: bool = False
+        self, key: str, ttl: float, factory, persist: bool = False,
+        force: bool = False,
     ) -> Any:
         """TTL 缓存包装：命中直接返回旧值；失败保留旧值；成功写缓存。
 
@@ -219,16 +220,25 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         TTL（重启/重载后 setup 复用，不再重探）→ factory → 写内存+落盘。
         探测类请求（白名单/额外端点/cevs/家充桩）一律 persist=True；
         常规轮询数据保持内存缓存（避免高频写盘）。
+        v4.4.3: ``force=True`` 时绕过内存+持久化 TTL 命中，强制真拉——
+        「手动刷新车辆状态」按钮复刻 App 下拉刷新（全量拉取所有状态端点），
+        成功后照常写缓存刷新过期时间。force 时同样保留 old（内存现值）供
+        失败兜底（实体保留最后已知状态），只是不因 TTL 命中短路。
         """
-        hit, old = self._cache_hit(key)
-        if hit:
-            return old
-        if persist and self._probe_cache:
-            ent = self._probe_cache.get(key)
-            if ent and time.time() < ent.get("expire", 0):
-                # 持久化命中：回填内存缓存（防止同轮重复读盘）
-                self._cache[key] = (time.monotonic() + ttl, ent["value"])
-                return ent["value"]
+        if not force:
+            hit, old = self._cache_hit(key)
+            if hit:
+                return old
+            if persist and self._probe_cache:
+                ent = self._probe_cache.get(key)
+                if ent and time.time() < ent.get("expire", 0):
+                    # 持久化命中：回填内存缓存（防止同轮重复读盘）
+                    self._cache[key] = (time.monotonic() + ttl, ent["value"])
+                    return ent["value"]
+            old = None
+        else:
+            ent = self._cache.get(key)
+            old = ent[1] if ent else None
         try:
             val = await factory()
         except FordPassProbeRejected as exc:
@@ -477,7 +487,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sw_version="6.14.0",
         )
 
-    async def force_refresh(self) -> None:
+    async def force_refresh(self, force_all: bool = False) -> None:
         """Fetch data immediately and push it to entities (v2.7.0).
 
         HA's ``async_request_refresh`` only executes right away when the last
@@ -485,9 +495,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         refresh to the next interval tick, which makes a manual "刷新车辆状态"
         button appear dead.  This method bypasses that throttle: it fetches
         now and pushes the result with ``async_set_updated_data``.
+
+        v4.4.3: ``force_all=True`` 复刻 App 下拉刷新——绕过所有慢变端点的
+        TTL 缓存强制真拉（保养/召回/SIM/OTA/滤芯/ccfeatures/prognostic/
+        告警/消息全量更新），与 App 下拉刷新拿全车最新状态一致。
         """
         try:
-            data = await self._async_update_data()
+            data = await self._async_update_data(force_all=force_all)
         except Exception as exc:  # noqa: BLE001 - keep old data, log clearly
             self.logger.error("FordPass forced refresh failed: %s", exc)
             raise UpdateFailed(f"FordPass update failed: {exc}") from exc
@@ -526,7 +540,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "FordPass refresh after %s failed: %s", command_type, exc
             )
 
-    async def _async_update_data(self) -> dict[str, Any]:
+    async def _async_update_data(self, force_all: bool = False) -> dict[str, Any]:
         try:
             status = await self.api.get_vehicle_status(self.vin)
             data: dict[str, Any] = {
@@ -569,12 +583,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Vehicle health alerts（30 分钟 TTL；失败保留旧列表/清空，
         # TTL 命中天然抑制重试——取代旧"连续失败 2 次抑制 1h"逻辑）
         alerts = await self._cached_fetch(
-            "active_alerts", 1800, lambda: self.api.get_active_alerts(self.vin)
+            "active_alerts", 1800, lambda: self.api.get_active_alerts(self.vin), force=force_all
         )
         data["active_alerts"] = alerts if isinstance(alerts, list) else []
         # OTA 设置状态（6 小时 TTL——OTA 排程配置几乎不变）
         data["ota_setting"] = await self._cached_fetch(
-            "ota_setting", 21600, lambda: self.api.get_ota_setting(self.vin)
+            "ota_setting", 21600, lambda: self.api.get_ota_setting(self.vin), force=force_all
         )
         # 服务信息端点（保养计划 12h / 召回 24h / SIM 6h TTL；WiFi 状态
         # v3.8.8 起跟随状态刷新间隔每轮刷新，不再固定 15 分钟）
@@ -583,7 +597,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ("recall", 86400, lambda: self.api.get_recall(self.vin)),
             ("sim_info", 21600, lambda: self.api.get_sim_info(self.vin)),
         ):
-            data[key] = await self._cached_fetch(key, ttl, factory)
+            data[key] = await self._cached_fetch(
+                key, ttl, factory, force=force_all
+            )
         # 车载 WiFi 状态（v3.8.8: 跟随状态刷新间隔每轮刷新；失败保留旧值）
         # v4.3.0: get_wifi_status 对确定性业务拒绝返回 None（已降噪），
         # None 同样保留最后已知状态（拒绝 ≠ 实体显示不可用）。
@@ -606,7 +622,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["chirp_cloud"] = (self.data or {}).get("chirp_cloud")
         # 空调滤芯状态（6 小时 TTL——健康度变化慢）
         data["air_filter"] = await self._cached_fetch(
-            "air_filter", 21600, lambda: self.api.get_air_filter_status(self.vin)
+            "air_filter", 21600, lambda: self.api.get_air_filter_status(self.vin), force=force_all
         )
         # 云端能力+服务信息（ccfeatures 24h TTL——出厂能力几乎永不变）
         # 与预测性诊断（prognostic 6h TTL——机油寿命/剩余里程变化慢）
@@ -614,10 +630,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ("ccfeatures", 86400, lambda: self.api.get_ccfeatures(self.vin)),
             ("prognostic", 21600, lambda: self.api.get_prognostic(self.vin)),
         ):
-            data[key] = await self._cached_fetch(key, ttl, factory)
+            data[key] = await self._cached_fetch(
+                key, ttl, factory, force=force_all
+            )
         # 未读消息摘要（30 分钟 TTL）
         data["messages"] = await self._cached_fetch(
-            "messages", 1800, lambda: self.api.get_messages_summary()
+            "messages", 1800, lambda: self.api.get_messages_summary(), force=force_all
         )
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
