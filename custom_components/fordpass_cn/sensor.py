@@ -388,6 +388,23 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("wallbox_charge_status", "家充桩充电状态(桩级)", "wallbox_charge_status"),
             ("wallbox_charging", "家充桩充电信息", "wallbox_charging"),
             ("wallbox_orders", "家充桩充电订单", "wallbox_orders"),
+            # v4.3.5: 逆向 228 端点比对后未接入的只读端点补全（全部无需抓包
+            # ——GET + 标准签名，探测到数据才创建，与现有实体不重复）：
+            # 家充桩只读扩展（smartwallbox 绑定桩才创建）：
+            ("wallbox_bound", "家充桩绑定", "wallbox_bound"),
+            ("wallbox_info", "家充桩墙盒详情", "wallbox_info"),
+            ("wallbox_records_v2", "家充桩充电记录", "wallbox_records_v2"),
+            # 充电域只读扩展（evss/vpoi，电/插混/混动探测到数据才创建）：
+            ("evss_order_status", "充电订单状态", "evss_order_status"),
+            ("evss_apps_info", "EVSS 服务信息", "evss_apps_info"),
+            ("evss_usage_notice", "充电使用通知", "evss_usage_notice"),
+            ("vpoi_status", "充电站状态", "vpoi_status"),
+            ("vpoi_saved", "收藏充电站", "vpoi_saved"),
+            # OTA 协议（全车型只读）：
+            ("ota_agreements", "OTA 协议", "ota_agreements"),
+            # 车辆分享能力/历史（cnesl-user 账号级只读）：
+            ("share_capability", "车辆分享能力", "share_capability"),
+            ("share_history", "车辆分享历史", "share_history"),
         ):
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
@@ -2424,6 +2441,91 @@ class FordPassProbeSensor(SensorEntity):
                     if isinstance(_v, int) and _v >= 0:
                         return f"{_v} 个红点"
                 return "无红点"
+            # ---- v4.3.5: 逆向 228 端点比对后未接入的只读端点补全 ----
+            if self._kind == "wallbox_bound":
+                lst = _swb_list(data)
+                if lst:
+                    names = []
+                    for it in lst[:6]:
+                        if isinstance(it, dict):
+                            n = (_swb_find(it, "nickName") or _swb_find(it, "wallboxName")
+                                 or _swb_find(it, "name") or _swb_find(it, "wallboxId"))
+                            if n:
+                                names.append(str(n))
+                    return "、".join(names) if names else f"{len(lst)} 个已绑定墙盒"
+                return "暂无绑定墙盒"
+            if self._kind == "wallbox_info":
+                n = (_swb_find(data, "wallboxName") or _swb_find(data, "name")
+                     or _swb_find(data, "nickName") or _swb_find(data, "model"))
+                if n is not None:
+                    return str(n)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 个墙盒详情"
+                return "暂无墙盒详情"
+            if self._kind == "wallbox_records_v2":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条充电记录"
+                return "暂无充电记录"
+            if self._kind == "evss_order_status":
+                st = (_swb_find(data, "orderStatus") or _swb_find(data, "status")
+                      or _swb_find(data, "chargingStatus"))
+                if st is not None:
+                    return {"CHARGING": "充电中", "FINISHED": "已完成", "CANCELED": "已取消",
+                            "PENDING": "等待中", "0": "充电中", "1": "已完成"}.get(str(st), str(st))
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条订单状态"
+                return "暂无充电订单状态"
+            if self._kind == "evss_apps_info":
+                n = (_swb_find(data, "appName") or _swb_find(data, "name")
+                     or _swb_find(data, "version"))
+                if n is not None:
+                    return str(n)
+                return "EVSS 服务可用"
+            if self._kind == "evss_usage_notice":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条使用通知"
+                for _v in data.values():
+                    if isinstance(_v, int) and _v >= 0:
+                        return f"{_v} 条通知"
+                return "暂无使用通知"
+            if self._kind == "vpoi_status":
+                st = (_swb_find(data, "status") or _swb_find(data, "chargeStatus")
+                      or _swb_find(data, "state"))
+                if st is not None:
+                    return str(st)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 个充电站状态"
+                return "暂无充电站状态"
+            if self._kind == "vpoi_saved":
+                lst = _swb_list(data)
+                if lst:
+                    return f"收藏 {len(lst)} 个充电站"
+                return "暂无收藏充电站"
+            if self._kind == "ota_agreements":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 份 OTA 协议"
+                return "暂无 OTA 协议"
+            if self._kind == "share_capability":
+                st = (_swb_find(data, "shareCapability") or _swb_find(data, "capability")
+                      or _swb_find(data, "supported") or _swb_find(data, "support"))
+                if st is not None:
+                    if isinstance(st, bool):
+                        return "支持分享" if st else "不支持分享"
+                    return {"1": "支持分享", "0": "不支持分享", "true": "支持分享",
+                            "false": "不支持分享", "Y": "支持分享", "N": "不支持分享"}.get(
+                        str(st), str(st))
+                return "不支持车辆分享"
+            if self._kind == "share_history":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条分享记录"
+                return "暂无分享记录"
         except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
             return "解析失败"
         return None
