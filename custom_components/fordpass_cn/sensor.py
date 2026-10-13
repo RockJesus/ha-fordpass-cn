@@ -283,12 +283,17 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     for key, cls, _label in (
         ("maintenance_plan", FordPassMaintenancePlanSensor, "保养计划"),
         ("recall", FordPassRecallSensor, "召回信息"),
-        ("sim_info", FordPassSimSensor, "SIM 卡"),
         ("wifi_status", FordPassWifiSensor, "WiFi 热点"),
     ):
         payload = coordinator.data.get(key)
         if payload:
             sensors.append(cls(coordinator))
+    # v4.3.2: SIM 卡无条件创建——v4.3.0 起 sim_info 对未开通车型（纯油）
+    # 确定性业务拒绝（CONS.SYS.0002）落盘 None，旧"拉取成功才创建"
+    # （if payload:）导致该实体被 sensor cleanup 删除（用户实测实体数
+    # 80→79 少 1 个）。v3.3.0 语义即「未开通」，实体应常驻显示——
+    # sim_info 为 None/空时 _format 返回「车辆未开通该服务」而非 unknown。
+    sensors.append(FordPassSimSensor(coordinator))
     # v3.1.4: 鸣笛设置云端状态
     # v3.9.2: 无条件创建（不再要求查询成功且有值）——probe 一次性初始化
     # 若云端暂不可达/无数据，sensor 显示「未获取」并保留最后已知状态，
@@ -1331,8 +1336,10 @@ class FordPassSimSensor(_ServiceInfoSensor):
         super().__init__(coordinator, "sim_info", "SIM 卡", "mdi:sim")
 
     def _format(self, data: dict) -> str | None:
-        if not isinstance(data, dict):
-            return None
+        if not isinstance(data, dict) or not data:
+            # v4.3.2: sim_info 对未开通车型（纯油）确定性业务拒绝落盘
+            # None/空——按 v3.3.0 语义显示「车辆未开通该服务」而非 unknown
+            return "车辆未开通该服务"
         payload = data.get("data") if isinstance(data.get("data"), dict) else {}
         # 服务端业务失败（实测 payload.returnSuccess false / CONS.SYS.0002）：
         # 锐际纯油车型无车联网 SIM 服务，App 无该功能入口（HAR 全量 1152 条
