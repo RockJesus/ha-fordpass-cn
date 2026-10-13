@@ -6,8 +6,12 @@ Two login methods (selectable in step 1, v2.7.4):
   * B2C  — username (phone) + password via the official Azure AD B2C flow
            (authorize -> SelfAsserted -> confirmed(code) -> token exchange).
 
-The password is used once during setup and is never stored in the entry
-data (only the access/refresh JWTs are persisted, as with the SMS login).
+v4.4.6: 2026-10-03 起 login.ford.com.cn 前置腾讯云 EdgeOne WAF 拦截纯
+HTTP 客户端（567）——requests 四步流不可用。密码登录改为两步：
+① 输入用户名/密码（密码按用户要求持久化到 entry.data，仅存本地配置）；
+② 用真实浏览器完成 B2C 登录，把地址栏的 authorization code 粘贴进
+config flow——集成用 code 直接换 DLT token（api.password_login(code=...)），
+绕开 WAF 而无需任何绕过手段。code 一次性使用，换取后即失效。
 """
 from __future__ import annotations
 
@@ -22,6 +26,11 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import FordPassApi, FordPassApiError
 from .const import (
+    APPLICATION_ID,
+    B2C_AUTHORITY,
+    B2C_CLIENT_ID,
+    B2C_PATH_AUTHORIZE,
+    B2C_REDIRECT_URI,
     CONF_COORDINATE_SYSTEM,
     CONF_LOGIN_MODE,
     CONF_PASSWORD,
@@ -96,6 +105,38 @@ STEP_PASSWORD_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
     }
 )
+# v4.4.6: B2C 浏览器辅助登录——粘贴 authorization code（真实浏览器登录后
+# 从地址栏 redirect_uri?code=xxx 复制）。code 一次性、换 token 后即失效。
+STEP_B2C_CODE_SCHEMA = vol.Schema(
+    {
+        vol.Required("code"): str,
+    }
+)
+
+
+def _build_b2c_login_url() -> str:
+    """构造 B2C authorize 登录地址（与 api._b2c_login_sync 参数一致）。
+
+    v4.4.6: 供用户在真实浏览器打开完成登录；redirect 后地址栏
+    redirect_uri?code=xxx 中的 xxx 即 authorization code。
+    """
+    from urllib.parse import urlencode
+
+    query = {
+        "client_id": B2C_CLIENT_ID,
+        "nonce": "defaultNonce",
+        "redirect_uri": B2C_REDIRECT_URI,
+        "scope": "openid",
+        "response_type": "code",
+        "prompt": "login",
+        "country_code": "CHN",
+        "ford_application_id": APPLICATION_ID,
+        "language_code": "zh-CN",
+        "tnc_accepted": "true",
+        "tnc_consent1_accepted": "true",
+        "tnc_consent2_accepted": "false",
+    }
+    return B2C_AUTHORITY + B2C_PATH_AUTHORIZE + "?" + urlencode(query)
 
 
 def _normalize_phone(raw: str) -> str:
@@ -115,6 +156,8 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._phone: str | None = None
         self._xjw: str | None = None
         self._username: str | None = None
+        # v4.4.6: B2C 密码登录——密码暂存 flow 内存，完成时写入 entry.data
+        self._password: str | None = None
         # v3.9.8: reauth（token 过期重新认证）标记——登录流程最终动作
         # 由"创建 entry"改为"更新已有 entry 的 token + abort"。
         self._reauth: bool = False
@@ -153,12 +196,17 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._reauth = True
         return await self.async_step_user(user_input)
 
-    def _finish_login(self, mode: str, tokens: dict) -> FlowResult:
+    def _finish_login(
+        self, mode: str, tokens: dict, extra_data: dict[str, Any] | None = None
+    ) -> FlowResult:
         """登录成功后的收尾（v3.9.8）：reauth 更新 entry；否则创建 entry。
 
         v4.0.11: reauth 分支先校验登录账号与原 entry 手机号一致——换账号
         reauth 会把新账号 token 写进旧账号 entry，导致实体绑旧 VIN、token
         属新账号的错配；不一致直接 abort（提示需删除重配）。
+
+        v4.4.6: extra_data 合并进 entry.data（如 B2C 密码登录的密码，
+        按用户要求持久化到本地配置，供浏览器辅助重登录使用）。
         """
         if self._reauth:
             entry = self._get_reauth_entry()
@@ -178,6 +226,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 entry,
                 data={
                     **entry.data,
+                    **(extra_data or {}),
                     CONF_LOGIN_MODE: mode,
                     CONF_PHONE: self._phone,
                     CONF_USERNAME: self._username,
@@ -189,6 +238,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title=(self._phone or self._username) or DOMAIN,
             data={
+                **(extra_data or {}),
                 CONF_LOGIN_MODE: mode,
                 CONF_PHONE: self._phone,
                 CONF_USERNAME: self._username,
@@ -287,6 +337,11 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_password(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """B2C 密码登录第一步：用户名 + 密码（v4.4.6）。
+
+        EdgeOne WAF 拦截纯 HTTP 客户端后不再直接跑 requests 四步流——
+        密码仅暂存于 flow 内存，跳转到第二步粘贴浏览器登录的 code。
+        """
         errors: dict[str, str] = {}
         if user_input is not None:
             self._username = _normalize_phone(user_input[CONF_USERNAME])
@@ -296,32 +351,64 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not self._reauth:
                     await self.async_set_unique_id(self._username)
                     self._abort_if_unique_id_configured()
-                session = async_get_clientsession(self.hass)
-                api = FordPassApi(session, _LOGGER)
-                try:
-                    tokens = await api.password_login(
-                        self._username, user_input[CONF_PASSWORD]
-                    )
-                except ImportError as err:
-                    errors["base"] = "missing_deps"
-                    _LOGGER.exception("dependency import failed: %s", err)
-                except FordPassApiError as err:
-                    errors["base"] = "password_login_failed"
-                    _LOGGER.warning(
-                        "password login failed: code=%s msg=%s", err.code, err.message
-                    )
-                except Exception as err:  # noqa: BLE001
-                    errors["base"] = "unknown"
-                    _LOGGER.exception("unexpected error during password login: %s", err)
-                else:
-                    # The password itself is never persisted — only the
-                    # exchanged JWTs, exactly like the SMS login.
-                    return self._finish_login(LOGIN_MODE_PASSWORD, tokens)
+                self._password = user_input[CONF_PASSWORD]
+                return await self.async_step_b2c()
         return self.async_show_form(
             step_id="password",
             data_schema=STEP_PASSWORD_SCHEMA,
             errors=errors,
             description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_PASSWORD]},
+        )
+
+    async def async_step_b2c(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """B2C 密码登录第二步：粘贴浏览器登录得到的 authorization code。
+
+        v4.4.6: 用户在真实浏览器（App 同款 UA 环境）打开下方登录地址完成
+        登录，浏览器会 302 跳到 redirect_uri 并带 ?code=xxx —— 把 xxx 粘贴
+        到本步。集成用 code 直接换 DLT token（api.password_login(code=...)），
+        纯 API 通道绕开 EdgeOne WAF 对 HTTP 客户端的拦截，无需任何绕过手段。
+        code 一次性有效，换取 token 后即失效。
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            code = (user_input.get("code") or "").strip()
+            if not code:
+                errors["base"] = "bad_code"
+            else:
+                session = async_get_clientsession(self.hass)
+                api = FordPassApi(session, _LOGGER)
+                try:
+                    tokens = await api.password_login(
+                        self._username or "", code=code
+                    )
+                except ImportError as err:
+                    errors["base"] = "missing_deps"
+                    _LOGGER.exception("dependency import failed: %s", err)
+                except FordPassApiError as err:
+                    errors["base"] = "bad_code"
+                    _LOGGER.warning(
+                        "b2c code exchange failed: code=%s msg=%s", err.code, err.message
+                    )
+                except Exception as err:  # noqa: BLE001
+                    errors["base"] = "unknown"
+                    _LOGGER.exception("unexpected error during b2c code exchange: %s", err)
+                else:
+                    # v4.4.6: 密码按用户要求持久化到 entry.data（仅本地配置），
+                    # 供浏览器辅助重登录/自动化使用；token 与短信登录一致持久化。
+                    return self._finish_login(
+                        LOGIN_MODE_PASSWORD,
+                        tokens,
+                        extra_data={CONF_PASSWORD: self._password or ""},
+                    )
+        login_url = _build_b2c_login_url()
+        return self.async_show_form(
+            step_id="b2c",
+            data_schema=STEP_B2C_CODE_SCHEMA,
+            errors=errors,
+            description_placeholders={
+                "login_url": login_url,
+                "username": self._username or "",
+            },
         )
 
     @staticmethod

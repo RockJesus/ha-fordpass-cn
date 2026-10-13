@@ -24,10 +24,17 @@
       },
       "password": {
         "title": "用户名密码登录",
-        "description": "输入福特派账号（手机号）与密码。密码仅用于本次登录换取令牌，不会保存。",
+        "description": "输入福特派账号（手机号）与密码。然后请在真实浏览器中打开登录链接完成登录，把地址栏里的 authorization code 粘贴到下一步（2026-10 起福特登录页 WAF 会拦截纯 HTTP 客户端，浏览器登录可正常通过）。",
         "data": {
           "username": "用户名（手机号）",
           "password": "密码"
+        }
+      },
+      "b2c": {
+        "title": "粘贴授权码",
+        "description": "请在浏览器中打开以下链接，用福特派账号登录（用户名：{username}）。登录成功后浏览器会跳转到 ford.com.cn，地址栏 URL 带 ?code=xxx——把 xxx 复制粘贴到这里。该授权码一次性有效，换取令牌后立即失效。\n\n登录链接：\n{login_url}",
+        "data": {
+          "code": "授权码"
         }
       }
     },
@@ -38,7 +45,8 @@
       "missing_deps": "缺少依赖（unicorn 或 pyelftools），请确认集成安装时已自动安装成功，或在 HA 环境执行 pip install unicorn pyelftools 后重启",
       "login_failed": "登录失败，请检查验证码是否正确（详见日志）",
       "password_login_failed": "登录失败：福特登录页安全防护（腾讯云 EdgeOne）当前拦截纯 HTTP 客户端，请改用短信验证码登录，或稍后重试（详见日志）",
-      "unknown": "发生未知错误，请查看 Home Assistant 日志中的 fordpass_cn 记录"
+      "unknown": "发生未知错误，请查看 Home Assistant 日志中的 fordpass_cn 记录",
+      "bad_code": "授权码无效或已过期，请重新在浏览器登录并复制新的授权码。"
     },
     "abort": {
       "already_configured": "该手机号已配置",
