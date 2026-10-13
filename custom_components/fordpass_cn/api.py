@@ -1510,6 +1510,47 @@ class FordPassApi:
                     )
         return alerts
 
+    async def probe_active_alert_list(self, vin: str) -> dict[str, Any] | None:
+        """探测 /api/v1/activealertlist 车辆主动告警列表（只读/幂等，v4.3.4）。
+
+        6.16.0 APK 逆向 228 端点全量比对后唯一未接入的只读业务端点——
+        App 首页告警聚合（与 vha/activealert 并列的旧版独立端点，结构化
+        告警列表）。标准 R3 签名（timestamp+sign+encryptedVin/xjw），只读
+        不触发动作。返回原始响应供实体按"探测成功才创建"接入：HTTP 200
+        业务成功即视为该车型支持（空列表显示「无告警」，与 SIM 卡传感器
+        v4.3.2 无条件创建教训一致——避免创建条件过严致实体缺失）。
+        """
+        enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
+        params = {
+            "encryptedVin": enc_vin,
+            "xjw": xjw,
+            "hmiPreferredLanguage": "zh-cn",
+            "preferredLanguage": "zh-cn",
+        }
+        try:
+            data = await self._request(
+                "GET", PATH_ACTIVE_ALERT_LIST, query=params
+            )
+        except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+            self._log.debug("FordPass activealertlist failed: %s", exc)
+            return None
+        if isinstance(data, dict):
+            if "errorCode" in data or "error" in data:
+                self._log.info(
+                    "FordPass activealertlist -> (rejected: %s)",
+                    json.dumps(data, ensure_ascii=False)[:200],
+                )
+                return None
+            self._log.info(
+                "FordPass activealertlist probe -> %s",
+                json.dumps(data, ensure_ascii=False)[:800],
+            )
+            return {"signed": True, "data": data}
+        if data is not None:
+            self._log.info("FordPass activealertlist probe -> raw %s", str(data)[:200])
+            return {"signed": True, "raw": str(data)[:200]}
+        return None
+
     # ------------------------------------------------------------ ota setting
     async def get_ota_setting(self, vin: str) -> dict[str, Any] | None:
         """GET /api/alert/v1/ota/setting-info — OTA 设置状态（v3.1.3）。

@@ -146,6 +146,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # 真实告警（明文中文标题）；接口不可用/无数据时回退 PrmtAlarmEvent
     # 等历史字段（Null = 无异常）。原 vehicle_warning_fallback 实体已移除。
     sensors.append(FordPassAlertSensor(coordinator))
+    # v4.3.4: 车辆主动告警列表（/api/v1/activealertlist 独立端点）——探测
+    # 成功（业务 200）即创建（空列表显示「无告警」），失败/拒绝不创建。
+    if isinstance(coordinator.activealertlist, dict) and coordinator.activealertlist:
+        sensors.append(FordPassActiveAlertListSensor(coordinator))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
@@ -795,6 +799,85 @@ class FordPassAlertSensor(SensorEntity):
         if isinstance(value, bool):
             return "车辆异常" if value else "无异常"
         return str(value)
+
+
+class FordPassActiveAlertListSensor(SensorEntity):
+    """车辆主动告警列表（v4.3.4，/api/v1/activealertlist）。
+
+    数据源 coordinator.activealertlist（api.probe_active_alert_list 探测
+    结果，登录后一次 + TTL 持久化缓存）。探测成功（业务 200）即创建——
+    空列表显示「无告警」（与 SIM 卡传感器 v4.3.2 教训一致，创建条件过严
+    会致实体缺失）；探测失败/业务拒绝保持 None 不创建。与「车辆异常警示」
+    （vha/activealert）为两个独立端点，本实体展示结构化告警列表。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:alert-circle-outline"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-active_alert_list"
+        self._attr_name = "车辆告警列表"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 保留最后已知状态
+
+    def _probe(self) -> dict | None:
+        ent = self.coordinator.activealertlist or {}
+        if isinstance(ent, dict):
+            data = ent.get("data")
+            if isinstance(data, dict):
+                return data
+        return None
+
+    def _alerts(self) -> list[dict]:
+        data = self._probe()
+        if data is None:
+            return []
+        for key in ("data", "list", "alerts", "AlertList", "VehicleAlertResponseList"):
+            v = data.get(key)
+            if isinstance(v, list):
+                return [a for a in v if isinstance(a, dict)]
+        # 单层包装（data: {alerts: [...]}）
+        inner = data.get("data")
+        if isinstance(inner, dict):
+            for key in ("list", "alerts", "AlertList"):
+                v = inner.get(key)
+                if isinstance(v, list):
+                    return [a for a in v if isinstance(a, dict)]
+        return []
+
+    @property
+    def native_value(self) -> str | None:
+        alerts = self._alerts()
+        if not alerts:
+            return "无告警"
+        heads = []
+        for a in alerts:
+            for key in ("headline", "Headline", "title", "Title", "alertName", "message"):
+                if a.get(key):
+                    heads.append(str(a[key]))
+                    break
+        return "、".join(heads) if heads else f"{len(alerts)} 条告警"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs: dict = {}
+        alerts = self._alerts()
+        if alerts:
+            attrs["count"] = len(alerts)
+            for i, a in enumerate(alerts[:8], 1):
+                for key in ("headline", "Headline", "title", "Title", "alertName", "message", "severity", "status", "type"):
+                    if a.get(key):
+                        attrs[f"alert_{i}_{key}"] = a[key]
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
 
 
 def _ts_to_local(v):

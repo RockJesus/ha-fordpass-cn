@@ -189,6 +189,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v4.3.3: fposb 4S 维保预约 / evss 充电站免密支付 探测结果
         self.fposb: dict[str, Any] | None = None
         self.evss: dict[str, Any] | None = None
+        # v4.3.4: 车辆主动告警列表 探测结果
+        self.activealertlist: dict[str, Any] | None = None
         # v3.4.6: 只读探测结果（OTA 详情/预约出发/充电日志等，None=无数据）
         self.extra_probes: dict[str, Any] | None = None
         # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
@@ -382,6 +384,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.info(
                 "FordPass evss probe skipped for fuelType %s", fuel or "unknown"
             )
+
+        # v4.3.4: 车辆主动告警列表（activealertlist）探测——登录后一次 +
+        # TTL 持久化缓存，不进常规轮询；探测成功（业务 200）即创建实体，
+        # 空列表显示「无告警」，失败/拒绝保持 None（不创建）。
+        self.activealertlist = await self._cached_fetch(
+            "activealertlist", PROBE_PERSIST_TTL,
+            lambda: self.api.probe_active_alert_list(self.vin),
+            persist=True,
+        )
 
         # v3.9.1: 鸣笛设置云端状态（chirp_cloud）初始化——只在登录后探测
         # 阶段拉取一次（TTL 持久化缓存），**绝不进入常规轮询**：常规轮询

@@ -135,6 +135,11 @@ PATH_QUERY_LOCATION = "/lbs-map/v2/public/app/queryLocation"
 #       timestamp={ms}&sign={sha256}
 # (server 404s a bare GET without timestamp/sign — fixed in v2.7.4)
 PATH_ACTIVE_ALERT = "/api/cnxapi-cds/v1/vha/activealert"
+# v4.3.4: 车辆主动告警列表（6.16.0 逆向 228 端点全量比对后唯一未接入的
+# 只读业务端点）——/api/v1/activealertlist 为 App 首页告警聚合（与 vha/
+# activealert 并列的旧版独立端点，结构化为告警列表）。只读 GET 探测，
+# 探测到数据才创建「车辆告警列表」传感器（空列表显示「无告警」）。
+PATH_ACTIVE_ALERT_LIST = "/api/v1/activealertlist"
 # OTA 设置状态（v3.1.3，实测 2026-10-02）：GET /api/alert/v1/ota/setting-info
 # 走标准 R3 签名（timestamp+sign+encryptedVin/xjw）返回 HTTP 200；同族的
 # ota/detail、ota/versions 在锐际上被服务端拒绝（errorCode 206004
