@@ -534,8 +534,18 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "vehiclestatus": status.get("vehiclestatus", status),
             }
         except FordPassApiError as err:
+            # v4.3.8: 刷新失败也写活动（"不可用活动"）——此前 UpdateFailed
+            # 直接抛出，摘要代码不执行 → 活动日志无任何记录，用户看不到
+            # "刷新失败/云端不可用"的活动。失败保留最后已知状态（实体恒
+            # available），但活动日志如实记录失败原因。
+            await self._log_activity(
+                f"车辆状态刷新失败（保留最后已知状态）：{err}"
+            )
             raise UpdateFailed(f"FordPass update failed: {err}") from err
         except asyncio.TimeoutError as err:
+            await self._log_activity(
+                "车辆状态刷新失败（保留最后已知状态）：请求超时"
+            )
             raise UpdateFailed("FordPass update timed out") from err
 
         # ---- v3.4.1 防限流优化：以下均走 TTL 缓存，慢变数据命中即复用，
@@ -616,35 +626,68 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 自动轮询撞车 / 命令完成后二次拉取）会在几秒内写两条相同摘要，既刷屏
         # 又无意义。同摘要且距上次写入 <15s 时跳过；轮询间隔 ≥5 分钟，正常
         # 记录不受影响，每条轮询仍按间隔显示。
+        # v4.3.8: 抽 _log_activity 复用（成功摘要/失败原因/暂无数据实体共用）。
         try:
-            summary = _status_summary(data)
-            now = datetime.now()
-            last_at = self._last_logbook_at
-            if (
-                last_at is None
-                or (now - last_at).total_seconds() >= 15
-                or summary != self._last_logbook_msg
-            ):
-                # v4.0.13: 由 async_create_task 改为直接 await——此前 task 内部
-                # async_call 的异常无人捕获（外层 try 只包创建动作），logbook
-                # 服务调用失败会留下"Task exception was never retrieved"噪音；
-                # await 后异常落进下方 except，刷新流程不受影响。
-                # 每轮轮询仍写入（用户诉求：活动日志可见每次轮询状态摘要），
-                # 15s 去重仅防手动刷新与自动轮询撞车的重复条目。
-                try:
-                    await self.hass.services.async_call(
-                        "logbook",
-                        "log",
-                        {
-                            "name": self._vehicle_name or "福特派互联",
-                            "message": summary,
-                            "domain": DOMAIN,
-                        },
-                    )
-                except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
-                    self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
-                self._last_logbook_at = now
-                self._last_logbook_msg = summary
+            await self._log_activity(_status_summary(data))
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
+        # v4.3.8: 无条件创建的探测端点实体中"暂无数据"（探测无数据/拒绝）的
+        # 也写活动（用户要求"包括不可用活动"）——纯油车充电域/无绑定桩等
+        # 实体常驻显示「暂无数据」，活动日志同步可见（数量稳定，15s 去重
+        # 只在首次写入；实体数据变化后自动恢复明细，不再写"暂无数据"）。
+        try:
+            _probe_names = {
+                "wallbox_bound": "家充桩绑定", "wallbox_info": "家充桩墙盒详情",
+                "wallbox_records_v2": "家充桩充电记录", "evss_order_status": "充电订单状态",
+                "evss_apps_info": "EVSS 服务信息", "evss_usage_notice": "充电使用通知",
+                "vpoi_status": "充电站状态", "vpoi_saved": "收藏充电站",
+                "ota_agreements": "OTA 协议", "share_capability": "车辆分享能力",
+                "share_history": "车辆分享历史", "evss_payment_summary": "充电支付汇总",
+                "evss_invoiceables": "可开票充电订单", "evss_events_v3": "充电事件",
+                "evss_evaluate_url": "充电订单评价链接",
+                "wallbox_ble_vehicles": "家充桩 BLE 车辆信息",
+                "app_init_settings": "应用设置信息",
+                "vehicle_model_masterdata": "车型主数据",
+                "user_login_status": "用户登录状态",
+            }
+            ep = self.extra_probes or {}
+            empty = [n for k, n in _probe_names.items() if not ep.get(k)]
+            if empty:
+                shown = "、".join(empty[:5])
+                more = f" 等 {len(empty)} 项" if len(empty) > 5 else ""
+                await self._log_activity(
+                    f"{len(empty)} 个实体暂无数据（车型未开通）：{shown}{more}"
+                )
+        except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
+            self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
         return data
+
+    async def _log_activity(self, message: str) -> None:
+        """活动日志写入（v4.3.8 抽取）：成功摘要/失败原因/暂无数据实体共用。
+
+        15s 去重防并发双条（手动刷新与自动轮询撞车）；不同消息不受去重限制。
+        logbook 失败不影响数据刷新（v4.0.13：直接 await，异常落进调用方
+        except，不留 "Task exception was never retrieved" 噪音）。
+        """
+        now = datetime.now()
+        last_at = self._last_logbook_at
+        if not (
+            last_at is None
+            or (now - last_at).total_seconds() >= 15
+            or message != self._last_logbook_msg
+        ):
+            return
+        try:
+            await self.hass.services.async_call(
+                "logbook",
+                "log",
+                {
+                    "name": self._vehicle_name or "福特派互联",
+                    "message": message,
+                    "domain": DOMAIN,
+                },
+            )
+        except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
+            self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
+        self._last_logbook_at = now
+        self._last_logbook_msg = message
