@@ -186,6 +186,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.command_whitelist: list[str] | None = None
         # v3.4.5: 家充桩管理探测结果（None=无该功能/未探测成功）
         self.smartwallbox: dict[str, Any] | None = None
+        # v4.3.3: fposb 4S 维保预约 / evss 充电站免密支付 探测结果
+        self.fposb: dict[str, Any] | None = None
+        self.evss: dict[str, Any] | None = None
         # v3.4.6: 只读探测结果（OTA 详情/预约出发/充电日志等，None=无数据）
         self.extra_probes: dict[str, Any] | None = None
         # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
@@ -355,6 +358,30 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             lambda: self.api.probe_smartwallbox(self.vin),
             persist=True,
         )
+
+        # v4.3.3: fposb 4S 维保预约探测（登录后一次 + TTL 持久化缓存，
+        # 不进常规轮询防限流）——结果供 sensor 按"探测到数据才创建"接入；
+        # 无维保服务车型探测空 → None → 0 实体。
+        self.fposb = await self._cached_fetch(
+            "fposb", PROBE_PERSIST_TTL,
+            lambda: self.api.probe_fposb(self.vin),
+            persist=True,
+        )
+
+        # v4.3.3: evss 充电站/免密支付探测——**仅电/插混/混动车型执行**
+        # （fuelType 过滤，纯油/柴油不探测不创建，与 cevs 规则对称）。
+        fuel = str(self.vehicle_info.get("fuelType") or "").upper()
+        if fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV"):
+            self.evss = await self._cached_fetch(
+                "evss", PROBE_PERSIST_TTL,
+                lambda: self.api.probe_evss(self.vin),
+                persist=True,
+            )
+        else:
+            self.evss = None
+            self.logger.info(
+                "FordPass evss probe skipped for fuelType %s", fuel or "unknown"
+            )
 
         # v3.9.1: 鸣笛设置云端状态（chirp_cloud）初始化——只在登录后探测
         # 阶段拉取一次（TTL 持久化缓存），**绝不进入常规轮询**：常规轮询

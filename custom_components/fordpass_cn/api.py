@@ -2174,6 +2174,86 @@ class FordPassApi:
                     )
         return result or None
 
+    # ------------------------------------------------ v4.3.3 fposb/evss 探测
+    async def probe_fposb(self, vin: str) -> dict[str, Any] | None:
+        """探测 fposb 4S 维保预约端点（只读/幂等，v4.3.3）。
+
+        6.16.0 APK 逆向端点（cnjvsl-fposb/v2，方法表：query*=GET、
+        osborder=POST、osbcancel=DELETE）——本集成仅接入只读查询：
+        osbhistory 预约历史 / osbbookingdetail 预约详情 / puddetail 取送车
+        订单详情 / sainfo 服务顾问。全部带 encryptedVin/xjw 签名 GET，
+        不触发任何下单/取消动作。返回探测摘要供实体按"探测到数据才创建"
+        （全车型能力驱动——无维保服务车型 404/空响应不创建实体）。
+        """
+        result: dict[str, Any] = {}
+        probes = {
+            "fposb_history": PATH_FPOSB_HISTORY,
+            "fposb_detail": PATH_FPOSB_BOOKING_DETAIL,
+            "fposb_pud": PATH_FPOSB_PUD_DETAIL,
+            "fposb_sa": PATH_FPOSB_SA_INFO,
+        }
+        for name, path in probes.items():
+            try:
+                data = await self._get_signed(path, vin)
+            except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                self._log.debug("FordPass fposb %s failed: %s", name, exc)
+                continue
+            if isinstance(data, dict):
+                if "errorCode" in data or "error" in data:
+                    self._log.info(
+                        "FordPass fposb %s -> (rejected: %s)",
+                        name, json.dumps(data, ensure_ascii=False)[:200],
+                    )
+                else:
+                    result[name] = {"signed": True, "data": data}
+                    self._log.info(
+                        "FordPass fposb probe %s -> %s",
+                        name, json.dumps(data, ensure_ascii=False)[:800],
+                    )
+            elif data is not None:
+                result[name] = {"signed": True, "raw": str(data)[:200]}
+        return result or None
+
+    async def probe_evss(self, vin: str) -> dict[str, Any] | None:
+        """探测 evss 充电站/免密支付端点（只读/幂等，v4.3.3）。
+
+        6.16.0 APK 逆向端点（方法表全部 GET）：accounts/v3 EV 账户、
+        chargers/v1/info 充电站信息、chargers/v2/parking 停车位、
+        chargers/v2/events/order 充电订单事件、freepassword/v1/status
+        免密支付状态。全部带 encryptedVin/xjw 签名 GET，只读不触发动作。
+        返回探测摘要供实体按"探测到数据才创建"；车型过滤（纯油/柴油
+        不探测）在 coordinator 按 fuelType 控制。
+        """
+        result: dict[str, Any] = {}
+        probes = {
+            "evss_accounts": PATH_EVSS_ACCOUNTS,
+            "evss_charger_info": PATH_EVSS_CHARGER_INFO,
+            "evss_parking": PATH_EVSS_PARKING,
+            "evss_order_events": PATH_EVSS_ORDER_EVENTS,
+            "evss_freepass": PATH_EVSS_FREEPASS_STATUS,
+        }
+        for name, path in probes.items():
+            try:
+                data = await self._get_signed(path, vin)
+            except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                self._log.debug("FordPass evss %s failed: %s", name, exc)
+                continue
+            if isinstance(data, dict):
+                if "errorCode" in data or "error" in data:
+                    self._log.info(
+                        "FordPass evss %s -> (rejected: %s)",
+                        name, json.dumps(data, ensure_ascii=False)[:200],
+                    )
+                else:
+                    result[name] = {"signed": True, "data": data}
+                    self._log.info(
+                        "FordPass evss probe %s -> %s",
+                        name, json.dumps(data, ensure_ascii=False)[:800],
+                    )
+            elif data is not None:
+                result[name] = {"signed": True, "raw": str(data)[:200]}
+        return result or None
+
     # ------------------------------------------------ v3.7.2 家充桩控制
     async def wallbox_charge_start(self, vin: str, wallbox_id: str) -> dict[str, Any]:
         """开始充电：POST charging/start/v2（v3.7.2，wallboxId 由调用方传入）。"""

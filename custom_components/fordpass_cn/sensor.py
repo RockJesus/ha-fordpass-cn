@@ -308,6 +308,17 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_binding", "默认充电桩", "default"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "最近充电记录", "record"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "家充桩充电状态", "status"))
+    # v4.3.3: fposb 4S 维保预约传感器——探测到数据才创建（无维保服务
+    # 车型探测空 → 0 实体）；全部只读查询，不触发下单/取消动作。
+    if isinstance(coordinator.fposb, dict) and coordinator.fposb:
+        sensors.append(FordPassFposbSensor(coordinator, "fposb_history", "最近维保预约", "detail"))
+        sensors.append(FordPassFposbSensor(coordinator, "fposb_history", "维保预约数量", "count"))
+    # v4.3.3: evss 充电站/免密支付传感器——车型过滤已在 coordinator
+    # （仅电/插混/混动探测，纯油/柴油 evss=None）；探测到数据才创建。
+    if isinstance(coordinator.evss, dict) and coordinator.evss:
+        sensors.append(FordPassEvssSensor(coordinator, "evss_charger_info", "充电站数量", "station_count"))
+        sensors.append(FordPassEvssSensor(coordinator, "evss_freepass", "充电免密支付状态", "freepass"))
+        sensors.append(FordPassEvssSensor(coordinator, "evss_order_events", "最近充电订单", "order"))
     # v3.8.3: 已移除「预约出发/充电探测诊断」传感器（用户要求不创建诊断
     # 实体；探测仍执行，结果写 api.cevs_diag 供日志/排查）。
     # v3.7.24: 预约出发/充电业务传感器——探测到数据才创建
@@ -1693,6 +1704,167 @@ class FordPassSmartWallboxSensor(SensorEntity):
     def extra_state_attributes(self) -> dict:
         data = self._probe()
         attrs: dict = {}
+        if isinstance(data, dict):
+            for k, v in list(data.items())[:12]:
+                if isinstance(v, (str, int, float, bool)) or v is None:
+                    attrs[str(k)] = v
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+
+class FordPassFposbSensor(SensorEntity):
+    """fposb 4S 维保预约摘要传感器（v4.3.3）。
+
+    数据源 coordinator.fposb（api.probe_fposb 探测结果，登录后一次 +
+    TTL 持久化缓存）。探测到数据才创建（无维保服务车型 → 0 实体）；
+    宽松字段提取，缺失显示友好中文；永远可用（v3.1.2 规则）。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:garage"
+
+    def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
+        self.coordinator = coordinator
+        self._key = key
+        self._kind = kind
+        self._attr_unique_id = f"{coordinator.vin}-fposb-{key}-{kind}"
+        self._attr_name = label
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 保留最后已知状态
+
+    def _probe(self) -> dict | None:
+        fp = self.coordinator.fposb or {}
+        ent = fp.get(self._key)
+        if isinstance(ent, dict):
+            data = ent.get("data")
+            if isinstance(data, dict):
+                return data
+        return None
+
+    def _booking_list(self) -> list[dict]:
+        data = self._probe()
+        if data is None:
+            return []
+        lst = data.get("data") or data.get("list") or data.get("bookingList")
+        if isinstance(lst, list):
+            return [b for b in lst if isinstance(b, dict)]
+        if isinstance(data, dict):
+            for k in ("records", "osbList", "result"):
+                v = data.get(k)
+                if isinstance(v, list):
+                    return [b for b in v if isinstance(b, dict)]
+        return []
+
+    @property
+    def native_value(self) -> str | None:
+        books = self._booking_list()
+        if self._kind == "count":
+            return f"{len(books)} 条预约" if books else "无预约记录"
+        if not books:
+            return "无预约记录"
+        b = books[0]
+        for key in ("bookingType", "serviceType", "type", "itemName", "serviceName"):
+            if b.get(key):
+                return str(b[key])
+        return "有预约记录"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs: dict = {}
+        books = self._booking_list()
+        if books and isinstance(books[0], dict):
+            for k, v in list(books[0].items())[:10]:
+                if isinstance(v, (str, int, float, bool)) or v is None:
+                    attrs[str(k)] = v
+        attrs["count"] = len(books)
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
+
+
+class FordPassEvssSensor(SensorEntity):
+    """evss 充电站/免密支付摘要传感器（v4.3.3，仅电/插混/混动车型创建）。
+
+    数据源 coordinator.evss（api.probe_evss 探测结果，登录后一次 + TTL
+    持久化缓存；纯油/柴油车型探测跳过 → 0 实体）。探测到数据才创建；
+    永远可用（v3.1.2 规则）。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
+        self.coordinator = coordinator
+        self._key = key
+        self._kind = kind
+        self._attr_unique_id = f"{coordinator.vin}-evss-{key}-{kind}"
+        self._attr_name = label
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v3.1.2: 保留最后已知状态
+
+    def _probe(self) -> dict | None:
+        ev = self.coordinator.evss or {}
+        ent = ev.get(self._key)
+        if isinstance(ent, dict):
+            data = ent.get("data")
+            if isinstance(data, dict):
+                return data
+        return None
+
+    @property
+    def native_value(self) -> str | None:
+        data = self._probe()
+        if data is None:
+            return None
+        try:
+            if self._kind == "station_count":
+                lst = data.get("data") or data.get("list") or data.get("chargers")
+                if isinstance(lst, list):
+                    return f"{len(lst)} 个充电站" if lst else "无充电站数据"
+                total = data.get("total") or data.get("totalCount")
+                if total is not None:
+                    return f"{total} 个充电站"
+                return "充电站数据已连接"
+            if self._kind == "freepass":
+                st = data.get("status") or data.get("data")
+                if isinstance(st, dict):
+                    on = st.get("enable") or st.get("enabled") or st.get("open")
+                    if on is not None:
+                        return "已开通" if str(on).lower() in ("1", "true", "yes", "on") else "未开通"
+                    return "已连接"
+                if st is not None:
+                    return str(st)
+                return "已连接"
+            if self._kind == "order":
+                lst = data.get("data") or data.get("list") or data.get("orders")
+                if isinstance(lst, list) and lst:
+                    o = lst[0] if isinstance(lst[0], dict) else {}
+                    for key in ("orderStatus", "status", "stationName", "orderNo"):
+                        if o.get(key):
+                            return str(o[key])
+                    return "最近充电订单已连接"
+                return "无充电订单"
+            return "已连接"
+        except Exception:  # noqa: BLE001
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs: dict = {}
+        data = self._probe()
         if isinstance(data, dict):
             for k, v in list(data.items())[:12]:
                 if isinstance(v, (str, int, float, bool)) or v is None:
