@@ -419,8 +419,21 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
             # 「车辆清单」传感器据此创建。
-            if _ep.get(_k) or (_k == "uservehicles"
-                               and getattr(coordinator, "vehicles_list", None)):
+            # v4.3.7: v4.3.5/v4.3.6 新增的 19 个只读探测端点改为**无条件创建**
+            # ——探测无数据（None/拒绝）时显示「暂无数据」友好文案（用户硬性
+            # 要求"恢复实体所有状态显示"，v4.3.2 SIM 卡无条件创建先例：未开通
+            # 车型实体常驻显示而非缺失）。kind 列表与注册条目一一对应。
+            _always_probe = ("wallbox_bound", "wallbox_info", "wallbox_records_v2",
+                             "evss_order_status", "evss_apps_info", "evss_usage_notice",
+                             "vpoi_status", "vpoi_saved", "ota_agreements",
+                             "share_capability", "share_history",
+                             "evss_payment_summary", "evss_invoiceables",
+                             "evss_events_v3", "evss_evaluate_url",
+                             "wallbox_ble_vehicles", "app_init_settings",
+                             "vehicle_model_masterdata", "user_login_status")
+            if (_ep.get(_k) or _k in _always_probe
+                    or (_k == "uservehicles"
+                        and getattr(coordinator, "vehicles_list", None))):
                 sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
     # v3.1.7: 空调滤芯状态（AAR 能力车型；无 airFilter 字段的车型不创建，
     # 保证其他用户登录各自车型时不出现不支持的实体）
@@ -2110,6 +2123,18 @@ class FordPassProbeSensor(SensorEntity):
             if vl:
                 data = {"list": vl}
         if data is None:
+            # v4.3.7: v4.3.5/v4.3.6 无条件创建的探测端点实体，探测无数据
+            # （None/拒绝）时显示「暂无数据」友好文案——实体常驻、永不
+            # unknown/unavailable（用户硬性要求，v4.3.2 SIM 先例）。
+            if self._kind in ("wallbox_bound", "wallbox_info", "wallbox_records_v2",
+                              "evss_order_status", "evss_apps_info", "evss_usage_notice",
+                              "vpoi_status", "vpoi_saved", "ota_agreements",
+                              "share_capability", "share_history",
+                              "evss_payment_summary", "evss_invoiceables",
+                              "evss_events_v3", "evss_evaluate_url",
+                              "wallbox_ble_vehicles", "app_init_settings",
+                              "vehicle_model_masterdata", "user_login_status"):
+                return "暂无数据"
             return None
         try:
             if self._kind == "ota_version":
