@@ -537,8 +537,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ):
             data[key] = await self._cached_fetch(key, ttl, factory)
         # 车载 WiFi 状态（v3.8.8: 跟随状态刷新间隔每轮刷新；失败保留旧值）
+        # v4.3.0: get_wifi_status 对确定性业务拒绝返回 None（已降噪），
+        # None 同样保留最后已知状态（拒绝 ≠ 实体显示不可用）。
         try:
-            data["wifi_status"] = await self.api.get_wifi_status(self.vin)
+            wifi = await self.api.get_wifi_status(self.vin)
+            data["wifi_status"] = wifi if wifi is not None else (self.data or {}).get("wifi_status")
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass wifi_status fetch failed: %s", exc)
             data["wifi_status"] = (self.data or {}).get("wifi_status")

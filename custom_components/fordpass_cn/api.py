@@ -358,7 +358,31 @@ class FordPassProbeRejected(FordPassApiError):
     """
 
 
+def _log_summary(text: str, limit: int = 2000) -> str:
+    """DEBUG 日志响应摘要（v4.3.0）：超长字符串字段（如 preference-list
+    的 avatar base64 PNG，单值可达数 KB）替换为占位符，其余字段原样保留，
+    避免刷屏且不丢失可读信息。非 JSON 响应原样截断。"""
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return text[:limit]
+
+    def _trim(v):
+        if isinstance(v, str) and len(v) > 120:
+            return f"<str {len(v)} chars>"
+        if isinstance(v, dict):
+            return {k: _trim(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [_trim(x) for x in v]
+        return v
+
+    out = json.dumps(_trim(obj), ensure_ascii=False)
+    return out[:limit]
+
+
 class FordPassApi:
+    _last_wifi_reject_log: float = 0.0  # v4.3.0: wifi/status 业务拒绝降噪限频
+
     def __init__(self, session: aiohttp.ClientSession, logger) -> None:
         self._session = session
         self._log = logger
@@ -479,7 +503,7 @@ class FordPassApi:
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
-            self._log.debug("FordPass %s -> %s %s", path, resp.status, text[:2000])
+            self._log.debug("FordPass %s -> %s %s", path, resp.status, _log_summary(text))
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
                 try:
@@ -1339,12 +1363,43 @@ class FordPassApi:
         return await self._get_signed(PATH_PROGNOSTIC, vin)
 
     async def get_sim_info(self, vin: str) -> dict[str, Any]:
-        """SIM 卡信息：GET /api/cnxapi-cds/v1/vehicle/sim/info（200 实测）。"""
-        return await self._get_signed(PATH_SIM_INFO, vin)
+        """SIM 卡信息：GET /api/cnxapi-cds/v1/vehicle/sim/info（200 实测）。
 
-    async def get_wifi_status(self, vin: str) -> dict[str, Any]:
-        """WiFi 热点状态：GET /api/cnxapi-cds/v1/vehicle/wifi/status（200 实测）。"""
-        return await self._get_signed(PATH_WIFI_STATUS, vin)
+        v4.3.0: 部分车型（如锐际纯油）该端点确定性业务拒绝
+        （HTTP 200 但 data.returnSuccess=false / returnErrCode=402
+        CONS.SYS.0002）——识别后抛 FordPassProbeRejected，由
+        coordinator._cached_fetch 落盘 None，TTL 内不再真拉
+        （防风控 + 去日志噪音）。
+        """
+        data = await self._get_signed(PATH_SIM_INFO, vin)
+        inner = data.get("data") if isinstance(data, dict) else None
+        if isinstance(inner, dict) and inner.get("returnSuccess") is False:
+            code = f"{inner.get('returnErrCode', '')} {inner.get('returnErrMsg', '')}".strip()
+            raise FordPassProbeRejected(
+                inner.get("returnStatus", 200), f"sim/info business rejected: {code}"
+            )
+        return data
+
+    async def get_wifi_status(self, vin: str) -> dict[str, Any] | None:
+        """WiFi 热点状态：GET /api/cnxapi-cds/v1/vehicle/wifi/status（200 实测）。
+
+        v3.8.8: 跟随状态刷新间隔每轮刷新（用户要求），失败保留旧值。
+        v4.3.0: 确定性业务拒绝（returnSuccess=false / CONS.AUTH.0005）
+        识别——降噪（同类型 1 小时限频一次 INFO）并返回 None，
+        coordinator 保留最后已知状态（拒绝 ≠ 实体显示不可用）。
+        """
+        data = await self._get_signed(PATH_WIFI_STATUS, vin)
+        inner = data.get("data") if isinstance(data, dict) else None
+        if isinstance(inner, dict) and inner.get("returnSuccess") is False:
+            code = f"{inner.get('returnErrCode', '')} {inner.get('returnErrMsg', '')}".strip()
+            now = time.monotonic()
+            if now - self._last_wifi_reject_log > 3600:
+                self._log.info(
+                    "FordPass wifi/status business rejected (%s) - keep last known", code
+                )
+                self._last_wifi_reject_log = now
+            return None
+        return data
 
     async def get_warranty(self, vin: str) -> dict[str, Any]:
         """质保信息：GET /api/cnxapi-cds/v1/warranty。
