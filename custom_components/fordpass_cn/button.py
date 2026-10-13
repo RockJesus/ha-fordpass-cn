@@ -441,13 +441,16 @@ class FordPassManualRefreshButton(ButtonEntity):
         # v4.4.1: logbook 失败改 warning 诊断（v4.4.0/4.4.1 发布漏发 button.py
         # 致本段未上线，system_log 无特征日志定位）。
         # v4.4.2: 补发 button.py 到 main；移除诊断特征日志，仅异常时 warning。
+        # v4.4.3: 复刻 App 下拉刷新——force_refresh(force_all=True) 绕过慢变
+        # 端点 TTL 缓存强制全量真拉（保养/召回/SIM/OTA/滤芯/ccfeatures/
+        # prognostic/告警/消息一次性更新到最新），与 App 下拉刷新一致。
         try:
             await self.hass.services.async_call(
                 "logbook",
                 "log",
                 {
                     "name": self.coordinator._vehicle_name or "福特派互联",
-                    "message": "手动刷新已触发：请求车机上报最新状态（约 30 秒后完成）",
+                    "message": "手动刷新已触发（全量）：请求车机上报最新状态（约 30 秒后完成）",
                     "domain": DOMAIN,
                 },
             )
@@ -462,17 +465,17 @@ class FordPassManualRefreshButton(ButtonEntity):
         # 2) 延时 30 秒（v3.3.10：车机上报 + 云端落盘需要时间，实测 3 秒过短
         # 常拉到旧数据；30 秒与 App 下拉刷新节奏一致）
         await asyncio.sleep(30)
-        # 3) 手动拉取最新状态（ForceRefresh）+ 立即刷新实体
+        # 3) 手动拉取最新状态（ForceRefresh）+ 全量刷新实体（复刻 App 下拉刷新）
         try:
             await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 手动拉取最新状态失败: %s", exc)
             raise
         try:
-            await self.coordinator.force_refresh()
+            await self.coordinator.force_refresh(force_all=True)
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass 手动刷新后数据拉取失败: %s", exc)
-        _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA）")
+            _LOGGER.warning("FordPass 手动刷新后全量数据拉取失败: %s", exc)
+        _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA 全量）")
         return
 
 
