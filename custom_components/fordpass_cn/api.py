@@ -1881,6 +1881,18 @@ class FordPassApi:
             "vpoi_saved": (PATH_VPOI_SAVED, None, True),
             # OTA 协议（全车型只读）：
             "ota_agreements": (PATH_OTA_AGREEMENTS, None, True),
+            # v4.3.6: 136 未接入清单第二轮筛选——剩余只读业务端点补全
+            # （无需抓包：探测多形态自适应 GET→POST 空 body，探测到数据才创建）。
+            # 充电域订单/事件/评价（evss，仅电/插混/混动创建）：
+            "evss_payment_summary": (PATH_EVSS_PAYMENT_SUMMARY, None, True),
+            "evss_invoiceables": (PATH_EVSS_INVOICEABLES, None, True),
+            "evss_events_v3": (PATH_EVSS_EVENTS_V3, None, True),
+            "evss_evaluate_url": (PATH_EVSS_EVALUATE_URL, None, True),
+            # 家充桩 BLE 充电车辆信息（探测到绑定桩才创建）：
+            "wallbox_ble_vehicles": (PATH_WALLBOX_BLE_VEHICLES, None, True),
+            # app-init 域（全车型公开配置类只读）：
+            "app_init_settings": (PATH_APP_INIT_SETTINGS, None, True),
+            "vehicle_model_masterdata": (PATH_VEHICLE_MODEL_MASTERDATA, None, True),
         }
         # v3.5.1: 账号级端点。v3.5.6 实证——GET 全 404（v3.5.1/3.5.2 移除
         # 车辆参数后仍 404 → 路由为 POST-only）；POST body 需
@@ -1899,6 +1911,8 @@ class FordPassApi:
             # 数据才创建——分享功能为静态触顶，探测一次即知是否支持）。
             "share_capability": (PATH_SHARE_CAPABILITY, None, True),
             "share_history": (PATH_SHARE_HISTORY, None, True),
+            # v4.3.6: 用户登录状态（cnesl-user 账号级只读，探测到数据才创建）
+            "user_login_status": (PATH_USER_LOGIN_STATUS, None, True),
             # v3.7.2: 车辆授权管理列表（vehicle-user-auth 查询该车辆授权用户，
             # 只读；非授权/无数据的车型不创建）。公共充电探测（纯电/插混专属，
             # 位置相关无参探测失败→不创建，全车型安全）：
