@@ -74,8 +74,9 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 ## 版本历史
 
 <details>
-<summary>v4.2.x（最新）</summary>
+<summary>v4.3.x（最新）</summary>
 
+- **v4.3.0**：**日志降噪 + 业务拒绝识别优化**——① SIM 卡信息端点对部分车型（如锐际纯油）确定性业务拒绝（HTTP 200 但 `returnSuccess:false / CONS.SYS.0002`），识别后按"车型无此能力"落盘缓存，TTL 内不再真拉（防风控 + 去噪音）；② 车载 WiFi 状态业务拒绝（`CONS.AUTH.0005`）识别并降噪（同类型 1 小时限频一次 INFO），仍跟随状态刷新间隔每轮刷新且保留最后已知状态；③ DEBUG 响应日志过滤超长字段（preference-list 的 avatar base64 等替换为占位符），其余字段完整可读；④ 「sensor cleanup」日志口径修正——registry 计数只统计 sensor 实体（此前打印全 domain 实体数，与只清理 sensor 的实际行为不符）
 - **v4.2.9**：**修复集成配置选项保存不生效（options 恒为空）**——根因：旧版本前端"选项/重新配置"保存失败（曾 400 且入口缺失），实测 HA 上 entry options 恒为 `{}`，导致「状态刷新间隔 / 位置跟踪 / 坐标系」设置从未写入、永远走默认 30 分钟。本版在集成加载时若检测到 options 为空，自动落盘默认选项（刷新间隔 30 分钟 / 位置跟踪开 / 坐标系默认），使表单有真实默认值、后续设置可正确读写；用户已保存的值原样保留、绝不覆盖
 - **v4.2.8**：**README 依赖说明同步纯 Python 化**——配置章节依赖声明由"依赖 `unicorn`（ARM64 白盒 AES 仿真）与 `pyelftools`，HA 首次加载自动安装"更正为"白盒加密内核为纯 Python 查表实现（v4.2.7 起 11 张导出表 100% 破译），零外部依赖、无需安装任何 Python 包"（v4.2.7 已移除该两依赖，仅 README 描述滞后）；仅文档变更，行为不变
 - **v4.2.7**：**白盒加密内核纯 Python 化（移除 Unicorn 依赖）**——依据 `libwbsk_crypto_tool.so`（App 6.16.0）100% 破译逆向成果（11 张导出表 + 纯 Python 等价实现，模式入口 24/24、skb 协议 8/8、CBC/解密链路全量验证），将加密内核从 Unicorn CPU 模拟替换为**纯 Python 查表**：集成侧 9 场景 × 6 样本对旧实现等价性验证 ALL PASS + .so 机器码已知向量锚点一致；同时**移除 unicorn/pyelftools 依赖**（manifest requirements 清空），消除 HA 事件循环 blocking call（`open(.so)`/`import unicorn`），`data/` 目录由 .so 改为 11 张白盒导出表（约 390KB）。对外接口（`encrypt_field/decrypt_field`、场景密钥流 240B、CBC+PKCS7+base64）零变化，登录/加密字段行为不变
