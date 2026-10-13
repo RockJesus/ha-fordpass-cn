@@ -2431,9 +2431,9 @@ class FordPassApi:
 
     # --------------------------------------------------------- b2c login
     async def password_login(
-        self, username: str, password: str
+        self, username: str, password: str | None = None, code: str | None = None
     ) -> dict[str, str]:
-        """Username/password login via the Azure AD B2C flow (v2.7.4).
+        """Username/password login via the Azure AD B2C flow (v2.7.4 / v4.4.6).
 
         v2.7.6: B2C 的 SelfAsserted 请求改用同步 requests 客户端执行。
         抓包实测（2026-09-29）：aiohttp 客户端会被 Azure AD B2C 反自动化风控
@@ -2441,10 +2441,31 @@ class FordPassApi:
         客户端携带同样的 Cookie/CSRF/参数可以正常通过（authorize -> SelfAsserted
         -> confirmed -> code）。登录是一次性配置操作，在 executor 线程执行，
         不阻塞事件循环；换取 DLT JWT 仍走标准签名请求。
-        """
-        code = await asyncio.to_thread(self._b2c_login_sync, username, password)
 
-        # 4) exchange the code for DLT tokens (standard signed request)
+        v4.4.6: 2026-10-03 起 login.ford.com.cn 前置腾讯云 EdgeOne WAF 连
+        纯 HTTP 客户端（requests/curl_cffi 全指纹/Chrome headless）都返回
+        567 拦截页，仅放行真实浏览器/App WebView——requests 四步流已不可用。
+        新增 code 参数：由用户用真实浏览器（或辅助脚本）完成 B2C 登录后
+        粘贴 authorization code，本方法跳过浏览器部分直接换 DLT token，
+        绕开 WAF 而无需任何绕过手段。code 为 None 时保留 requests 通道
+        （WAF 策略窗口内仍可用）。
+        """
+        if code is None:
+            if not password:
+                raise FordPassApiError(
+                    400, "B2C 密码登录需要提供密码或 authorization code"
+                )
+            code = await asyncio.to_thread(self._b2c_login_sync, username, password)
+
+        return await self._exchange_b2c_code(code)
+
+    async def _exchange_b2c_code(self, code: str) -> dict[str, str]:
+        """Exchange a B2C authorization code for DLT tokens (v4.4.6).
+
+        独立自 password_login：浏览器辅助登录（真实浏览器过 EdgeOne WAF）
+        拿到 code 后直接调用本方法换 token，与验证码登录同构。
+        """
+        # exchange the code for DLT tokens (standard signed request)
         enc_code, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(code))
         data = await self._request(
             "POST",
