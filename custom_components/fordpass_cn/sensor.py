@@ -419,21 +419,33 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
             # 「车辆清单」传感器据此创建。
-            # v4.3.7: v4.3.5/v4.3.6 新增的 19 个只读探测端点改为**无条件创建**
-            # ——探测无数据（None/拒绝）时显示「暂无数据」友好文案（用户硬性
-            # 要求"恢复实体所有状态显示"，v4.3.2 SIM 卡无条件创建先例：未开通
-            # 车型实体常驻显示而非缺失）。kind 列表与注册条目一一对应。
-            _always_probe = ("wallbox_bound", "wallbox_info", "wallbox_records_v2",
+            # v4.3.9: 按车型创建实体，不要创建无用实体——v4.3.7 无条件创建的
+            # 19 个探测端点实体中，13 个充电域实体（家充桩/EVSS/VPOI/充电
+            # 订单等）对纯油(G)/柴油(D)车业务恒空（探测 200 但无业务数据），
+            # 改为按 fuelType 创建：电/插混/混动（E/BEV/P/PHEV/H/HEV/MHEV）
+            # 才创建，与 coordinator cevs/evss 探测跳过规则对称；6 个全车型
+            # 通用实体（OTA 协议/车辆分享/应用设置/车型主数据/用户登录状态）
+            # 保留无条件创建——不依赖车型的功能入口，任何福特车账号都有意义。
+            # 旧充电域实体由下方清理段（unique_id 不在新集合即移除）自动删除。
+            _charge_kinds = ("wallbox_bound", "wallbox_info", "wallbox_records_v2",
                              "evss_order_status", "evss_apps_info", "evss_usage_notice",
-                             "vpoi_status", "vpoi_saved", "ota_agreements",
-                             "share_capability", "share_history",
+                             "vpoi_status", "vpoi_saved",
                              "evss_payment_summary", "evss_invoiceables",
                              "evss_events_v3", "evss_evaluate_url",
-                             "wallbox_ble_vehicles", "app_init_settings",
-                             "vehicle_model_masterdata", "user_login_status")
-            if (_ep.get(_k) or _k in _always_probe
-                    or (_k == "uservehicles"
-                        and getattr(coordinator, "vehicles_list", None))):
+                             "wallbox_ble_vehicles")
+            _common_kinds = ("ota_agreements", "share_capability", "share_history",
+                             "app_init_settings", "vehicle_model_masterdata",
+                             "user_login_status")
+            _fuel = str(coordinator.vehicle_info.get("fuelType") or "").upper()
+            _charge_ok = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
+            if (
+                _k in _common_kinds
+                or (_k in _charge_kinds and _charge_ok)
+                or (_k not in _charge_kinds and _k not in _common_kinds
+                    and _ep.get(_k))
+                or (_k == "uservehicles"
+                    and getattr(coordinator, "vehicles_list", None))
+            ):
                 sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
     # v3.1.7: 空调滤芯状态（AAR 能力车型；无 airFilter 字段的车型不创建，
     # 保证其他用户登录各自车型时不出现不支持的实体）
