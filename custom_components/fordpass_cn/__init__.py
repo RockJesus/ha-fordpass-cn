@@ -68,11 +68,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 绝不覆盖。async_update_entry 会触发 update_listener，此时
     # coordinator 尚未建立，由 async_update_options 的 guard 兜底
     # （"options saved before entry loaded"，下次 setup 生效）。
-    if not entry.options:
+    # v4.3.1: 判定条件收紧为"调度字段缺失即补默认三项"——旧版业务
+    # select 曾把 options 写成只含业务字段的版本（丢失 scan_interval），
+    # "options 非空"会让调度设置永远缺省回 30 分钟（用户实测"刷新间隔
+    # 设置被重置"）。补默认时保留已存在的业务字段，绝不覆盖。
+    if not entry.options.get(CONF_SCAN_INTERVAL):
         try:
             hass.config_entries.async_update_entry(
                 entry,
                 options={
+                    **entry.options,  # v4.3.1: 保留已存在字段（历史业务残留等）
                     CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
                     "track_location": True,
                     CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
