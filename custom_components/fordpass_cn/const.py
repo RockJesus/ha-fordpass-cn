@@ -315,6 +315,19 @@ PATH_VPOI_SAVED = "/api/vpoi/chargestations/v3/saved"
 # --- OTA 协议（全车型，只读） ---
 PATH_OTA_AGREEMENTS = "/api/alert/v1/search-ota-agreements"
 
+# v4.3.6: 逆向 136 未接入清单第二轮筛选——剩余只读业务端点补全（全部无需
+# 抓包：标准 R3 签名，探测多形态自适应 GET→POST 空 body，探测到数据才创建）。
+# --- 充电域订单/事件/评价（evss，仅电/插混/混动探测到数据才创建） ---
+PATH_EVSS_PAYMENT_SUMMARY = "/api/evss/orders/v2/payment/summary"
+PATH_EVSS_INVOICEABLES = "/api/evss/orders/v2/invoices/invoiceables"
+PATH_EVSS_EVENTS_V3 = "/api/evss/chargers/v3/events"
+PATH_EVSS_EVALUATE_URL = "/api/evss/orders/v1/evaluate/evaluate-url"
+# --- 家充桩 BLE 充电车辆信息（smartwallbox，探测到绑定桩才创建） ---
+PATH_WALLBOX_BLE_VEHICLES = "/api/smartwallbox/processor/auto/charging/ble/queryVehicleInfos/v3"
+# --- app-init 域（全车型：应用设置/车型主数据，公开配置类只读） ---
+PATH_APP_INIT_SETTINGS = "/api/app-init/v1/app-setting/info"
+PATH_VEHICLE_MODEL_MASTERDATA = "/api/app-init/vehicleModel/v1/masterdata"
+
 # 行车记录仪视频（pds/v1 视频录制/查询）
 PATH_VIDEO_START = "/api/cnxapi-pds/v1/start-video-recording"
 PATH_VIDEO_STOP = "/api/cnxapi-pds/v1/stop-video-recording"
@@ -330,6 +343,8 @@ PATH_SHARE_LIST = "/api/cnesl-user/v1/search-vehicle-share-list"
 # v4.3.5: 车辆分享能力/分享历史（cnesl-user 只读探测，探测到数据才创建）
 PATH_SHARE_CAPABILITY = "/api/cnesl-user/v1/search-vehicle-share-capability"
 PATH_SHARE_HISTORY = "/api/cnesl-user/v1/search-vehicle-share-history-list"
+# v4.3.6: 用户登录状态（cnesl-user 账号级只读，探测到数据才创建）
+PATH_USER_LOGIN_STATUS = "/api/cnesl-user/v1/user/login/status"
 # 车辆设备列表（vds/v1/search-vehicle-device-list）
 PATH_DEVICE_LIST = "/api/cnxapi-vds/v1/search-vehicle-device-list"
 
