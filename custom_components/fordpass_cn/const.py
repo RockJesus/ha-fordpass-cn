@@ -455,6 +455,10 @@ LOGIN_MODE_PASSWORD = "password"
 
 # Defaults（v2.7.8：刷新间隔以分钟为单位，默认 30 分钟）
 DEFAULT_SCAN_INTERVAL_MINUTES = 30
+
+# v4.6.2: 手动刷新探测重探冷却（秒）——60s 内重复点按不重探探测端点
+# （探测 ~39 请求突发，高频点按会触发云端限流），只做常规全量刷新
+PROBE_FORCE_COOLDOWN = 60
 DEFAULT_CONF_FLOW_TITLE = "福特派互联"
 
 # v3.8.6: 探测类请求持久化 TTL（秒 = 7 天）——探测结果落盘，重启/重载后
