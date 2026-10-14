@@ -36,6 +36,10 @@
         "data": {
           "code": "Authorization code"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "description": "Your FordPass China credentials have expired. Re-authenticate to continue. You will be asked to choose a login method and obtain fresh tokens (the integration and entities are kept)."
       }
     },
     "error": {
@@ -50,7 +54,9 @@
     },
     "abort": {
       "already_configured": "This phone number is already configured",
-      "reauth_phone_mismatch": "The logged-in account differs from the original phone number. Please remove and reconfigure the integration."
+      "reauth_phone_mismatch": "The logged-in account differs from the original phone number. Please remove and reconfigure the integration.",
+      "reauth_successful": "Account re-authenticated successfully",
+      "reconfigure_successful": "Configuration updated"
     }
   },
   "options": {

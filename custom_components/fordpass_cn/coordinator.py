@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FordPassApi, FordPassApiError, FordPassProbeRejected
@@ -129,12 +130,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         coordinate_system: str = COORDINATE_WGS84,
         entry_id: str | None = None,
         car_id: str | None = None,
+        config_entry=None,
     ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}-{vin[-6:]}",
             update_interval=timedelta(minutes=interval),
+            config_entry=config_entry,
         )
         self.api = api
         self.vin = vin
@@ -548,6 +551,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "vehiclestatus": status.get("vehiclestatus", status),
             }
         except FordPassApiError as err:
+            if err.code in (401, 403):
+                # v4.4.9: api 内部已自动 refresh 一次仍 401 = 凭据永久失效 →
+                # 抛 ConfigEntryAuthFailed：停止轮询（不再每轮打云请求制造
+                # "刷新失败"噪音），HA 自动启动 reauth flow；实体保留最后
+                # 已知状态，用户重新认证后恢复（官方 Fetching data 指南：
+                # ApiAuthError → ConfigEntryAuthFailed）。
+                await self._log_activity("登录凭据已失效，请重新认证（设置 → 设备与服务 → 福特派互联）")
+                raise ConfigEntryAuthFailed(f"FordPass token expired: {err}") from err
             # v4.3.8: 刷新失败也写活动（"不可用活动"）——此前 UpdateFailed
             # 直接抛出，摘要代码不执行 → 活动日志无任何记录，用户看不到
             # "刷新失败/云端不可用"的活动。失败保留最后已知状态（实体恒
