@@ -10,6 +10,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -703,12 +704,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         （unique_id 以 vin 开头）任意一个启用实体关联事件。
         """
         try:
-            reg = self.hass.helpers.entity_registry.async_get(self.hass)
-            # v4.4.5: HAOS 2026.10 已移除 EntityRegistry.async_entries_for_domain
-            # （v3.6.5 同款坑：sensor 清理段当时已改 reg.entities.values() 过滤；
-            # v4.4.4 引入本方法时重踩——该方法抛 AttributeError 被 except 吞掉，
-            # 导致 logbook 事件 entity_id 恒为 None，集成设备页活动仍不可见）。
-            # 改用 reg.entities.values() 过滤 platform==DOMAIN（等价、全版本兼容）。
+            # v4.4.7: 根因——self.hass.helpers.entity_registry 自 HA 2025.5 标记
+            # 废弃（breaks_in_ha_version="2025.5"），2026.10 已不可用：
+            # reg 取不到 → AttributeError 被 except 吞 → 事件 entity_id 恒 None。
+            # 改为直接 import 模块函数 er.async_get（与 sensor.py 清理段成功路径
+            # 一致，全版本兼容）。遍历仍用 reg.entities.values() 过滤
+            # platform==DOMAIN（v4.4.5 已确认有效，sensor 平台同款在用）。
+            reg = er.async_get(self.hass)
             for entry in reg.entities.values():
                 if (
                     entry.platform == DOMAIN
