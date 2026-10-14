@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.5.9**：**活动事件实体关联回退链**——车辆信息传感器删除后活动事件 entity_id=None 致集成详情页活动标签不可见（手动刷新/轮询完成均无事件显示）；现回退关联车辆定位 device_tracker，轮询/手动刷新/失败/暂无数据活动恢复在集成活动页可见
 - **v4.5.8**：**fposb 维保预约 / activealertlist 主动告警探测 404 落盘**——确定性无该服务的车型探测结果持久化缓存（TTL 内不再重探），此前每次 setup 重探 5 次 404 噪音
 - **v4.5.7**：**家充桩探测按车型跳过**——汽油/柴油车不再探测 smartwallbox 独立探测链（此前每次 setup 8 端点×2 形态全 404、~16 次噪音），与 cevs/evss 按车型跳过对称；chargelogs 充电记录端点补入充电域跳过列表
 - **v4.5.6**：**修复额外端点探测始终失败**——`_probe_loop` 直接迭代 dict（`for name, spec in items`）导致按 key 字符串解包抛 `too many values to unpack (expected 2)`，额外端点探测每次 setup 都失败、相关实体漏建；改为 `items.items()`。**按车型跳过充电域探测**——汽油/柴油车不再探测 smartwallbox/evss/vpoi 系列端点（每次 setup 制造 6-12 次 404 噪音），与 cevs 按车型跳过对称
