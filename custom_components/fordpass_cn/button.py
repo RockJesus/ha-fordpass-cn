@@ -479,6 +479,14 @@ class FordPassManualRefreshButton(ButtonEntity):
             await self.coordinator.force_refresh(force_all=True)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 手动刷新后全量数据拉取失败: %s", exc)
+        # v4.6.1: 手动刷新同时强制重探全部探测端点——探测类实体（车型主
+        # 数据/OTA 协议/应用设置/分享能力/用户登录状态/充电域/维保预约/
+        # 告警列表等）数据源在 extra_probes 等探测结果，此前只在 setup
+        # 探测一次、force_refresh 不覆盖，手动刷新后这些实体不刷新。
+        try:
+            await self.coordinator.async_probe_capabilities(force=True)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass 手动刷新后探测端点重探失败: %s", exc)
         # v4.5.10: 手动刷新完成事件关联集成全部实体——即使车况未变（实体值
         # 不变无 state_changed），每个实体的活动历史也能看到本次刷新记录
         # （用户诉求 2026-10-15：手动刷新后车况未变也要有事件）。
