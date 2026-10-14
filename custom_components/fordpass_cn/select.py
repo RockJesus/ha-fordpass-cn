@@ -250,7 +250,7 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def current_option(self) -> str | None:

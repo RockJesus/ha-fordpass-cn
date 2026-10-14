@@ -115,7 +115,7 @@ class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def is_on(self) -> bool:
@@ -194,7 +194,7 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2 规则：保留最后已知状态，不随云端失败 unavailable
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def is_on(self) -> bool | None:
@@ -284,7 +284,7 @@ class _FordPassWlSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def is_on(self) -> bool:
@@ -318,7 +318,7 @@ class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def is_on(self) -> bool:
@@ -359,7 +359,7 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def is_on(self) -> bool:
@@ -486,7 +486,7 @@ class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def is_on(self) -> bool:
@@ -537,7 +537,7 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def is_on(self) -> bool:
