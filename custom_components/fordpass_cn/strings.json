@@ -36,6 +36,10 @@
         "data": {
           "code": "授权码"
         }
+      },
+      "reauth_confirm": {
+        "title": "[%key:common::config_flow::title::reauth%]",
+        "description": "福特派登录凭据已过期，请重新认证。继续后将选择登录方式并重新获取令牌（不会卸载集成、不会删除实体）。"
       }
     },
     "error": {
@@ -49,7 +53,10 @@
       "bad_code": "授权码无效或已过期，请重新在浏览器登录并复制新的授权码。"
     },
     "abort": {
-      "already_configured": "该手机号已配置"
+      "already_configured": "该手机号已配置",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
+      "reauth_phone_mismatch": "重新认证账号与原手机号不一致，请删除后重新配置集成"
     }
   },
   "options": {
