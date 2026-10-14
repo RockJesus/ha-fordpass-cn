@@ -10,7 +10,6 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -696,32 +695,6 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
         return data
 
-    async def _async_get_vehicle_entity_id(self) -> str | None:
-        """查找本车辆任一已启用实体（v4.4.4：logbook 事件关联实体，UI 设备页可见）。
-
-        集成活动日志写入时不带 entity_id → logbook 事件 entity_id=None →
-        HA 前端「集成设备 → 活动」按设备过滤看不到。这里从 registry 取本车
-        （unique_id 以 vin 开头）任意一个启用实体关联事件。
-        """
-        try:
-            # v4.4.7: 根因——self.hass.helpers.entity_registry 自 HA 2025.5 标记
-            # 废弃（breaks_in_ha_version="2025.5"），2026.10 已不可用：
-            # reg 取不到 → AttributeError 被 except 吞 → 事件 entity_id 恒 None。
-            # 改为直接 import 模块函数 er.async_get（与 sensor.py 清理段成功路径
-            # 一致，全版本兼容）。遍历仍用 reg.entities.values() 过滤
-            # platform==DOMAIN（v4.4.5 已确认有效，sensor 平台同款在用）。
-            reg = er.async_get(self.hass)
-            for entry in reg.entities.values():
-                if (
-                    entry.platform == DOMAIN
-                    and entry.unique_id
-                    and entry.unique_id.startswith(f"{self.vin}-")
-                    and entry.disabled_by is None
-                ):
-                    return entry.entity_id
-        except Exception:  # noqa: BLE001 - 取实体失败不阻塞活动写入
-            self.logger.debug("fordpass_cn vehicle entity lookup failed", exc_info=True)
-        return None
 
     async def _log_activity(self, message: str) -> None:
         """活动日志写入（v4.3.8 抽取）：成功摘要/失败原因/暂无数据实体共用。
@@ -741,13 +714,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ):
             return
         try:
+            # v4.4.8: 活动日志不带车辆实体——事件恢复全局日志面板可见、
+            # 门锁等实体活动历史不被集成事件刷屏（用户 2026-10-14 要求）。
             service_data: dict[str, Any] = {
                 "name": self._vehicle_name or "福特派互联",
                 "message": message,
                 "domain": DOMAIN,
             }
-            if entity_id := await self._async_get_vehicle_entity_id():
-                service_data["entity_id"] = entity_id
             await self.hass.services.async_call("logbook", "log", service_data)
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
