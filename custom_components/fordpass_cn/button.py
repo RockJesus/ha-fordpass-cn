@@ -450,6 +450,11 @@ class FordPassManualRefreshButton(ButtonEntity):
                 "message": "手动刷新已触发（全量）：请求车机上报最新状态（约 30 秒后完成）",
                 "domain": DOMAIN,
             }
+            # v4.5.1: 关联本车"车辆信息"传感器（集成详情页活动标签可见，
+            # 实体页不刷屏）；找不到时保持无关联（不报错）。
+            act_eid = self.coordinator.activity_entity_id()
+            if act_eid:
+                service_data["entity_id"] = act_eid
             # v4.4.4: 关联车辆实体——不带 entity_id 的 logbook 事件在集成
             # 设备页活动标签不可见（entity_id=None 被设备过滤）。
             await self.hass.services.async_call("logbook", "log", service_data)

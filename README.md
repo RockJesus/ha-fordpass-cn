@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.5.1**：**集成详情页活动标签恢复显示轮询活动**——v4.4.8 移除活动事件实体关联后，集成详情页「活动」标签按集成实体过滤（entity_id=null 事件不可见），用户看不到每次轮询/刷新记录。本版把活动事件（刷新成功/失败/暂无数据/手动刷新触发）关联本车「车辆信息」传感器：集成详情页活动标签可见完整轮询记录，门锁/油量等实体页仍不被刷屏（v4.4.8 要求保持）
 - **v4.5.0**：**修复"实体不刷新"回归（v4.4.9 误伤）**——① coordinator 轮询中 401/403 判断收窄：仅 refresh_token 也失效（api 内部已自动刷新一次仍失败）才抛 `ConfigEntryAuthFailed` 停止轮询；瞬时 401（无 refresh_token/单端点业务 401）保留最后已知状态继续轮询，不再误停导致"所有实体不刷新"；② 修复 reconfigure 在 entry.unique_id 为 None（历史配置）时保存必然失败：`async_set_unique_id(None or "")` 与 `_abort_if_unique_id_mismatch()` 立即 abort → 前端"重新配置/选项"永远无法保存（options 恒空、刷新间隔设置丢失回 30 分钟默认），现仅当 unique_id 存在时才校验；③ options 兜底落盘成功增加 INFO 日志（setup 一次，非轮询噪音）便于确认默认值已写入
 </details>
 
