@@ -1960,6 +1960,7 @@ class FordPassApi:
         fuel = str(fuel_type or "").upper()
         if fuel in ("", "G", "D"):
             for _k in (
+                "chargelogs",
                 "wallbox_bound", "wallbox_info", "wallbox_records_v2",
                 "wallbox_ble_vehicles",
                 "evss_order_status", "evss_apps_info", "evss_usage_notice",
