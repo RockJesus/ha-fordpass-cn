@@ -719,31 +719,40 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 
     def activity_entity_id(self) -> str | None:
-        """v4.5.9: 实时查 registry 的活动事件关联实体（回退链）。
+        """v4.5.10: 实时查 registry 的"车辆信息"传感器 entity_id（活动日志关联）。
 
-        优先"车辆信息"传感器（unique_id=f"{vin}-vehicle_info"，已删除则
-        回退）；v4.5.9 回退到车辆定位 device_tracker（unique_id=
-        f"{vin}-tracker"，稳定存在）——此前 vehicle_info 删除后返回 None，
-        logbook 事件 entity_id=None 被集成详情页活动标签过滤（用户实测
-        手动刷新后活动无事件）。**不缓存**（避免返回已删实体旧 ID）；每次
-        实时查 registry，都不存在时返回 None（全局活动日志仍完整显示）。
-        查询为内存操作，频率低（每轮刷新 1-2 次）。
+        unique_id=f"{vin}-vehicle_info"。**不缓存**（v4.5.1 缓存成功结果，
+        v4.5.2 删除该传感器后旧实体 ID 仍被缓存返回，事件关联已删实体）；
+        每次实时查 registry，实体不存在时返回 None（活动事件不带实体关联，
+        全局活动日志仍完整显示）。查询为内存操作，频率低（每轮刷新 1-2 次）。
+        v4.5.10: 手动刷新完成事件改由 all_entity_ids() 关联全部实体（用户
+        诉求：车况未变也要所有实体有刷新活动），本方法仅用于常规轮询摘要。
         """
         try:
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
-            eid = reg.async_get_entity_id(
-                "sensor", DOMAIN, f"{self.vin}-vehicle_info"
-            )
-            if eid:
-                return eid
             return reg.async_get_entity_id(
-                "device_tracker", DOMAIN, f"{self.vin}-tracker"
+                "sensor", DOMAIN, f"{self.vin}-vehicle_info"
             )
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
 
-    async def _log_activity(self, message: str) -> None:
+    def all_entity_ids(self) -> list[str]:
+        """v4.5.10: 集成全部实体 entity_id 列表（活动事件关联用）。
+
+        手动刷新完成后写 logbook 事件并关联本集成所有实体——即使车况
+        未变（实体值不变无 state_changed），每个实体的活动历史也能看到
+        "手动刷新完成"刷新记录（用户诉求 2026-10-15）。registry 内存
+        查询，频率低。查询失败返回空列表（事件不带关联，不阻断）。
+        """
+        try:
+            from homeassistant.helpers import entity_registry as er
+            reg = er.async_get(self.hass)
+            return [e.entity_id for e in reg.async_entries_for_domain(DOMAIN)]
+        except Exception:  # noqa: BLE001
+            return []
+
+    async def _log_activity(self, message: str, entity_ids: list[str] | None = None) -> None:
         """活动日志写入（v4.3.8 抽取）：成功摘要/失败原因/暂无数据实体共用。
 
         15s 去重防并发双条（手动刷新与自动轮询撞车）；不同消息不受去重限制。
@@ -751,6 +760,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except，不留 "Task exception was never retrieved" 噪音）。
         v4.4.4: 写入时关联车辆实体（entity_id）——不带 entity_id 的事件在
         HA 前端集成设备页活动标签不可见（entity_id=None 被设备过滤）。
+        v4.5.10: 可选 entity_ids 参数——手动刷新完成事件传全实体列表，
+        车况未变时每个实体的活动历史也有刷新记录（用户诉求）。
         """
         now = datetime.now()
         last_at = self._last_logbook_at
@@ -772,9 +783,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # 实体过滤（entity_id=null 事件不可见，用户实测 11:47 后集成页
             # 活动标签无刷新记录）；关联后每次轮询/失败/暂无数据活动在该
             # 标签可见；门锁/油量等实体页不被刷屏（v4.4.8 保持）。
-            act_eid = self.activity_entity_id()
-            if act_eid:
-                service_data["entity_id"] = act_eid
+            # v4.5.10: entity_ids 参数——手动刷新完成传全实体列表（车况
+            # 未变时所有实体活动历史有刷新记录）；未传时保持单实体关联。
+            if entity_ids:
+                service_data["entity_id"] = entity_ids
+            else:
+                act_eid = self.activity_entity_id()
+                if act_eid:
+                    service_data["entity_id"] = act_eid
             await self.hass.services.async_call("logbook", "log", service_data)
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
