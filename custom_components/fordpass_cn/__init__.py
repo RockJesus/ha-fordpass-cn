@@ -89,6 +89,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         except Exception as exc:  # noqa: BLE001 - 落盘失败不阻断 setup
             _LOGGER.warning("fordpass_cn default options persist failed: %s", exc)
+        else:
+            # v4.5.0: 兜底落盘成功打一条 INFO（setup 一次，非轮询噪音），
+            # 便于确认 options 已写入（此前 options 显示为空无法区分
+            # "API 脱敏"与"真未写入"）。
+            _LOGGER.info(
+                "fordpass_cn options defaults persisted: scan_interval=%smin "
+                "track_location=True coordinate_system=%s",
+                DEFAULT_SCAN_INTERVAL_MINUTES,
+                DEFAULT_COORDINATE_SYSTEM,
+            )
 
     try:
         vehicles = await api.get_vehicles()
