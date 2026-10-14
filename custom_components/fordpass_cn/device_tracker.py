@@ -43,8 +43,8 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
 
     @property
     def available(self) -> bool:
-        """Unavailable while the user disables location tracking."""
-        return True  # v3.1.2: 定位实体恒可用（保留最后坐标）
+        """v4.5.5: 刷新失败时如实显示不可用（撤销保留最后坐标）。"""
+        return self.coordinator.last_update_success
 
     @property
     def source_type(self) -> str:

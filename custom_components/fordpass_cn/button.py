@@ -173,7 +173,7 @@ class FordPassWallboxUnbindButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     def _wallbox_id(self) -> str | None:
         wb = self.coordinator.smartwallbox or {}
@@ -303,7 +303,7 @@ class _FordPassWlButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     async def async_press(self) -> None:
         await self.coordinator.run_command(self._command)
@@ -430,7 +430,7 @@ class FordPassManualRefreshButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return True  # v4.5.5: 手动刷新按钮保持恒可用（刷新失败时仍需可点以重试）
 
     async def async_press(self) -> None:
         vin = self.coordinator.vin
@@ -503,7 +503,7 @@ class FordPassAirFilterResetButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return True  # 同保存鸣笛设置：不随福特云刷新失败而不可用
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     async def async_press(self) -> None:
         _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.vin)
@@ -543,7 +543,7 @@ class FordPassCevsDeleteAllButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return True  # 不随福特云刷新失败而不可用
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     async def async_press(self) -> None:
         _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.vin)
@@ -585,7 +585,7 @@ class FordPassImageButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     async def async_press(self) -> None:
         car_id = getattr(self.coordinator, "car_id", None)
