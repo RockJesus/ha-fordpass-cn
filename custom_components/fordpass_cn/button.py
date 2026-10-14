@@ -452,8 +452,6 @@ class FordPassManualRefreshButton(ButtonEntity):
             }
             # v4.4.4: 关联车辆实体——不带 entity_id 的 logbook 事件在集成
             # 设备页活动标签不可见（entity_id=None 被设备过滤）。
-            if ent := await self.coordinator._async_get_vehicle_entity_id():
-                service_data["entity_id"] = ent
             await self.hass.services.async_call("logbook", "log", service_data)
         except Exception as exc:  # noqa: BLE001 - logbook 失败不影响刷新
             _LOGGER.warning("FordPass manual refresh logbook failed: %s", exc)

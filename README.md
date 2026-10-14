@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.4.x（最新）</summary>
 
+- **v4.4.8**：**活动日志恢复不带车辆实体**——v4.4.4-4.4.7 的活动事件关联车辆实体（entity_id=门锁等），导致门锁等实体活动历史被"手动刷新/刷新成功"等集成事件刷屏；按用户要求移除关联，事件恢复全局日志面板可见（entity_id=None），门锁等实体活动历史只显示自身状态变化
 - **v4.4.7**：**修复集成活动日志实体关联彻底失效**——v4.4.4 起的"活动事件关联车辆实体"一直未生效的根因：`hass.helpers.entity_registry` 自 HA 2025.5 标记废弃（breaks_in_ha_version="2025.5"），2026.10 上取 registry 即抛异常被静默吞掉，事件 entity_id 恒为 None，集成设备页活动不可见。本版改为直接 `from homeassistant.helpers import entity_registry` 调用 `er.async_get`（与 sensor 清理段已验证的成功路径一致），手动刷新/刷新摘要/暂无数据活动在「集成设备 → 活动」完整可见
 - **v4.4.6**：**B2C 密码登录浏览器辅助通道**——2026-10-03 起福特登录页（login.ford.com.cn）前置腾讯云 EdgeOne WAF 拦截纯 HTTP 客户端（返回 567，requests/curl_cffi 全指纹/Chrome headless 均被拦），原密码登录四步流不可用。本版新增浏览器辅助登录：配置时输入用户名/密码后，用**真实浏览器**打开官方登录链接完成登录，把地址栏 `?code=xxx` 中的授权码粘贴进配置流，集成用 code 直接换 DLT 令牌（纯 API 通道，无需任何绕过 WAF 的手段）；密码按需持久化到本地配置，令牌续期与验证码登录同构。配套一次性辅助脚本 `b2c_login_helper.py`（自动打开登录页 + 收码）。短信验证码登录不受影响
 - **v4.4.5**：**修复集成设备页活动仍不可见**——v4.4.4 新增的车辆实体关联逻辑使用了 HA 2026.10 已移除的 `EntityRegistry.async_entries_for_domain`（v3.6.5 处理 sensor 清理时踩过的同款坑），方法调用抛异常被静默吞掉，活动事件仍无关联实体；本版改用全版本兼容的 `reg.entities.values()` 过滤，手动刷新/刷新摘要/暂无数据活动在「集成设备 → 活动」完整可见
