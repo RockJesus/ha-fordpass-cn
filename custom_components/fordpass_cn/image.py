@@ -93,7 +93,7 @@ class FordPassVehicleImage(ImageEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 图片实体恒可用（无 URL 时保留已下载图片）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def state(self) -> str:
@@ -179,7 +179,7 @@ class FordPassRemoteImageEntity(ImageEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 图片实体恒可用（无 URL 时保留已下载图片）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     def _resp(self):
         data = self.coordinator.data or {}
@@ -288,7 +288,7 @@ class FordPass3dModelImage(ImageEntity):
 
     @property
     def available(self) -> bool:
-        return True  # v3.1.2: 恒可用（保留已下载图片）
+        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
 
     @property
     def state(self) -> str:
