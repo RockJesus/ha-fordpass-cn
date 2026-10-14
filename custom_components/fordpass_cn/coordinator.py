@@ -299,7 +299,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass probe cache load failed: %s", exc)
 
-    async def async_probe_capabilities(self) -> None:
+    async def async_probe_capabilities(self, force: bool = False) -> None:
         """探测云端命令白名单 + 新增 GET 端点结构（v3.3.7，尽力而为）。
 
         setup 阶段调用一次：成功后 command_whitelist 供各平台按命令创建
@@ -307,13 +307,17 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         （现有实体不受影响）。探测均为只读/幂等，不触发任何车辆动作。
         v3.8.6: 探测结果持久化——重启/重载后 setup 先读 Store，TTL 内
         直接复用（不再重探制造噪音）；TTL 过期或首次才真正探测。
+        v4.6.1: ``force=True`` 绕过 TTL 强制重探全部探测端点——「手动刷新
+        车辆状态」按钮在 force_refresh 后调用，让探测类实体（车型主数据/
+        OTA 协议/应用设置/分享能力/用户登录状态/充电域/维保预约/告警等）
+        与常规轮询实体同步刷新（此前探测只在 setup 一次，手动刷新不覆盖）。
         """
         await self._load_probe_cache()
         try:
             self.command_whitelist = await self._cached_fetch(
                 "whitelist", PROBE_PERSIST_TTL,
                 lambda: self.api.probe_command_whitelist(self.vin),
-                persist=True,
+                persist=True, force=force,
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass capability probe failed: %s", exc)
@@ -323,7 +327,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.extra_probes = await self._cached_fetch(
                 "extra_probes", PROBE_PERSIST_TTL,
                 lambda: self.api.probe_extra_endpoints(self.vin, fuel_type=fuel),
-                persist=True,
+                persist=True, force=force,
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
@@ -350,6 +354,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 cevs = await self._cached_fetch(
                     "cevs", PROBE_PERSIST_TTL, _cevs_factory, persist=True,
+                    force=force,
                 ) or {}
                 self.cevs_probe = cevs.get("probe", {})
                 self.cevs_diag = cevs.get("diag", {})
@@ -380,7 +385,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.smartwallbox = await self._cached_fetch(
                 "smartwallbox", PROBE_PERSIST_TTL,
                 lambda: self.api.probe_smartwallbox(self.vin),
-                persist=True,
+                persist=True, force=force,
             )
 
         # v4.3.3: fposb 4S 维保预约探测（登录后一次 + TTL 持久化缓存，
@@ -389,7 +394,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.fposb = await self._cached_fetch(
             "fposb", PROBE_PERSIST_TTL,
             lambda: self.api.probe_fposb(self.vin),
-            persist=True,
+            persist=True, force=force,
         )
 
         # v4.3.3: evss 充电站/免密支付探测——**仅电/插混/混动车型执行**
@@ -398,7 +403,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.evss = await self._cached_fetch(
                 "evss", PROBE_PERSIST_TTL,
                 lambda: self.api.probe_evss(self.vin),
-                persist=True,
+                persist=True, force=force,
             )
         else:
             self.evss = None
@@ -412,7 +417,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.activealertlist = await self._cached_fetch(
             "activealertlist", PROBE_PERSIST_TTL,
             lambda: self.api.probe_active_alert_list(self.vin),
-            persist=True,
+            persist=True, force=force,
         )
 
         # v3.9.1: 鸣笛设置云端状态（chirp_cloud）初始化——只在登录后探测
@@ -428,7 +433,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._cached_fetch(
                     "chirp_preference", PROBE_PERSIST_TTL,
                     lambda: self.api.get_chirp_preference(),
-                    persist=True,
+                    persist=True, force=force,
                 )
                 or data.get("chirp_cloud") or {}
             )
@@ -443,13 +448,20 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._cached_fetch(
                     "remote_climate_preference", PROBE_PERSIST_TTL,
                     lambda: self.api.get_remote_climate_preference(),
-                    persist=True,
+                    persist=True, force=force,
                 )
                 or data.get("remote_climate_cloud") or {}
             )
             self.async_set_updated_data(data)
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass remote climate pref init failed: %s", exc)
+        # v4.6.1: force 重探后整体推送一次——extra_probes/cevs/fposb 等
+        # 变化推给已创建的探测实体（sensor 在 update 时读这些属性）。
+        if force:
+            try:
+                self.async_set_updated_data(dict(self.data or {}))
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass probe force push failed: %s", exc)
 
     async def async_load_last_data(self) -> None:
         """Restore last-known data before first refresh (v3.3.3)."""
