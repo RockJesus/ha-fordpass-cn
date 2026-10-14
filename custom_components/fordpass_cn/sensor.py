@@ -153,8 +153,6 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
     sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
-    # v3.3.9: 车辆信息（jointVenture+localMarketValue+modelYear+vehicleType+fuelType）
-    sensors.append(FordPassVehicleInfoSensor(coordinator))
     sensors.append(FordPassLocationSensor(coordinator))
 
     # ===== A 组：车辆状态（车门 / 点火 / 车窗） =====
@@ -485,52 +483,6 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             sensors.append(FordPassMessageSensor(coordinator))
     return sensors
 
-
-class FordPassVehicleInfoSensor(SensorEntity):
-    """车辆信息（v3.3.9）：jointVenture+localMarketValue+modelYear+vehicleType+fuelType。
-
-    数据源 /v5/vehicles/list 明文字段（HAR 2026-10-03 实测）：CAF/锐际
-    Escape/2020/SYNC +/G。值=「长安福特 · 锐际 Escape · 2020 · SYNC + · 汽油」，
-    各字段同时放入 attributes 供自动化使用。
-    """
-
-    _JOINT_VENTURE = {
-        "CAF": "长安福特", "JMC": "江铃福特", "LMC": "林肯中国",
-        "CHANA": "长安", "FORD": "福特中国", "Ford": "福特中国",
-    }
-    _FUEL_TYPE = {
-        "G": "汽油", "D": "柴油", "E": "纯电", "BEV": "纯电",
-        "H": "混动", "HEV": "混动", "P": "插混", "PHEV": "插混", "MHEV": "轻混",
-    }
-
-    def __init__(self, coordinator) -> None:
-        self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-vehicle_info"
-        self._attr_name = "车辆信息"
-        self._attr_has_entity_name = False
-        self._attr_device_info = coordinator.device_info
-        self._attr_icon = "mdi:car-info"
-
-    @property
-    def available(self) -> bool:
-        return True  # v3.1.2: 不随福特云刷新失败而不可用（保留最后已知状态）
-
-    @property
-    def native_value(self) -> str:
-        info = self.coordinator.vehicle_info or {}
-        jv = self._JOINT_VENTURE.get(info.get("jointVenture"), info.get("jointVenture"))
-        fuel = self._FUEL_TYPE.get(info.get("fuelType"), info.get("fuelType"))
-        parts = [jv, info.get("localMarketValue"), info.get("modelYear"),
-                 info.get("vehicleType"), fuel]
-        return " · ".join(str(p) for p in parts if p) or "暂无"
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        info = self.coordinator.vehicle_info or {}
-        return {k: info.get(k) for k in (
-            "jointVenture", "localMarketValue", "modelYear", "vehicleType",
-            "fuelType", "warrantyStartDate",
-        )}
 
 
 class FordPassVehicleAttrSensor(SensorEntity):
