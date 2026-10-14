@@ -2479,6 +2479,16 @@ class FordPassApi:
             },
         )
         inner = data.get("data", {})
+        # v4.5.4: code 无效/过期时福特派返回 {"status":600,"error":"Auth code is
+        # invalid or has expired","errorCode":"201352"}（HTTP 200）——此前直接
+        # inner["encryptedAccessToken"] 抛 KeyError，config_flow 报"未知错误"；
+        # 现在按业务错误抛出，config_flow 显示"登录码无效或已过期"。
+        if data.get("status") not in (None, 200):
+            msg = data.get("error") or "B2C code exchange failed"
+            ec = data.get("errorCode")
+            raise FordPassApiError(
+                data.get("status", 400), f"{msg} (errorCode={ec})" if ec else msg
+            )
         xjw2 = inner.get("xjw", xjw)
         return {
             "access_token": await asyncio.to_thread(lambda: self.crypto.decrypt_field(
