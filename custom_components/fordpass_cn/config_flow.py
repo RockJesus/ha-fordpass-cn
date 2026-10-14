@@ -445,10 +445,14 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         （async_update_options）即时应用，无需重启。
         """
         entry = self._get_reconfigure_entry()
-        # v4.4.9: 官方 reconfigure 规范——确保 unique_id 未变（重新配置
-        # 必须对应原账号/车辆，防止配置写进错误 entry）。
-        await self.async_set_unique_id(entry.unique_id or "")
-        self._abort_if_unique_id_mismatch()
+        # v4.5.0: entry.unique_id 为 None（历史 entry）时跳过 unique_id
+        # 校验——async_set_unique_id(None or "") 会设空字符串，
+        # _abort_if_unique_id_mismatch 立即 abort，用户 UI 保存选项永远
+        # 失败（options 恒空、刷新间隔设置丢失回 30 分钟默认，表现为
+        # "实体不刷新"）。有 unique_id 才按官方规范校验对应原账号。
+        if entry.unique_id:
+            await self.async_set_unique_id(entry.unique_id)
+            self._abort_if_unique_id_mismatch()
         if user_input is not None:
             self.hass.config_entries.async_update_entry(
                 entry,

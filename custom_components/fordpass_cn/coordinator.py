@@ -551,12 +551,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "vehiclestatus": status.get("vehiclestatus", status),
             }
         except FordPassApiError as err:
-            if err.code in (401, 403):
-                # v4.4.9: api 内部已自动 refresh 一次仍 401 = 凭据永久失效 →
-                # 抛 ConfigEntryAuthFailed：停止轮询（不再每轮打云请求制造
+            if err.code in (401, 403) and "token refresh failed" in str(err):
+                # v4.5.0: 仅 refresh 也失败（api 内部已自动 refresh 一次且
+                # refresh_token 本身失效）才是凭据永久失效 → 抛
+                # ConfigEntryAuthFailed 停止轮询（避免每轮打云请求制造
                 # "刷新失败"噪音），HA 自动启动 reauth flow；实体保留最后
-                # 已知状态，用户重新认证后恢复（官方 Fetching data 指南：
-                # ApiAuthError → ConfigEntryAuthFailed）。
+                # 已知状态，重新认证后恢复。其他 401/403（无 refresh_token
+                # 的瞬时 401、单端点业务 401 等）走下方 UpdateFailed 保留
+                # 旧值，不误停轮询（此前所有 401 都停，实测 token 有效却
+                # "实体不刷新"）。
                 await self._log_activity("登录凭据已失效，请重新认证（设置 → 设备与服务 → 福特派互联）")
                 raise ConfigEntryAuthFailed(f"FordPass token expired: {err}") from err
             # v4.3.8: 刷新失败也写活动（"不可用活动"）——此前 UpdateFailed

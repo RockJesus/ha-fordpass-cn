@@ -74,7 +74,13 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 ## 版本历史
 
 <details>
-<summary>v4.4.x（最新）</summary>
+<summary>v4.5.x（最新）</summary>
+
+- **v4.5.0**：**修复"实体不刷新"回归（v4.4.9 误伤）**——① coordinator 轮询中 401/403 判断收窄：仅 refresh_token 也失效（api 内部已自动刷新一次仍失败）才抛 `ConfigEntryAuthFailed` 停止轮询；瞬时 401（无 refresh_token/单端点业务 401）保留最后已知状态继续轮询，不再误停导致"所有实体不刷新"；② 修复 reconfigure 在 entry.unique_id 为 None（历史配置）时保存必然失败：`async_set_unique_id(None or "")` 与 `_abort_if_unique_id_mismatch()` 立即 abort → 前端"重新配置/选项"永远无法保存（options 恒空、刷新间隔设置丢失回 30 分钟默认），现仅当 unique_id 存在时才校验；③ options 兜底落盘成功增加 INFO 日志（setup 一次，非轮询噪音）便于确认默认值已写入
+</details>
+
+<details>
+<summary>v4.4.x</summary>
 
 - **v4.4.9**：**符合 HA 官方开发者文档规范修复**——① 轮询与初始化阶段 token 失效（401/403，api 内部自动刷新一次仍失败）改抛 `ConfigEntryAuthFailed`：停止无谓重试并自动触发 reauth 流（前端提示重新认证，不再无限刷"刷新失败"活动噪音）；② reconfigure 补官方要求的 unique_id 校验（`_abort_if_unique_id_mismatch`）；③ reauth 增加官方确认对话框（reauth_confirm）；④ strings/translations 补 `reauth_successful`/`reconfigure_successful` 翻译键；⑤ coordinator 按官方示例透传 `config_entry`
 - **v4.4.8**：**活动日志恢复不带车辆实体**——v4.4.4-4.4.7 的活动事件关联车辆实体（entity_id=门锁等），导致门锁等实体活动历史被"手动刷新/刷新成功"等集成事件刷屏；按用户要求移除关联，事件恢复全局日志面板可见（entity_id=None），门锁等实体活动历史只显示自身状态变化
