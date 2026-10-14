@@ -479,6 +479,16 @@ class FordPassManualRefreshButton(ButtonEntity):
             await self.coordinator.force_refresh(force_all=True)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 手动刷新后全量数据拉取失败: %s", exc)
+        # v4.5.10: 手动刷新完成事件关联集成全部实体——即使车况未变（实体值
+        # 不变无 state_changed），每个实体的活动历史也能看到本次刷新记录
+        # （用户诉求 2026-10-15：手动刷新后车况未变也要有事件）。
+        try:
+            await self.coordinator._log_activity(
+                "手动刷新完成：车辆状态已更新至最新（车况无变化时亦记录）",
+                entity_ids=self.coordinator.all_entity_ids(),
+            )
+        except Exception as exc:  # noqa: BLE001 - logbook 失败不影响主流程
+            _LOGGER.warning("FordPass 手动刷新完成活动写入失败: %s", exc)
         _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA 全量）")
         return
 
