@@ -1562,6 +1562,13 @@ class FordPassApi:
             data = await self._request(
                 "GET", PATH_ACTIVE_ALERT_LIST, query=params
             )
+        except FordPassApiError as exc:
+            # v4.5.8: HTTP 404 = 确定性无该服务——转 ProbeRejected 落盘
+            # None（TTL 内不再重探），此前每次 setup 重探 1 次 404 噪音
+            if exc.code in (404,):
+                raise FordPassProbeRejected(exc.code, str(exc)) from exc
+            self._log.debug("FordPass activealertlist failed: %s", exc)
+            return None
         except Exception as exc:  # noqa: BLE001 - 探测失败只记录
             self._log.debug("FordPass activealertlist failed: %s", exc)
             return None
@@ -2318,6 +2325,13 @@ class FordPassApi:
         for name, path in probes.items():
             try:
                 data = await self._get_signed(path, vin)
+            except FordPassApiError as exc:
+                # v4.5.8: HTTP 404 = 确定性无该服务——转 ProbeRejected 落盘
+                # None（TTL 内不再重探），此前每次 setup 重探 4 次 404 噪音
+                if exc.code in (404,):
+                    raise FordPassProbeRejected(exc.code, str(exc)) from exc
+                self._log.debug("FordPass fposb %s failed: %s", name, exc)
+                continue
             except Exception as exc:  # noqa: BLE001 - 探测失败只记录
                 self._log.debug("FordPass fposb %s failed: %s", name, exc)
                 continue
