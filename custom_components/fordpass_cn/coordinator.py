@@ -719,18 +719,26 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 
     def activity_entity_id(self) -> str | None:
-        """v4.5.3: 实时查 registry 的"车辆信息"传感器 entity_id（活动日志关联）。
+        """v4.5.9: 实时查 registry 的活动事件关联实体（回退链）。
 
-        unique_id=f"{vin}-vehicle_info"。**不缓存**（v4.5.1 缓存成功结果，
-        v4.5.2 删除该传感器后旧实体 ID 仍被缓存返回，事件关联已删实体）；
-        每次实时查 registry，实体不存在时返回 None（活动事件不带实体关联，
-        全局活动日志仍完整显示）。查询为内存操作，频率低（每轮刷新 1-2 次）。
+        优先"车辆信息"传感器（unique_id=f"{vin}-vehicle_info"，已删除则
+        回退）；v4.5.9 回退到车辆定位 device_tracker（unique_id=
+        f"{vin}-tracker"，稳定存在）——此前 vehicle_info 删除后返回 None，
+        logbook 事件 entity_id=None 被集成详情页活动标签过滤（用户实测
+        手动刷新后活动无事件）。**不缓存**（避免返回已删实体旧 ID）；每次
+        实时查 registry，都不存在时返回 None（全局活动日志仍完整显示）。
+        查询为内存操作，频率低（每轮刷新 1-2 次）。
         """
         try:
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
-            return reg.async_get_entity_id(
+            eid = reg.async_get_entity_id(
                 "sensor", DOMAIN, f"{self.vin}-vehicle_info"
+            )
+            if eid:
+                return eid
+            return reg.async_get_entity_id(
+                "device_tracker", DOMAIN, f"{self.vin}-tracker"
             )
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
