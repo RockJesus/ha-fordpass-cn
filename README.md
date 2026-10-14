@@ -76,6 +76,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.5.6**：**修复额外端点探测始终失败**——`_probe_loop` 直接迭代 dict（`for name, spec in items`）导致按 key 字符串解包抛 `too many values to unpack (expected 2)`，额外端点探测每次 setup 都失败、相关实体漏建；改为 `items.items()`。**按车型跳过充电域探测**——汽油/柴油车不再探测 smartwallbox/evss/vpoi 系列端点（每次 setup 制造 6-12 次 404 噪音），与 cevs 按车型跳过对称
 - **v4.5.5**：**撤销「只保留最后已知状态」**——所有实体 available 改为跟随福特云刷新结果（`coordinator.last_update_success`）：刷新失败/数据获取不到时实体**如实显示「不可用」**，不再显示过时旧值；唯一例外是「手动刷新车辆状态」按钮保持恒可用（刷新失败时仍需可点以便重试）
 - **v4.5.4**：**修复 B2C 登录 code 交换崩溃**——code 无效/过期时福特派返回 HTTP 200 + status=600（errorCode 201352），此前 `_exchange_b2c_code` 直接取 `encryptedAccessToken` 抛 `KeyError`（配置流报"未知错误"）；现在按业务错误抛出，界面提示"登录码无效或已过期"
 - **v4.5.3**：**修复活动关联缓存**——v4.5.1 缓存了查到的车辆信息传感器，v4.5.2 删除该传感器后旧实体 ID 仍被缓存，事件持续关联已删实体；改为每次实时查 registry，删除后活动事件自动不带实体关联（全局活动日志仍完整显示每次轮询）

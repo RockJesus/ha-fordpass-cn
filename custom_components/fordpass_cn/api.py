@@ -1845,7 +1845,9 @@ class FordPassApi:
                         name, path, b, vname, payloads[vname], pem,
                     )
 
-    async def probe_extra_endpoints(self, vin: str) -> dict[str, Any] | None:
+    async def probe_extra_endpoints(
+        self, vin: str, fuel_type: str | None = None
+    ) -> dict[str, Any] | None:
         """探测只读 GET 端点响应并返回结果供实体创建（v3.4.6）。
 
         v3.3.7 起探测 maintenance-history / departuretimes retrieve 仅打日志；
@@ -1952,6 +1954,22 @@ class FordPassApi:
             "evss_orders": (PATH_EVSS_ORDERS, None, True),
             "vpoi_chargestations": (PATH_VPOI_CHARGESTATIONS, None, True),
         }
+        # v4.5.6: 按车型跳过充电域探测——汽油(G)/柴油(D)车无家充桩/公共充电，
+        # smartwallbox/evss/vpoi 端点每次 setup 探测制造 6-12 次 404 噪音
+        # （与 cevs 按车型跳过对称）。电/插混/混动保留探测。
+        fuel = str(fuel_type or "").upper()
+        if fuel in ("", "G", "D"):
+            for _k in (
+                "wallbox_bound", "wallbox_info", "wallbox_records_v2",
+                "wallbox_ble_vehicles",
+                "evss_order_status", "evss_apps_info", "evss_usage_notice",
+                "evss_payment_summary", "evss_invoiceables", "evss_events_v3",
+                "evss_evaluate_url",
+                "vpoi_status", "vpoi_saved",
+                "evss_stations", "evss_orders", "vpoi_chargestations",
+            ):
+                probes.pop(_k, None)
+                account_probes.pop(_k, None)
 
         async def _probe(name: str, spec, signed: bool) -> dict[str, Any] | None:
             """多形态探测：GET → allow_post 时再试 POST(带 body 模板)；
@@ -2020,7 +2038,7 @@ class FordPassApi:
             返回 (结果dict, 是否有确定性拒绝)。"""
             nonlocal any_rejected
             got: dict[str, Any] = {}
-            for name, spec in items:
+            for name, spec in items.items():  # v4.5.6: 修复 dict 迭代按 key 解包（key 字符串>2 报 too many values）
                 try:
                     data = await _probe(name, spec, signed=signed)
                     if data:

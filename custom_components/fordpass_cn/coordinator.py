@@ -318,10 +318,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass capability probe failed: %s", exc)
             self.command_whitelist = None
+        fuel = str(self.vehicle_info.get("fuelType") or "").upper()
         try:
             self.extra_probes = await self._cached_fetch(
                 "extra_probes", PROBE_PERSIST_TTL,
-                lambda: self.api.probe_extra_endpoints(self.vin),
+                lambda: self.api.probe_extra_endpoints(self.vin, fuel_type=fuel),
                 persist=True,
             )
         except Exception as exc:  # noqa: BLE001
@@ -338,7 +339,6 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 电/插混/混动才探测。
         # v3.8.6: 探测结果持久化（probe+diag 一并缓存）——reload 后 setup
         # TTL 内复用，不重探。
-        fuel = str(self.vehicle_info.get("fuelType") or "").upper()
         if fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV"):
             try:
                 async def _cevs_factory():
@@ -385,7 +385,6 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # v4.3.3: evss 充电站/免密支付探测——**仅电/插混/混动车型执行**
         # （fuelType 过滤，纯油/柴油不探测不创建，与 cevs 规则对称）。
-        fuel = str(self.vehicle_info.get("fuelType") or "").upper()
         if fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV"):
             self.evss = await self._cached_fetch(
                 "evss", PROBE_PERSIST_TTL,
