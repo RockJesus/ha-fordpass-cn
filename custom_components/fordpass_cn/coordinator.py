@@ -368,11 +368,20 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 持久化缓存（v3.8.6 起 reload 复用，不再重探；探测类请求绝不进入
         # 常规轮询，防福特云限流）；探测结果供 sensor 按"探测到数据才创建"
         # 接入。失败/非家充桩车型保持 None。
-        self.smartwallbox = await self._cached_fetch(
-            "smartwallbox", PROBE_PERSIST_TTL,
-            lambda: self.api.probe_smartwallbox(self.vin),
-            persist=True,
-        )
+        # v4.5.7: **按车型跳过**——汽油(G)/柴油(D)车无家充桩，此前每次
+        # setup 探测 8 端点×2 形态全 404（~16 次噪音），与 evss/cevs 对称。
+        if fuel in ("", "G", "D"):
+            self.smartwallbox = None
+            self.logger.info(
+                "FordPass smartwallbox probe skipped for fuelType %s",
+                fuel or "unknown",
+            )
+        else:
+            self.smartwallbox = await self._cached_fetch(
+                "smartwallbox", PROBE_PERSIST_TTL,
+                lambda: self.api.probe_smartwallbox(self.vin),
+                persist=True,
+            )
 
         # v4.3.3: fposb 4S 维保预约探测（登录后一次 + TTL 持久化缓存，
         # 不进常规轮询防限流）——结果供 sensor 按"探测到数据才创建"接入；
