@@ -189,12 +189,24 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """token 过期后的重新认证（v3.9.8）。
 
-        __init__.py 检测到 401 时触发 SOURCE_REAUTH flow；复用登录方式
-        选择 → 手机验证码/密码登录，成功后更新已有 entry 的 token 并
-        abort（不重建 entry，实体保留）。
+        __init__.py 检测到 401 时触发 SOURCE_REAUTH flow；先显示确认
+        对话框（reauth_confirm，v4.4.9 官方规范）→ 复用登录方式选择 →
+        手机验证码/密码登录，成功后更新已有 entry 的 token 并 abort
+        （不重建 entry，实体保留）。
         """
         self._reauth = True
-        return await self.async_step_user(user_input)
+        return await self.async_step_reauth_confirm(user_input)
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """v4.4.9: reauth 确认对话框（官方 reauth 指南要求）。"""
+        if user_input is not None:
+            return await self.async_step_user(user_input)
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({}),
+        )
 
     def _finish_login(
         self, mode: str, tokens: dict, extra_data: dict[str, Any] | None = None
@@ -433,6 +445,10 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         （async_update_options）即时应用，无需重启。
         """
         entry = self._get_reconfigure_entry()
+        # v4.4.9: 官方 reconfigure 规范——确保 unique_id 未变（重新配置
+        # 必须对应原账号/车辆，防止配置写进错误 entry）。
+        await self.async_set_unique_id(entry.unique_id or "")
+        self._abort_if_unique_id_mismatch()
         if user_input is not None:
             self.hass.config_entries.async_update_entry(
                 entry,

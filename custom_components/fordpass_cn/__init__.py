@@ -6,7 +6,11 @@ import asyncio
 import logging
 from datetime import timedelta
 
-from homeassistant.config_entries import ConfigEntry, ConfigEntryNotReady
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+)
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -92,17 +96,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"FordPass timeout: {err}") from err
     except FordPassApiError as err:
         if err.code in (401, 403):
-            # token 失效 → 触发 reauth（HA 前端提示重新认证，不卸载集成、
-            # 不删实体）；同时抛 ConfigEntryNotReady 让 HA 在 reauth 完成前
-            # 自动重试 setup（v3.9.8）。
-            hass.async_create_task(
-                hass.config_entries.flow.async_init(
-                    DOMAIN,
-                    context={"source": "reauth"},
-                    data={"entry_id": entry.entry_id},
-                )
-            )
-            raise ConfigEntryNotReady(f"FordPass login expired: {err}") from err
+            # v4.4.9: token 失效（api 内部已自动 refresh 一次仍失败）→ 抛
+            # ConfigEntryAuthFailed：HA 停止 setup 重试（不再每轮打云请求
+            # 制造噪音）并自动启动 reauth flow（前端提示"需要重新认证"，
+            # 不卸载集成、不删实体）；用户重新认证完成后 entry 更新，
+            # HA 自动重新 setup（官方 reauth 指南路径）。
+            raise ConfigEntryAuthFailed(f"FordPass login expired: {err}") from err
         # 其它 4xx/5xx：多数为临时网络/网关故障，交给 HA 自动重试
         raise ConfigEntryNotReady(f"FordPass login failed: {err}") from err
     except Exception as err:  # noqa: BLE001 - 未知错误同样按临时故障重试
@@ -180,6 +179,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             vehicle_info, coordinate_system,
             entry_id=entry.entry_id,
             car_id=vehicle.get("encryptedCarId") or None,
+            config_entry=entry,
         )
         coordinators.append(coordinator)
 
