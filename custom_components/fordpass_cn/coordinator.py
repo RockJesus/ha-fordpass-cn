@@ -152,7 +152,6 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_poll: datetime | None = None
         # v4.0.3: 活动日志去重状态（同摘要 15s 窗口内不重复写，防并发双条）
         self._last_logbook_at: datetime | None = None
-        self._activity_entity_id: str | None = None  # v4.5.1: 活动关联实体（车辆信息 sensor）
         self._last_logbook_msg: str | None = None
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
         # v3.4.1: active_alerts 频率由 TTL 缓存控制（30 分钟）——取代旧
@@ -712,25 +711,21 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 
     def activity_entity_id(self) -> str | None:
-        """v4.5.1: 本车"车辆信息"传感器 entity_id（活动日志关联实体）。
+        """v4.5.3: 实时查 registry 的"车辆信息"传感器 entity_id（活动日志关联）。
 
-        unique_id=f"{vin}-vehicle_info"（sensor.py FordPassVehicleInfoSensor）。
-        setup 早期平台未注册时返回 None 并保持重试（不缓存空结果）。
+        unique_id=f"{vin}-vehicle_info"。**不缓存**（v4.5.1 缓存成功结果，
+        v4.5.2 删除该传感器后旧实体 ID 仍被缓存返回，事件关联已删实体）；
+        每次实时查 registry，实体不存在时返回 None（活动事件不带实体关联，
+        全局活动日志仍完整显示）。查询为内存操作，频率低（每轮刷新 1-2 次）。
         """
-        if self._activity_entity_id:
-            return self._activity_entity_id
         try:
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
-            eid = reg.async_get_entity_id(
+            return reg.async_get_entity_id(
                 "sensor", DOMAIN, f"{self.vin}-vehicle_info"
             )
-            if eid:
-                self._activity_entity_id = eid
-                return eid
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
-            pass
-        return None
+            return None
 
     async def _log_activity(self, message: str) -> None:
         """活动日志写入（v4.3.8 抽取）：成功摘要/失败原因/暂无数据实体共用。
