@@ -15,7 +15,12 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FordPassApi, FordPassApiError, FordPassProbeRejected
-from .const import COORDINATE_WGS84, DOMAIN, PROBE_PERSIST_TTL
+from .const import (
+    PROBE_FORCE_COOLDOWN,
+    COORDINATE_WGS84,
+    DOMAIN,
+    PROBE_PERSIST_TTL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -152,6 +157,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_poll: datetime | None = None
         # v4.0.3: 活动日志去重状态（同摘要 15s 窗口内不重复写，防并发双条）
         self._last_logbook_at: datetime | None = None
+        self._last_probe_force_at: datetime | None = None  # v4.6.2: 探测重探冷却
         self._last_logbook_msg: str | None = None
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
         # v3.4.1: active_alerts 频率由 TTL 缓存控制（30 分钟）——取代旧
@@ -311,7 +317,21 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         车辆状态」按钮在 force_refresh 后调用，让探测类实体（车型主数据/
         OTA 协议/应用设置/分享能力/用户登录状态/充电域/维保预约/告警等）
         与常规轮询实体同步刷新（此前探测只在 setup 一次，手动刷新不覆盖）。
+        v4.6.2: ``force=True`` 加冷却——60s 内重复手动刷新不再重探探测端点
+        （探测 ~39 请求突发，高频点按会触发云端限流），仅常规全量刷新；
+        setup 调用（force=False）不受冷却影响。
         """
+        if force:
+            now = datetime.now()
+            if self._last_probe_force_at is not None and (
+                now - self._last_probe_force_at
+            ).total_seconds() < PROBE_FORCE_COOLDOWN:
+                self.logger.debug(
+                    "FordPass probe force skipped (cooldown %ss)",
+                    PROBE_FORCE_COOLDOWN,
+                )
+                return
+            self._last_probe_force_at = now
         await self._load_probe_cache()
         try:
             self.command_whitelist = await self._cached_fetch(
