@@ -14,6 +14,13 @@ LBS_BASE_URL = "https://api-connect.ford.com.cn"
 # (no sign/timestamp envelope needed on this route).
 V5_BASE_URL = "https://cnapi.cv.ford.com.cn"
 PATH_V5_HONK = "/api/vehicles/v5/{vin}/honk"
+# 分车门锁定（IDUL，v4.7.1）——逆向福特派 6.16.0 v5 命令族（Dart 深度
+# 反编译）：DELETE /door/{doortype}/lock = sendIDULCommand 指定单门上锁，
+# GET /door/lock/{commandId} = getIDULCommandState 轮询命令结果。
+# doortype 枚举（福特 v5 惯例）：front-left / front-right / rear-left /
+# rear-right；DELETE 下发返回 commandId（两段式：下发→轮询）。
+PATH_V5_DOOR_LOCK = "/api/vehicles/v5/{vin}/door/{doortype}/lock"
+PATH_V5_DOOR_LOCK_STATUS = "/api/vehicles/v5/{vin}/door/lock/{commandId}"
 
 # 鸣笛寻车设置（v3.1.4）——「保存上传到车机」真云端通道：
 # 账户云端持久化 = UserPreferenceV2（2026-10-02 逆向 libapp.so 还原，实机验证）：
