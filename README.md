@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.8.3**：**历史记录每次刷新都记录**——撤销「仅状态变化才记录」：每次刷新成功（即使车况未变）对全部实体强制写一次状态，历史记录每次刷新都有记录，不再空白；实体 `last_poll` 属性同步为最后刷新时间。
 - **v4.8.2**：**活动日志噪音修复**——①「N 个实体暂无数据（未开通）」不再每轮轮询刷屏（仅实体集合变化时写一次，消除 81 条/24h 同内容噪音，活动页仍保留「不可用活动」可见性）；② 修复车型主数据误计入「暂无数据」（v4.6.6 起其主值来自车辆信息，探测端点无数据 ≠ 实体暂无数据，与实体取值条件对齐）。
 - **v4.8.1**：**林肯之道品牌优化（5.8.0 逆向成果）**——接入林肯专属账号级只读端点（cnesl-lincoln-club 会员信息/我的页面、cnxapi-lwosb 取送车预约/预约状态，探测到数据才创建，福特派账号零影响）；品牌档案参数化（林肯包名 com.lincoln.lincolnwaycn 逆向确认）；登录链路（B2C tenant/client_id、验证码端点）逆向动态配对为 0%，仍待抓包补齐，暂不可登录。
 - **v4.8.0**：**HA API 审计合规补充**——补 `supports_reconfigure = True`（`async_step_reconfigure` 已实现但缺此开关，HA 2026.x 前端「重新配置」入口不显示）；配合 2026.10.1 全量 API 审计（0 FAIL：async_forward_entry_setups/async_create_task/to_thread/ConfigEntryNotReady/reauth/reconfigure 均合规）。
