@@ -764,9 +764,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
-            return reg.async_get_entity_id(
+            eid = reg.async_get_entity_id(
                 "sensor", DOMAIN, f"{self.vin}-vehicle_info"
             )
+            if eid:
+                return eid
+            # v4.7.6: "车辆信息"传感器已删除（用户要求）——回退到 lock
+            # 实体（unique_id={vin}-lock，每车稳定存在），保证活动事件在
+            # 集成详情页活动标签可见（entity_id=None 会被设备过滤）。
+            return reg.async_get_entity_id("lock", DOMAIN, f"{self.vin}-lock")
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
 
@@ -781,11 +787,23 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
-            return [e.entity_id for e in reg.async_entries_for_domain(DOMAIN)]
+            # v4.7.6: HA 2026.10 已移除 async_entries_for_domain（v3.6.5
+            # sensor.py 同款修复）——改用 reg.entities.values() 过滤
+            # platform==DOMAIN；跳过用户禁用实体（disabled_by）。
+            return [
+                e.entity_id
+                for e in reg.entities.values()
+                if e.platform == DOMAIN and e.disabled_by is None
+            ]
         except Exception:  # noqa: BLE001
             return []
 
-    async def _log_activity(self, message: str, entity_ids: list[str] | None = None) -> None:
+    async def _log_activity(
+        self,
+        message: str,
+        entity_ids: list[str] | None = None,
+        dedup: bool = True,
+    ) -> None:
         """活动日志写入（v4.3.8 抽取）：成功摘要/失败原因/暂无数据实体共用。
 
         15s 去重防并发双条（手动刷新与自动轮询撞车）；不同消息不受去重限制。
@@ -798,7 +816,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         now = datetime.now()
         last_at = self._last_logbook_at
-        if not (
+        if dedup and not (
             last_at is None
             or (now - last_at).total_seconds() >= 15
             or message != self._last_logbook_msg
@@ -807,25 +825,40 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             # v4.4.8: 活动日志不带车辆实体——事件恢复全局日志面板可见、
             # 门锁等实体活动历史不被集成事件刷屏（用户 2026-10-14 要求）。
-            service_data: dict[str, Any] = {
-                "name": self._vehicle_name or "福特派互联",
-                "message": message,
-                "domain": DOMAIN,
-            }
             # v4.5.1: 关联本车"车辆信息"传感器——集成详情页活动标签按集成
-            # 实体过滤（entity_id=null 事件不可见，用户实测 11:47 后集成页
-            # 活动标签无刷新记录）；关联后每次轮询/失败/暂无数据活动在该
-            # 标签可见；门锁/油量等实体页不被刷屏（v4.4.8 保持）。
-            # v4.5.10: entity_ids 参数——手动刷新完成传全实体列表（车况
-            # 未变时所有实体活动历史有刷新记录）；未传时保持单实体关联。
+            # 实体过滤（entity_id=null 事件不可见）；关联后每次轮询/失败/
+            # 暂无数据活动在该标签可见；门锁/油量等实体页不被刷屏。
+            # v4.7.6: logbook.log 的 entity_id 只接受单个字符串（HA
+            # 2026.10.1 实测传列表报 invalid_format）——entity_ids 参数
+            # 改为逐实体循环写（每实体一条），满足"手动刷新后所有实体
+            # 活动历史有刷新记录"；该模式 dedup=False（逐实体不受全局
+            # 15s 去重吞掉）。
             if entity_ids:
-                service_data["entity_id"] = entity_ids
+                for eid in entity_ids:
+                    try:
+                        await self.hass.services.async_call(
+                            "logbook", "log",
+                            {
+                                "name": self._vehicle_name or "福特派互联",
+                                "message": message,
+                                "domain": DOMAIN,
+                                "entity_id": eid,
+                            },
+                        )
+                    except Exception:  # noqa: BLE001 - 单条失败不影响其余
+                        self.logger.debug("fordpass_cn logbook entry failed: %s", eid, exc_info=True)
             else:
+                service_data: dict[str, Any] = {
+                    "name": self._vehicle_name or "福特派互联",
+                    "message": message,
+                    "domain": DOMAIN,
+                }
                 act_eid = self.activity_entity_id()
                 if act_eid:
                     service_data["entity_id"] = act_eid
-            await self.hass.services.async_call("logbook", "log", service_data)
+                await self.hass.services.async_call("logbook", "log", service_data)
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
-        self._last_logbook_at = now
-        self._last_logbook_msg = message
+        if dedup:
+            self._last_logbook_at = now
+            self._last_logbook_msg = message
