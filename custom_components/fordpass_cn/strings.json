@@ -2,10 +2,10 @@
   "config": {
     "step": {
       "user": {
-        "title": "福特派互联登录",
-        "description": "选择登录方式：{login_modes}。如提示失败，请查看 Home Assistant 日志（设置 → 系统 → 日志）中的 fordpass_cn 记录。",
+        "title": "选择品牌",
+        "description": "选择要接入的品牌：{brands}。\n\n- 福特派 FordPass：完整支持（验证码/密码登录、全部功能）\n- 林肯之道 Lincoln Way：与福特派共用同一套云端加密体系，但登录链路（B2C 登录页/验证码端点/App 指纹）待抓包补齐，当前暂不可登录——选中后会提示",
         "data": {
-          "login_mode": "登录方式"
+          "brand": "品牌"
         }
       },
       "phone": {
@@ -40,6 +40,18 @@
       "reauth_confirm": {
         "title": "[%key:common::config_flow::title::reauth%]",
         "description": "福特派登录凭据已过期，请重新认证。继续后将选择登录方式并重新获取令牌（不会卸载集成、不会删除实体）。"
+      },
+      "login_mode": {
+        "title": "选择登录方式",
+        "description": "选择登录方式：{login_modes}。如提示失败，请查看 Home Assistant 日志（设置 → 系统 → 日志）中的 fordpass_cn 记录。",
+        "data": {
+          "login_mode": "登录方式"
+        }
+      },
+      "lincoln_pending": {
+        "title": "林肯之道登录链路待支持",
+        "description": "已选择「{brand}」。林肯之道与福特派共用同一套云端加密库（逆向确认 libwbsk_crypto_tool.so 包名绑定含林肯），但林肯的 B2C 登录页、短信验证码登录端点与 App 指纹头尚无逆向数据，无法编造——当前暂不可登录。\n\n支持方式：用模拟器安装林肯之道 App 抓包登录流程（HAR），拿到 B2C tenant / 验证码端点 / application-id 后，下一版本即可完整接入。点击提交返回重选品牌。",
+        "data": {}
       }
     },
     "error": {

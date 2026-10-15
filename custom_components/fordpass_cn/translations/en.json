@@ -2,10 +2,10 @@
   "config": {
     "step": {
       "user": {
-        "title": "FordPass China Login",
-        "description": "Choose a login method: {login_modes}. If login fails, check the fordpass_cn entries in the Home Assistant log (Settings → System → Logs).",
+        "title": "Choose Brand",
+        "description": "Choose the brand to connect: {brands}.\n\n- FordPass China: fully supported (SMS/password login, all features)\n- Lincoln Way China: shares the same cloud crypto stack with FordPass (reverse-verified libwbsk_crypto_tool.so binds Lincoln package names), but its B2C login page / SMS endpoint / app fingerprint are not yet captured — login pending",
         "data": {
-          "login_mode": "Login method"
+          "brand": "Brand"
         }
       },
       "phone": {
@@ -40,6 +40,18 @@
       "reauth_confirm": {
         "title": "Re-authenticate",
         "description": "Your FordPass China credentials have expired. Re-authenticate to continue. You will be asked to choose a login method and obtain fresh tokens (the integration and entities are kept)."
+      },
+      "login_mode": {
+        "title": "Choose Login Method",
+        "description": "Choose a login method: {login_modes}. If login fails, check the fordpass_cn entries in the Home Assistant log (Settings → System → Logs).",
+        "data": {
+          "login_mode": "Login method"
+        }
+      },
+      "lincoln_pending": {
+        "title": "Lincoln Way Login Pending",
+        "description": "Selected: {brand}. Lincoln Way shares the same cloud crypto stack as FordPass (reverse-verified libwbsk_crypto_tool.so binds Lincoln package names), but its B2C login page, SMS endpoint and app fingerprint are not yet captured — login is not available yet.\n\nTo enable: capture the Lincoln Way app login flow (HAR) in an emulator, then the B2C tenant / SMS endpoint / application-id can be added in a future release. Click submit to re-choose a brand.",
+        "data": {}
       }
     },
     "error": {

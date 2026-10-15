@@ -466,6 +466,44 @@ DEFAULT_COORDINATE_SYSTEM = COORDINATE_WGS84
 LOGIN_MODE_SMS = "sms"
 LOGIN_MODE_PASSWORD = "password"
 
+# 品牌（v4.7.4：登录第一步选择福特派/林肯之道）
+CONF_BRAND = "brand"
+BRAND_FORD = "fordpass"
+BRAND_LINCOLN = "lincoln"
+BRAND_LABELS = {
+    BRAND_FORD: "福特派 FordPass",
+    BRAND_LINCOLN: "林肯之道 Lincoln Way",
+}
+DEFAULT_BRAND = BRAND_FORD
+
+# 品牌档案表（v4.7.4）：登录/API 常量按品牌取用。
+# 林肯之道（com.lincoln.lincolnwaycn / clutchcn）与福特派共用同一白盒加密库
+# （libwbsk_crypto_tool.so 包名绑定含林肯），但 B2C tenant/验证码登录端点/
+# App 指纹头无逆向数据——先占位 None 不编造值，ready=False 时 config flow
+# 提示"登录链路待抓包"，抓包补齐后置 ready=True 即可完整支持。
+BRAND_PROFILE = {
+    BRAND_FORD: {
+        "base_url": BASE_URL,
+        "touch_point": TOUCH_POINT,
+        "passcode_login": PATH_PASSCODE_LOGIN,
+        "b2c_authority": B2C_AUTHORITY,
+        "b2c_policy": B2C_POLICY,
+        "b2c_client_id": B2C_CLIENT_ID,
+        "b2c_redirect": B2C_REDIRECT_URI,
+        "ready": True,
+    },
+    BRAND_LINCOLN: {
+        "base_url": None,
+        "touch_point": None,
+        "passcode_login": None,
+        "b2c_authority": None,
+        "b2c_policy": None,
+        "b2c_client_id": None,
+        "b2c_redirect": None,
+        "ready": False,
+    },
+}
+
 # Defaults（v2.7.8：刷新间隔以分钟为单位，默认 30 分钟）
 DEFAULT_SCAN_INTERVAL_MINUTES = 30
 

@@ -252,6 +252,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data={
                 **(extra_data or {}),
                 CONF_LOGIN_MODE: mode,
+                CONF_BRAND: self._brand,
                 CONF_PHONE: self._phone,
                 CONF_USERNAME: self._username,
                 "access_token": tokens["access_token"],
