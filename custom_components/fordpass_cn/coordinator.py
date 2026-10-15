@@ -20,6 +20,9 @@ from .const import (
     COORDINATE_WGS84,
     DOMAIN,
     PROBE_PERSIST_TTL,
+    CONF_BRAND,
+    DEFAULT_BRAND,
+    BRAND_LINCOLN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -146,6 +149,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.api = api
         self.vin = vin
+        # v4.8.1: 品牌（福特派/林肯之道）——config flow 第一步选择，
+        # 林肯专属端点（俱乐部/取送车）仅在本品牌下探测
+        self.brand = (
+            (config_entry.data or {}).get(CONF_BRAND, DEFAULT_BRAND)
+            if config_entry else DEFAULT_BRAND
+        )
         self.license_plate = license_plate
         self.nickname = nickname
         self.track_location = track_location
@@ -352,6 +361,27 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("FordPass extra endpoint probe failed: %s", exc)
+        # v4.8.1: 林肯之道专属端点探测（brand==lincoln 时，setup 一次性）：
+        # 结果并入 extra_probes（探测到数据才创建传感器；福特派账号不探测、
+        # 键不存在不创建，零副作用）。404/业务拒绝由 api 抛 ProbeRejected
+        # 或返回 None，均不会进入 extra_probes。
+        if self.brand == BRAND_LINCOLN:
+            for _lkey, _lfn in (
+                ("lincoln_member_info", self.api.probe_lincoln_member_info),
+                ("lincoln_my_page", self.api.probe_lincoln_my_page),
+                ("lwosb_bookings", self.api.probe_lwosb_bookings),
+                ("lwosb_order_status", self.api.probe_lwosb_order_status),
+            ):
+                try:
+                    _lr = await _lfn()
+                    if _lr:
+                        self.extra_probes = {
+                            **(self.extra_probes or {}), _lkey: _lr,
+                        }
+                except FordPassProbeRejected:
+                    continue
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.debug("Lincoln %s probe failed: %s", _lkey, exc)
         # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
         # 直接读取——不再依赖导出日志即可从 HA 侧确认探测成败）
         # v3.7.10: 直接引用 api.cevs_diag 同一 dict——probe_cevs_variant 服务
