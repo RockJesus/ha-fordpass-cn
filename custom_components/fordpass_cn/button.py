@@ -730,6 +730,7 @@ class FordPassManualRefreshButton(ButtonEntity):
             await self.coordinator._log_activity(
                 "手动刷新完成：车辆状态已更新至最新（车况无变化时亦记录）",
                 entity_ids=self.coordinator.all_entity_ids(),
+                dedup=False,  # v4.7.6: 逐实体写，不受 15s 全局去重吞掉
             )
         except Exception as exc:  # noqa: BLE001 - logbook 失败不影响主流程
             _LOGGER.warning("FordPass 手动刷新完成活动写入失败: %s", exc)
