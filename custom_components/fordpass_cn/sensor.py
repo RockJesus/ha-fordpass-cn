@@ -1288,10 +1288,11 @@ _SERVICE_INFO_FIELDS: list[tuple[str, str, str, str | tuple[str, ...]]] = [
     ("contact_number", "客服电话", "mdi:phone", "contactNumber"),
     ("after_sales_number", "售后电话", "mdi:phone-in-talk", "afterSalesNumber"),
     ("video_manual", "视频说明书", "mdi:book-open-variant", "videoManualUrl"),
-    # v4.6.8: 「可用功能」与「云端能力探测」（FordPassCloudProbeSensor，同源
-    # availableFeatures 位图，信息更全：中文+feature_ids+capability_XX）重复，
-    # 删除本实体；旧条目由 setup 清理段自动移除。
-    ("authed_features", "已授权功能", "mdi:shield-check", ("featureData", "authedFeatures")),
+    # v4.6.8: 「可用功能」与「云端能力探测」（同源 availableFeatures 位图、
+    # 信息更全）重复，删除本实体；旧条目由 setup 清理段自动移除。
+    # v4.6.9: 「已授权功能」（authedFeatures="A4"）——逆向 100% 成果仅有字段名
+    # （libapp_strings），无编码映射与中文含义，无法中文化 → 删除；旧条目
+    # 由 setup 清理段自动移除。
     ("specified_features", "指定功能", "mdi:star-check", ("featureData", "specifiedFeatures")),
 ]
 
