@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.7.5**：**修复品牌选择流程未生效**——v4.7.4 漏写入 config_flow.py（登录方式仍先于品牌显示 + formatjs MISSING_VALUE 报错），本版真正实现「先品牌 → 后登录方式」两步流程并补齐 `self._brand` 初始化。
 - **v4.7.4**：**登录第一步品牌选择**——新增「福特派 / 林肯之道」选项（config flow 首步）。福特派完整可用；林肯之道登录链路（B2C tenant/验证码端点/App 指纹）无逆向数据，暂不可登录，选中会明确提示（不编造端点，抓包林肯之道 App 后补齐即可完整接入）。
 - **v4.7.3**：**家充桩 BLE 自动认证**（逆向 `auto/charging/ble/add/v3`）——充电车型绑定桩后可用，插枪 BLE 自动配对（手机不在场充电）；README 补充蓝牙域边界说明（BLE 车控 15 条指令为纯 BLE 物理链路，HA 云集成不支持，需 App 车旁操作）
 - **v4.7.2**：**v5 刷新双实体**——v5 主动刷新车况（PUT /status）+ v5 刷新轮询（statusrefresh 轮询），send-command 手动刷新保留并行（v5 PUT 命令通道网关当前 500，点击如实报错，恢复后自动可用）

@@ -27,6 +27,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import FordPassApi, FordPassApiError
 from .const import (
     APPLICATION_ID,
+    BRAND_FORD,
+    BRAND_LABELS,
+    BRAND_LINCOLN,
+    BRAND_PROFILE,
+    CONF_BRAND,
+    DEFAULT_BRAND,
     B2C_AUTHORITY,
     B2C_CLIENT_ID,
     B2C_PATH_AUTHORIZE,
@@ -82,6 +88,13 @@ def _preference_schema(defaults: dict) -> vol.Schema:
         }
     )
 
+STEP_BRAND_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_BRAND, default=BRAND_FORD): vol.In(
+            BRAND_LABELS
+        ),
+    }
+)
 STEP_LOGIN_MODE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_LOGIN_MODE, default=LOGIN_MODE_SMS): vol.In(
@@ -161,8 +174,36 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # v3.9.8: reauth（token 过期重新认证）标记——登录流程最终动作
         # 由"创建 entry"改为"更新已有 entry 的 token + abort"。
         self._reauth: bool = False
+        # v4.7.5: 品牌（福特派/林肯之道）——登录第一步选择，默认福特派；
+        # reauth/_finish_login 均读取该值，必须在此初始化
+        self._brand: str = DEFAULT_BRAND
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """v4.7.5: 登录第一步——选择品牌（福特派/林肯之道）。"""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._brand = user_input[CONF_BRAND]
+            profile = BRAND_PROFILE.get(self._brand, {})
+            if not profile.get("ready"):
+                # 林肯之道登录链路待抓包（B2C tenant/验证码端点/App 指纹无
+                # 逆向数据，不编造）——提示页，可返回重选品牌
+                return self.async_show_form(
+                    step_id="lincoln_pending",
+                    data_schema=vol.Schema({}),
+                    description_placeholders={"brand": BRAND_LABELS.get(self._brand, self._brand)},
+                )
+            return await self.async_step_login_mode()
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_BRAND_SCHEMA,
+            errors=errors,
+            description_placeholders={"brands": "、".join(BRAND_LABELS.values())},
+        )
+
+    async def async_step_login_mode(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """v4.7.5: 登录方式选择（原 async_step_user 逻辑，品牌选定后进入）。"""
         errors: dict[str, str] = {}
         if user_input is not None:
             mode = user_input[CONF_LOGIN_MODE]
@@ -178,10 +219,22 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_SMS]},
             )
         return self.async_show_form(
-            step_id="user",
+            step_id="login_mode",
             data_schema=STEP_LOGIN_MODE_SCHEMA,
             errors=errors,
             description_placeholders={"login_modes": "、".join(LOGIN_MODE_LABELS.values())},
+        )
+
+    async def async_step_lincoln_pending(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """v4.7.5: 林肯之道登录链路未就绪提示页——提交后返回重选品牌。"""
+        if user_input is not None:
+            return await self.async_step_user()
+        return self.async_show_form(
+            step_id="lincoln_pending",
+            data_schema=vol.Schema({}),
+            description_placeholders={"brand": BRAND_LABELS.get(self._brand, self._brand)},
         )
 
     async def async_step_reauth(
@@ -202,7 +255,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """v4.4.9: reauth 确认对话框（官方 reauth 指南要求）。"""
         if user_input is not None:
-            return await self.async_step_user(user_input)
+            return await self.async_step_login_mode(user_input)
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema({}),
