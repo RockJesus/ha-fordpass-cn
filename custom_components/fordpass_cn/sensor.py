@@ -1227,6 +1227,34 @@ class FordPassCloudProbeSensor(SensorEntity):
         return attrs
 
 
+def _fuel_type_zh(code) -> str | None:
+    """燃料类型码 → 中文（v4.6.5）。未知码保留原文。"""
+    if code is None:
+        return None
+    txt = str(code).strip().upper()
+    return {
+        "G": "汽油", "D": "柴油", "E": "纯电", "BEV": "纯电",
+        "P": "插电混动", "PHEV": "插电混动", "H": "油电混动",
+        "HEV": "油电混动", "MHEV": "轻混",
+    }.get(txt) or (txt or None)
+
+
+def _joint_venture_zh(code) -> str | None:
+    """合资品牌码 → 中文（v4.6.5）。未知码保留原文。"""
+    if code is None:
+        return None
+    txt = str(code).strip().upper()
+    return {"CAF": "长安福特"}.get(txt) or (txt or None)
+
+
+def _brand_zh(code) -> str | None:
+    """品牌码 → 中文（v4.6.5）。未知码保留原文。"""
+    if code is None:
+        return None
+    txt = str(code).strip().upper()
+    return {"F": "福特"}.get(txt) or (txt or None)
+
+
 # v4.6.4: ccfeatures 服务信息 7 字段 → 7 个独立实体（用户要求）。
 # 顺序：(unique_id 后缀, 实体名, 图标, 响应 data 取值路径)
 # 路径为 tuple 时逐层下钻（如 ("featureData", "availableFeatures")）。
@@ -1444,35 +1472,81 @@ class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
     def _format(self, data: dict) -> str | None:
         # 实测响应 data.data.values[].{mileage, operations[]}（v3.1.5 修正：
         # 此前读 data.data / data.values 两层都错位，state 恒为 unknown）。
-        # v3.3.0: 显示完整首档（该里程下所有项目）+ 档数，替代仅首项——
-        # HAR（2026-10-03）确认 App 保养计划页展示全部里程档的全部项目。
+        # v4.6.5: 主值 = 当前总里程对应的下一保养档（用户要求）——在保养
+        # 计划档位里找里程 >= 当前总里程的最近一档，显示该档全部项目；
+        # 无总里程数据时退回首档全量显示；所有档位都已低于总里程时显示
+        # 最后档并标注。项目/档数展示沿用 v3.3.0（完整档 + 档数）。
         payload = data.get("data") if isinstance(data, dict) else None
         items = payload.get("values") if isinstance(payload, dict) else None
         if not isinstance(items, list) or not items:
             return None
-        descs: list[str] = []
-        for it in items:
-            if not isinstance(it, dict):
-                continue
-            ops = [
+
+        def _ops_of(it: dict) -> list[str]:
+            return [
                 str(o.get("description"))
                 for o in (it.get("operations") or [])
                 if isinstance(o, dict) and o.get("description")
             ]
+
+        def _mileage(it: dict) -> int | None:
+            m = it.get("mileage")
+            if m is None:
+                return None
+            try:
+                return int(m)
+            except (TypeError, ValueError):
+                return None
+
+        odo = self._odometer()
+        picked: tuple[int | None, dict] | None = None
+        last: tuple[int | None, dict] | None = None
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            ops = _ops_of(it)
             if not ops:
                 continue
-            mileage = it.get("mileage")
-            head = f"{mileage} 公里" if mileage is not None else "保养档"
-            descs.append(f"{head}：{'、'.join(ops)}")
-        if not descs:
-            return None
-        first = descs[0]
+            m = _mileage(it)
+            last = (m, it)
+            if m is not None and odo is not None and m >= odo:
+                picked = (m, it)
+                break
+        if picked is None:
+            # 无总里程 → 首档；总里程已超全部档 → 最后档并标注
+            if last is not None:
+                m, it = last
+                ops = _ops_of(it)
+                head = f"{m} 公里" if m is not None else "保养档"
+                if odo is not None:
+                    first = f"总里程 {odo} 公里已超保养计划，最后档 {head}：{'、'.join(ops)}"
+                else:
+                    first = f"{head}：{'、'.join(ops)}"
+            else:
+                return None
+        else:
+            m, it = picked
+            ops = _ops_of(it)
+            first = f"总里程 {odo} 公里 · 下一档 {m} 公里：{'、'.join(ops)}"
         if len(items) > 1:
             first += f"（共 {len(items)} 档）"
-        # HA state 有 255 字符上限；首档项目多时截断加省略号
+        # HA state 有 255 字符上限；项目多时截断加省略号
         if len(first) > 230:
             first = first[:227] + "…"
         return first
+
+    def _odometer(self) -> int | None:
+        """当前总里程（vehiclestatus.odometer，可能为 {value:...} 节点）。"""
+        vs = (self.coordinator.data or {}).get("vehiclestatus")
+        if not isinstance(vs, dict):
+            return None
+        node = vs.get("odometer")
+        v = (node or {}).get("value") if isinstance(node, dict) else node
+        if v is None:
+            return None
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
 
     def _summary(self, data: dict) -> dict:
         payload = data.get("data") if isinstance(data, dict) else None
@@ -2662,6 +2736,27 @@ class FordPassProbeSensor(SensorEntity):
                     return f"{len(lst)} 项设置"
                 return "暂无应用设置"
             if self._kind == "vehicle_model_masterdata":
+                # v4.6.5: 车型主数据 = 车辆信息 11 字段中文聚合（用户要求）。
+                # 数据源 coordinator.vehicle_info（vehicles/list 明文）优先，
+                # 探测端点 modelName 兜底。
+                vi = self.coordinator.vehicle_info or {}
+                zh = []
+                lm = vi.get("localMarketValue")
+                if lm:
+                    zh.append(str(lm))
+                my = vi.get("modelYear")
+                if my:
+                    zh.append(f"{my} 款")
+                ft = _fuel_type_zh(vi.get("fuelType"))
+                if ft:
+                    zh.append(ft)
+                jv = _joint_venture_zh(vi.get("jointVenture"))
+                if jv:
+                    zh.append(jv)
+                if zh:
+                    head = zh[0]
+                    rest = " · ".join(zh[1:])
+                    return f"{head}（{rest}）" if rest else head
                 n = (_swb_find(data, "modelName") or _swb_find(data, "name")
                      or _swb_find(data, "vehicleModelName"))
                 if n is not None:
@@ -2690,6 +2785,25 @@ class FordPassProbeSensor(SensorEntity):
             for k, v in list(data.items())[:12]:
                 if isinstance(v, (str, int, float, bool)) or v is None:
                     attrs[str(k)] = v
+        # v4.6.5: 车型主数据附 11 项车辆信息（中文标签 + 可翻译字段中文化，
+        # 技术码保留原文供排查）。
+        if self._kind == "vehicle_model_masterdata":
+            vi = self.coordinator.vehicle_info or {}
+            if vi:
+                extra: dict[str, Any] = {
+                    "燃料类型": _fuel_type_zh(vi.get("fuelType")),
+                    "款型": f"{vi.get('modelYear')} 款" if vi.get("modelYear") else None,
+                    "合资品牌": _joint_venture_zh(vi.get("jointVenture")),
+                    "品牌": _brand_zh(vi.get("brandCode")),
+                    "车型线功能码": vi.get("vehicleLineFeatureCode"),
+                    "本地市场名称": vi.get("localMarketValue"),
+                    "车机类型": vi.get("vehicleType"),
+                    "版本": vi.get("version"),
+                    "车辆云": vi.get("vehicleCloud"),
+                    "平台标志": vi.get("plFlag"),
+                    "保修起始": str(vi.get("warrantyStartDate") or "")[:10] or None,
+                }
+                attrs.update({k: v for k, v in extra.items() if v is not None and v != ""})
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
