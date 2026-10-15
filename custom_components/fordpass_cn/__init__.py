@@ -181,6 +181,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for k in (
                 "jointVenture", "localMarketValue", "modelYear", "vehicleType",
                 "fuelType", "warrantyStartDate",
+                # v4.6.5: 车型主数据中文化需要补全字段（vehicles/list 明文）
+                "brandCode", "vehicleLineFeatureCode", "version",
+                "vehicleCloud", "plFlag",
             )
         }
         coordinator = FordPassCoordinator(
