@@ -1255,6 +1255,31 @@ def _brand_zh(code) -> str | None:
     return {"F": "福特"}.get(txt) or (txt or None)
 
 
+def _vehicle_masterdata_zh(vi: dict | None) -> str | None:
+    """车型主数据中文聚合（v4.6.5/v4.6.6）：锐际 Escape（2020 款 · 汽油 ·
+    长安福特）。车辆信息 dict 无有效字段时返回 None（调用方回退探测数据）。"""
+    if not isinstance(vi, dict) or not vi:
+        return None
+    zh: list[str] = []
+    lm = vi.get("localMarketValue")
+    if lm:
+        zh.append(str(lm))
+    my = vi.get("modelYear")
+    if my:
+        zh.append(f"{my} 款")
+    ft = _fuel_type_zh(vi.get("fuelType"))
+    if ft:
+        zh.append(ft)
+    jv = _joint_venture_zh(vi.get("jointVenture"))
+    if jv:
+        zh.append(jv)
+    if not zh:
+        return None
+    head = zh[0]
+    rest = " · ".join(zh[1:])
+    return f"{head}（{rest}）" if rest else head
+
+
 # v4.6.4: ccfeatures 服务信息 7 字段 → 7 个独立实体（用户要求）。
 # 顺序：(unique_id 后缀, 实体名, 图标, 响应 data 取值路径)
 # 路径为 tuple 时逐层下钻（如 ("featureData", "availableFeatures")）。
@@ -2255,6 +2280,12 @@ class FordPassProbeSensor(SensorEntity):
             if vl:
                 data = {"list": vl}
         if data is None:
+            # v4.6.6: 车型主数据探测端点无数据时也用车辆信息（vehicles/list
+            # 明文）作主值——用户要求主值显示车型信息而非「暂无数据」。
+            if self._kind == "vehicle_model_masterdata":
+                zh = _vehicle_masterdata_zh(self.coordinator.vehicle_info)
+                if zh:
+                    return zh
             # v4.3.7: v4.3.5/v4.3.6 无条件创建的探测端点实体，探测无数据
             # （None/拒绝）时显示「暂无数据」友好文案——实体常驻、永不
             # unknown/unavailable（用户硬性要求，v4.3.2 SIM 先例）。
@@ -2736,27 +2767,12 @@ class FordPassProbeSensor(SensorEntity):
                     return f"{len(lst)} 项设置"
                 return "暂无应用设置"
             if self._kind == "vehicle_model_masterdata":
-                # v4.6.5: 车型主数据 = 车辆信息 11 字段中文聚合（用户要求）。
-                # 数据源 coordinator.vehicle_info（vehicles/list 明文）优先，
-                # 探测端点 modelName 兜底。
-                vi = self.coordinator.vehicle_info or {}
-                zh = []
-                lm = vi.get("localMarketValue")
-                if lm:
-                    zh.append(str(lm))
-                my = vi.get("modelYear")
-                if my:
-                    zh.append(f"{my} 款")
-                ft = _fuel_type_zh(vi.get("fuelType"))
-                if ft:
-                    zh.append(ft)
-                jv = _joint_venture_zh(vi.get("jointVenture"))
-                if jv:
-                    zh.append(jv)
+                # v4.6.5/v4.6.6: 车型主数据 = 车辆信息 11 字段中文聚合（用户
+                # 要求）。coordinator.vehicle_info（vehicles/list 明文）优先，
+                # 探测端点 modelName 兜底（data None 时已在上面分支先行处理）。
+                zh = _vehicle_masterdata_zh(self.coordinator.vehicle_info)
                 if zh:
-                    head = zh[0]
-                    rest = " · ".join(zh[1:])
-                    return f"{head}（{rest}）" if rest else head
+                    return zh
                 n = (_swb_find(data, "modelName") or _swb_find(data, "name")
                      or _swb_find(data, "vehicleModelName"))
                 if n is not None:
