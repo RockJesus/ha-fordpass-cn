@@ -792,6 +792,26 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._last_empty_probes = None
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
+        # v4.8.3: 撤销「仅状态变化才记录」——每次刷新成功（即使车况未变）
+        # 对全部福特派实体 force 写一次状态：hass.states.async_set(force=True)
+        # 在 state+attrs 未变时也发布 state_changed，recorder 收到即入库，
+        # 历史记录每次刷新都有记录（车况未变时历史不再空白）；attrs.last_poll
+        # 同步为本次刷新时间，便于在历史/实体页追溯最后一次确认时间。
+        # 跳过用户禁用实体；实体未建立（states 缺失）则跳过。
+        try:
+            _now_str = f"{self.last_poll:%Y-%m-%d %H:%M:%S}" if self.last_poll else None
+            _reg = self.hass.helpers.entity_registry.async_get(self.hass)
+            for _entry in _reg.async_entries_for_domain(DOMAIN):
+                if _entry.disabled_by is not None:
+                    continue
+                _st = self.hass.states.get(_entry.entity_id)
+                if _st is None:
+                    continue
+                _attrs = dict(_st.attributes)
+                _attrs["last_poll"] = _now_str
+                self.hass.states.async_set(_entry.entity_id, _st.state, _attrs, force=True)
+        except Exception:  # noqa: BLE001 - 强制记录失败不影响数据刷新
+            self.logger.debug("fordpass_cn force state write failed", exc_info=True)
         return data
 
 
