@@ -167,6 +167,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v4.0.3: 活动日志去重状态（同摘要 15s 窗口内不重复写，防并发双条）
         self._last_logbook_at: datetime | None = None
         self._last_probe_force_at: datetime | None = None  # v4.6.2: 探测重探冷却
+        # v4.8.2: "暂无数据"活动去重——仅 empty 集合与上次不同才写（稳定
+        # 状态不重复刷屏；v4.3.8 起每轮写 1 条，30min 轮询+手动刷新=81 条/24h 噪音）
+        self._last_empty_probes: tuple[str, ...] | None = None
         self._last_logbook_msg: str | None = None
         self._v5_refresh_cid: str | None = None  # v4.7.2: v5 主动刷新最近 commandId
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
@@ -765,17 +768,28 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _fuel = str(self.vehicle_info.get("fuelType") or "").upper()
             _charge_ok = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
             ep = self.extra_probes or {}
+            # v4.8.2: 车型主数据 v4.6.6 起主值来自车辆信息（vehicles/list
+            # 明文 vehicle_info），探测端点无数据 ≠ 实体暂无数据——与
+            # sensor.py 创建/取值条件对齐，不再误计入「暂无数据」。
+            _masterdata_ok = bool(self.vehicle_info)
             empty = [
                 n for k, n in _probe_names.items()
                 if not ep.get(k)
+                and not (k == "vehicle_model_masterdata" and _masterdata_ok)
                 and (k not in _charge_kinds or _charge_ok)
             ]
-            if empty:
+            # v4.8.2: 仅 empty 集合变化时写活动（首次出现/实体恢复/新增
+            # 无数据项），稳定态不重复刷屏——活动页保留「不可用活动」可见
+            # 性，同时消除 81 条/24h 的同内容噪音。
+            if empty and tuple(empty) != self._last_empty_probes:
+                self._last_empty_probes = tuple(empty)
                 shown = "、".join(empty[:5])
                 more = f" 等 {len(empty)} 项" if len(empty) > 5 else ""
                 await self._log_activity(
                     f"{len(empty)} 个实体暂无数据（未开通）：{shown}{more}"
                 )
+            elif not empty:
+                self._last_empty_probes = None
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
         return data
