@@ -535,6 +535,33 @@ class FordPassApi:
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
             self._log.debug("FordPass %s -> %s %s", path, resp.status, _log_summary(text))
+            # v4.7.0: 风控响应分类——429=限流、403+HTML=WAF/CDN 拦截页、
+            # 5xx=网关熔断；与业务失败（2xx/4xx JSON 业务错误码）区分，便于
+            # 诊断与处置（识别见 references/risk-control.md §1）。仅记录
+            # 分类日志，不改变现有异常流（仍抛 FordPassApiError，由
+            # coordinator 失败保留旧值兜底，不连环重试）。
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+            is_html = "html" in ctype or text.lstrip().startswith("<")
+            if resp.status == 429:
+                self._log.warning(
+                    "FordPass %s -> HTTP 429 限流信号（请求过频），停手退避: %s",
+                    path, _log_summary(text),
+                )
+            elif resp.status == 403 and is_html:
+                self._log.warning(
+                    "FordPass %s -> HTTP 403 + HTML = WAF/CDN 拦截页（外部限制，非业务问题）: %s",
+                    path, _log_summary(text),
+                )
+            elif resp.status == 403:
+                self._log.debug(
+                    "FordPass %s -> HTTP 403（业务拒绝/无权限，非限流）: %s",
+                    path, _log_summary(text),
+                )
+            elif resp.status >= 500:
+                self._log.warning(
+                    "FordPass %s -> HTTP %s 网关层故障（熔断/5xx，退避后自愈）: %s",
+                    path, resp.status, _log_summary(text),
+                )
             if resp.status == 401 and self._refresh_token and not self._retrying:
                 self._retrying = True
                 try:
@@ -558,6 +585,13 @@ class FordPassApi:
             except json.JSONDecodeError as err:
                 if raw:
                     return text
+                # v4.7.0: HTTP 200 但返回 HTML = 网关层拦截页伪装成成功响应
+                # （CDN 校验页/验证码页），归类为风控拦截而非普通解析错误。
+                if text.lstrip().startswith("<"):
+                    self._log.warning(
+                        "FordPass %s -> HTTP 200 + HTML = 网关拦截页（风控/CDN 校验，非业务失败）: %s",
+                        path, _log_summary(text),
+                    )
                 raise FordPassApiError(resp.status, f"non-JSON response: {text[:200]}") from err
         if isinstance(data, dict):
             # Business-layer token expiry: the gateway answers HTTP 200 with a
