@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.8.1**：**林肯之道品牌优化（5.8.0 逆向成果）**——接入林肯专属账号级只读端点（cnesl-lincoln-club 会员信息/我的页面、cnxapi-lwosb 取送车预约/预约状态，探测到数据才创建，福特派账号零影响）；品牌档案参数化（林肯包名 com.lincoln.lincolnwaycn 逆向确认）；登录链路（B2C tenant/client_id、验证码端点）逆向动态配对为 0%，仍待抓包补齐，暂不可登录。
 - **v4.8.0**：**HA API 审计合规补充**——补 `supports_reconfigure = True`（`async_step_reconfigure` 已实现但缺此开关，HA 2026.x 前端「重新配置」入口不显示）；配合 2026.10.1 全量 API 审计（0 FAIL：async_forward_entry_setups/async_create_task/to_thread/ConfigEntryNotReady/reauth/reconfigure 均合规）。
 - **v4.7.9**：**集成级事件不再关联门锁实体**——「手动刷新已触发」「车辆状态刷新成功」「暂无数据」等集成/车辆级事件恢复为不带实体关联（全局活动页可见），门锁活动历史只显示门锁自己的状态（已锁定/已解锁）；各实体刷新后状态消息仍按各自实体显示。
 - **v4.7.8**：**手动刷新状态消息只显示状态值**——去掉「实体名：」前缀（实体名由活动历史关联显示），锁/开关类状态翻译为中文（已锁定/已解锁/已开启/已关闭），数字类保留数值+单位（如 36%）；button/image 实体（时间戳/图片URL 无状态含义）跳过。

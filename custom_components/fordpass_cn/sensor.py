@@ -413,6 +413,13 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("app_init_settings", "应用设置信息", "app_init_settings"),
             ("vehicle_model_masterdata", "车型主数据", "vehicle_model_masterdata"),
             ("user_login_status", "用户登录状态", "user_login_status"),
+            # v4.8.1: 林肯之道专属账号级只读端点（5.8.0 逆向）——仅
+            # brand==lincoln 时 coordinator 探测，键存在（探测成功）才创建；
+            # 福特派账号不探测、键不存在不创建，零副作用。
+            ("lincoln_member_info", "林肯会员信息", "lincoln_member"),
+            ("lincoln_my_page", "林肯我的页面", "lincoln_page"),
+            ("lwosb_bookings", "取送车预约", "lwosb_bookings"),
+            ("lwosb_order_status", "取送车预约状态", "lwosb_status"),
         ):
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
