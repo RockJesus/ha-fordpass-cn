@@ -458,6 +458,16 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     ccf = coordinator.data.get("ccfeatures")
     if isinstance(ccf, dict) and capability.parse_cloud_features(ccf):
         sensors.append(FordPassCloudProbeSensor(coordinator))
+    # v4.6.3: 车辆服务信息（ccfeatures data 救援/客服/售后电话任一存在即创建
+    # ——全车型自动适配，无数据不建无用实体）。响应样例（2026-10-15 实机）：
+    # rsaNumber=4006501668 / contactNumber=4009213266 / afterSalesNumber=
+    # 4000031111 / videoManualUrl=... / featureData.authedFeatures="A4"。
+    _ccf_payload = ccf.get("data") if isinstance(ccf, dict) else None
+    if isinstance(_ccf_payload, dict) and (
+        _ccf_payload.get("rsaNumber") or _ccf_payload.get("contactNumber")
+        or _ccf_payload.get("afterSalesNumber")
+    ):
+        sensors.append(FordPassServiceInfoSensor(coordinator))
     # v3.1.13: 鸣笛命令状态（最近一次鸣笛的 announcestatus 结果；未触发时
     # 显示「未触发」，永远可用——v3.1.2 规则）
     sensors.append(FordPassAnnounceStatusSensor(coordinator))
@@ -1210,6 +1220,76 @@ class FordPassCloudProbeSensor(SensorEntity):
         attrs["feature_ids"] = ", ".join(f["raw"] for f in feats)
         for f in feats:
             attrs[f"capability_{f['id']:02x}"] = f"{f['zh']}（{f['en']}）"
+        return attrs
+
+
+class FordPassServiceInfoSensor(SensorEntity):
+    """车辆服务信息（v4.6.3）：补全 ccfeatures 响应中此前未接入的字段。
+
+    主值显示救援/客服/售后电话（按优先级取第一个有值的），属性带齐：
+    rsaNumber（救援）、contactNumber（客服）、afterSalesNumber（售后）、
+    videoManualUrl（视频说明书）、featureData.availableFeatures（可用功能
+    原始码）、authedFeatures（已授权功能，编码含义逐车型确认前保留原文）、
+    specifiedFeatures（指定功能）。有任一号码数据才创建（全车型自动适配）。
+    """
+
+    _attr_has_entity_name = False
+    _attr_icon = "mdi:phone-in-talk"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-service_info"
+        self._attr_name = "车辆服务信息"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success  # 与主刷新状态一致
+
+    def _payload(self) -> dict | None:
+        ccf = (self.coordinator.data or {}).get("ccfeatures")
+        if not isinstance(ccf, dict):
+            return None
+        p = ccf.get("data")
+        return p if isinstance(p, dict) else None
+
+    @property
+    def native_value(self) -> str:
+        p = self._payload()
+        if not p:
+            return "暂无服务信息"
+        for key, label in (
+            ("rsaNumber", "救援"),
+            ("contactNumber", "客服"),
+            ("afterSalesNumber", "售后"),
+        ):
+            v = p.get(key)
+            if v:
+                return f"{label} {v}"
+        return "暂无服务信息"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        p = self._payload()
+        attrs: dict[str, Any] = {
+            "last_poll": (
+                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+                if self.coordinator.last_poll
+                else None
+            )
+        }
+        if not p:
+            return attrs
+        attrs["rsa_number"] = p.get("rsaNumber")
+        attrs["contact_number"] = p.get("contactNumber")
+        attrs["after_sales_number"] = p.get("afterSalesNumber")
+        attrs["video_manual_url"] = p.get("videoManualUrl")
+        fd = p.get("featureData")
+        if isinstance(fd, dict):
+            attrs["available_features"] = fd.get("availableFeatures")
+            attrs["authed_features"] = fd.get("authedFeatures")
+            attrs["specified_features"] = fd.get("specifiedFeatures")
+        attrs["timestamp"] = p.get("timestamp")
         return attrs
 
 
