@@ -776,6 +776,18 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
 
+    _STATE_ZH = {
+        "locked": "已锁定",
+        "unlocked": "已解锁",
+        "jammed": "卡住",
+        "locking": "锁定中",
+        "unlocking": "解锁中",
+        "on": "已开启",
+        "off": "已关闭",
+        "true": "是",
+        "false": "否",
+    }
+
     async def _log_refresh_states(self) -> None:
         """v4.7.7: 手动刷新完成后逐实体写刷新后的状态值（替代笼统的
         「手动刷新完成」消息）。
@@ -785,14 +797,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state 为最后按下时间戳（无状态含义），跳过。单条失败不影响其余。
         """
         for eid in self.all_entity_ids():
-            if eid.startswith("button."):
-                continue
+            if eid.startswith(("button.", "image.")):
+                continue  # button=按下时间戳 / image=图片URL，无状态含义
             st = self.hass.states.get(eid)
             if st is None:
                 continue
             unit = st.attributes.get("unit_of_measurement", "")
-            name = st.attributes.get("friendly_name") or eid
-            message = f"{name}：{st.state}{unit}"
+            # v4.7.8: 消息只显示状态值（实体名由活动历史关联显示）——
+            # 锁/开关类翻译成中文，数字类保留数值+单位（如 36%）。
+            value = self._STATE_ZH.get(st.state, st.state)
+            message = f"{value}{unit}"
             try:
                 await self.hass.services.async_call(
                     "logbook", "log",
