@@ -1092,6 +1092,103 @@ class FordPassApi:
             except json.JSONDecodeError:
                 return {"raw": text}
 
+    async def v5_refresh_status(self, vin: str) -> dict[str, Any]:
+        """PUT /api/vehicles/v5/{vin}/status — v5 主动刷新车况（v4.7.2）。
+
+        逆向 Dart：sendRefreshVehicleStatusRequest = PUT /status，返回
+        commandId → GET /statusrefresh/{commandId} 轮询。实测（2026-10-15）
+        网关当前对 PUT 命令返回 500 FIG 错误（与 IDUL 同因：v5 PUT/DELETE
+        命令通道暂不可用，仅 POST honk 正常）——按钮点击会如实报错提示，
+        网关恢复后自动可用。
+        """
+        url = V5_BASE_URL + PATH_V5_STATUS.format(vin=vin)
+        async with self._session.request("PUT", url, headers=self._headers()) as resp:
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass v5 status -> 非文本响应 %d bytes (status=%s)",
+                    len(raw_bytes), resp.status,
+                )
+                raise FordPassApiError(resp.status, "网关返回非文本响应（瞬时异常）") from None
+            self._log.debug("FordPass v5 status PUT -> %s %s", resp.status, text[:400])
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    async with self._session.request("PUT", url, headers=self._headers()) as resp2:
+                        text2 = await resp2.text()
+                        if resp2.status >= 400:
+                            raise FordPassApiError(resp2.status, text2[:300])
+                        if not text2:
+                            return {}
+                        try:
+                            return json.loads(text2)
+                        except json.JSONDecodeError:
+                            return {"raw": text2}
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass v5 status token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
+            if resp.status >= 400:
+                raise FordPassApiError(resp.status, text[:300])
+            if not text:
+                return {}
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"raw": text}
+
+    async def v5_refresh_status_poll(self, vin: str, command_id: str) -> dict[str, Any]:
+        """GET /api/vehicles/v5/{vin}/statusrefresh/{commandId} — v5 刷新命令轮询。"""
+        url = V5_BASE_URL + PATH_V5_STATUSREFRESH.format(vin=vin, commandId=command_id)
+        async with self._session.request("GET", url, headers=self._headers()) as resp:
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass v5 statusrefresh -> 非文本响应 %d bytes (status=%s)",
+                    len(raw_bytes), resp.status,
+                )
+                raise FordPassApiError(resp.status, "网关返回非文本响应（瞬时异常）") from None
+            self._log.debug("FordPass v5 statusrefresh -> %s %s", resp.status, text[:400])
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    async with self._session.request("GET", url, headers=self._headers()) as resp2:
+                        text2 = await resp2.text()
+                        if resp2.status >= 400:
+                            raise FordPassApiError(resp2.status, text2[:300])
+                        if not text2:
+                            return {}
+                        try:
+                            return json.loads(text2)
+                        except json.JSONDecodeError:
+                            return {"raw": text2}
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass v5 statusrefresh token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
+            if resp.status >= 400:
+                raise FordPassApiError(resp.status, text[:300])
+            if not text:
+                return {}
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"raw": text}
+
     async def honk_cancel_command(self, vin: str) -> dict[str, Any]:
         """DELETE /api/vehicles/v5/{vin}/honk — 鸣笛寻车「关」通道。
 
