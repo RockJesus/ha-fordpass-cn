@@ -1325,6 +1325,7 @@ class FordPassServiceFieldSensor(SensorEntity):
         path: str | tuple[str, ...],
     ) -> None:
         self.coordinator = coordinator
+        self._key = key  # v4.6.7: 用于「可用功能」中文解析分支
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = name
         self._attr_icon = icon
@@ -1344,6 +1345,15 @@ class FordPassServiceFieldSensor(SensorEntity):
 
     @property
     def native_value(self) -> str:
+        # v4.6.7: 「可用功能」→ 中文含义（capability.parse_cloud_features 的
+        # VDS_FEATURE_NAMES 24 项枚举：03=计划保养服务/04=指南/05=道路救援等）；
+        # 原始功能码保留在属性 raw_codes 供排查/自动化。
+        if self._key == "available_features":
+            feats = capability.parse_cloud_features(
+                (self.coordinator.data or {}).get("ccfeatures")
+            )
+            if feats:
+                return "、".join(f["zh"] for f in feats)
         v = _service_field_value(self._payload() or {}, self._path)
         if v is None or v == "":
             return "暂无"
@@ -1351,13 +1361,17 @@ class FordPassServiceFieldSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {
-            "last_poll": (
-                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-                if self.coordinator.last_poll
-                else None
-            )
-        }
+        attrs: dict[str, Any] = {}
+        if self._key == "available_features":
+            raw = _service_field_value(self._payload() or {}, self._path)
+            if raw is not None:
+                attrs["raw_codes"] = raw  # 原始功能码（03,04,...）
+        attrs["last_poll"] = (
+            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+            if self.coordinator.last_poll
+            else None
+        )
+        return attrs
 
 
 class FordPassOilLifeSensor(_ServiceInfoSensor):
