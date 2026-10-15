@@ -1288,7 +1288,9 @@ _SERVICE_INFO_FIELDS: list[tuple[str, str, str, str | tuple[str, ...]]] = [
     ("contact_number", "客服电话", "mdi:phone", "contactNumber"),
     ("after_sales_number", "售后电话", "mdi:phone-in-talk", "afterSalesNumber"),
     ("video_manual", "视频说明书", "mdi:book-open-variant", "videoManualUrl"),
-    ("available_features", "可用功能", "mdi:check-decagram", ("featureData", "availableFeatures")),
+    # v4.6.8: 「可用功能」与「云端能力探测」（FordPassCloudProbeSensor，同源
+    # availableFeatures 位图，信息更全：中文+feature_ids+capability_XX）重复，
+    # 删除本实体；旧条目由 setup 清理段自动移除。
     ("authed_features", "已授权功能", "mdi:shield-check", ("featureData", "authedFeatures")),
     ("specified_features", "指定功能", "mdi:star-check", ("featureData", "specifiedFeatures")),
 ]
@@ -1345,15 +1347,6 @@ class FordPassServiceFieldSensor(SensorEntity):
 
     @property
     def native_value(self) -> str:
-        # v4.6.7: 「可用功能」→ 中文含义（capability.parse_cloud_features 的
-        # VDS_FEATURE_NAMES 24 项枚举：03=计划保养服务/04=指南/05=道路救援等）；
-        # 原始功能码保留在属性 raw_codes 供排查/自动化。
-        if self._key == "available_features":
-            feats = capability.parse_cloud_features(
-                (self.coordinator.data or {}).get("ccfeatures")
-            )
-            if feats:
-                return "、".join(f["zh"] for f in feats)
         v = _service_field_value(self._payload() or {}, self._path)
         if v is None or v == "":
             return "暂无"
@@ -1361,17 +1354,13 @@ class FordPassServiceFieldSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        attrs: dict[str, Any] = {}
-        if self._key == "available_features":
-            raw = _service_field_value(self._payload() or {}, self._path)
-            if raw is not None:
-                attrs["raw_codes"] = raw  # 原始功能码（03,04,...）
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
-        return attrs
+        return {
+            "last_poll": (
+                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+                if self.coordinator.last_poll
+                else None
+            )
+        }
 
 
 class FordPassOilLifeSensor(_ServiceInfoSensor):
