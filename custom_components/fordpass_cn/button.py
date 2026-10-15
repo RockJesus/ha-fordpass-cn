@@ -102,6 +102,9 @@ async def async_setup_entry(
         # v3.3.4: 「手动刷新车辆状态」——所有车型都有（合并原
         # 「请求车机刷新状态」「手动拉取最新状态」两按钮）
         buttons.append(FordPassManualRefreshButton(coordinator))
+        # v4.7.2: v5 主动刷新车况 + v5 刷新轮询（send-command 手动刷新保留）
+        buttons.append(FordPassV5RefreshButton(coordinator))
+        buttons.append(FordPassV5RefreshStatusButton(coordinator))
         # v4.7.1: 分车门锁定（IDUL）——逆向 v5 命令族新增能力（send-command
         # 网关只有整车 DoorLock）。按福特 v5 惯例 doortype 四门枚举；云端
         # 不支持的车型按下返回网关明确报错（如实提示，创建条件与整车锁一致）。
@@ -479,6 +482,108 @@ class FordPassButton(ButtonEntity):
                 await self.coordinator.force_refresh()
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.warning("FordPass refresh after %s failed: %s", self._command, exc)
+
+
+class FordPassV5RefreshButton(ButtonEntity):
+    """v5 主动刷新车况（v4.7.2）——PUT /api/vehicles/v5/{vin}/status。
+
+    Dart 还原：sendRefreshVehicleStatusRequest = PUT /status → commandId →
+    GET /statusrefresh/{commandId} 轮询。与 send-command 手动刷新按钮并行
+    （两者均保留）。实测网关当前对 PUT 命令返回 500 FIG（v5 PUT/DELETE
+    命令通道暂不可用，仅 POST honk 正常）——点击如实报错提示，网关恢复
+    后自动可用。
+    """
+
+    _attr_icon = "mdi:cloud-refresh"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-v5_refresh"
+        self._attr_name = "v5 主动刷新车况"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # 与手动刷新按钮一致：恒可点，失败如实报错
+
+    async def async_press(self) -> None:
+        """PUT /status → 存 commandId → 轮询 statusrefresh → 刷新实体。"""
+        resp: Any = None
+        try:
+            resp = await self.coordinator.api.v5_refresh_status(self.coordinator.vin)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "FordPass v5 主动刷新失败: %s（v5 PUT 命令通道网关 500 属已知状态，"
+                "可改用 send-command 手动刷新；网关恢复后自动可用）", exc,
+            )
+            raise
+        cid: str | None = None
+        if isinstance(resp, dict):
+            cid = resp.get("commandId")
+            if not cid:
+                inner = resp.get("data")
+                if isinstance(inner, dict):
+                    cid = inner.get("commandId")
+        if not cid:
+            _LOGGER.warning("FordPass v5 主动刷新: 响应无 commandId, resp=%s",
+                            (str(resp)[:300] if resp is not None else "None"))
+        self.coordinator._v5_refresh_cid = str(cid) if cid else None
+        if cid:
+            _LOGGER.info("FordPass v5 主动刷新 commandId=%s，轮询命令状态", cid)
+            for _ in range(5):
+                await asyncio.sleep(2)
+                try:
+                    st = await self.coordinator.api.v5_refresh_status_poll(
+                        self.coordinator.vin, str(cid))
+                    _LOGGER.info("FordPass v5 statusrefresh: %s", str(st)[:200])
+                    if isinstance(st, dict):
+                        inner = st.get("data") or st
+                        if str(inner.get("commandStatus") or "").lower() in (
+                            "success", "complete", "completed", "1",
+                        ):
+                            break
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug("FordPass v5 statusrefresh 轮询异常（继续）: %s", exc)
+                    break
+        try:
+            await self.coordinator.force_refresh()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass v5 主动刷新后拉取状态失败: %s", exc)
+
+
+class FordPassV5RefreshStatusButton(ButtonEntity):
+    """v5 刷新轮询（v4.7.2）——查询最近一次 v5 主动刷新的命令状态。
+
+    GET /api/vehicles/v5/{vin}/statusrefresh/{commandId}；未先执行过
+    v5 主动刷新时提示先点击「v5 主动刷新车况」。
+    """
+
+    _attr_icon = "mdi:refresh-circle"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-v5_refresh_status"
+        self._attr_name = "v5 刷新轮询"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_press(self) -> None:
+        cid = self.coordinator._v5_refresh_cid
+        if not cid:
+            _LOGGER.warning("FordPass v5 刷新轮询: 无最近 commandId，请先点击「v5 主动刷新车况」")
+            raise HomeAssistantError("无最近 v5 刷新命令，请先点击「v5 主动刷新车况」")
+        try:
+            st = await self.coordinator.api.v5_refresh_status_poll(
+                self.coordinator.vin, cid)
+            _LOGGER.info("FordPass v5 刷新轮询 -> %s", str(st)[:300])
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("FordPass v5 刷新轮询失败: %s", exc)
+            raise
 
 
 class FordPassManualRefreshButton(ButtonEntity):

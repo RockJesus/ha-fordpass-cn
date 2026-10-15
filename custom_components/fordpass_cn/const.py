@@ -21,6 +21,11 @@ PATH_V5_HONK = "/api/vehicles/v5/{vin}/honk"
 # rear-right；DELETE 下发返回 commandId（两段式：下发→轮询）。
 PATH_V5_DOOR_LOCK = "/api/vehicles/v5/{vin}/door/{doortype}/lock"
 PATH_V5_DOOR_LOCK_STATUS = "/api/vehicles/v5/{vin}/door/lock/{commandId}"
+# v5 主动刷新车况（v4.7.2）：PUT /status = sendRefreshVehicleStatusRequest
+# （Dart 还原；实测网关当前 500 FIG——与 IDUL 同因，v5 PUT/DELETE 命令
+# 通道暂不可用，实体点击如实报错，网关恢复后自动可用）
+PATH_V5_STATUS = "/api/vehicles/v5/{vin}/status"
+PATH_V5_STATUSREFRESH = "/api/vehicles/v5/{vin}/statusrefresh/{commandId}"
 
 # 鸣笛寻车设置（v3.1.4）——「保存上传到车机」真云端通道：
 # 账户云端持久化 = UserPreferenceV2（2026-10-02 逆向 libapp.so 还原，实机验证）：
