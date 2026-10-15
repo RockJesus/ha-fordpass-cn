@@ -776,6 +776,36 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
 
+    async def _log_refresh_states(self) -> None:
+        """v4.7.7: 手动刷新完成后逐实体写刷新后的状态值（替代笼统的
+        「手动刷新完成」消息）。
+
+        每个实体的活动历史显示「实体名：状态值(单位)」——用户可看到
+        各实体刷新后的真实状态（车况未变时亦显示当前值）。button 实体
+        state 为最后按下时间戳（无状态含义），跳过。单条失败不影响其余。
+        """
+        for eid in self.all_entity_ids():
+            if eid.startswith("button."):
+                continue
+            st = self.hass.states.get(eid)
+            if st is None:
+                continue
+            unit = st.attributes.get("unit_of_measurement", "")
+            name = st.attributes.get("friendly_name") or eid
+            message = f"{name}：{st.state}{unit}"
+            try:
+                await self.hass.services.async_call(
+                    "logbook", "log",
+                    {
+                        "name": self._vehicle_name or "福特派互联",
+                        "message": message,
+                        "domain": DOMAIN,
+                        "entity_id": eid,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - 单条失败不影响其余
+                self.logger.debug("fordpass_cn refresh state logbook failed: %s", eid, exc_info=True)
+
     def all_entity_ids(self) -> list[str]:
         """v4.5.10: 集成全部实体 entity_id 列表（活动事件关联用）。
 
