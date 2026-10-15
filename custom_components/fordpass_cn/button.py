@@ -152,6 +152,14 @@ async def async_setup_entry(
         # v3.7.2: 家充桩解绑按钮——smartwallbox 探测到绑定桩才创建
         if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
             buttons.append(FordPassWallboxUnbindButton(coordinator))
+        # v4.7.3: 家充桩 BLE 自动认证按钮——smartwallbox 探测到绑定桩才创建
+        # （6.16.0 逆向端点 auto/charging/ble/add/v3，桩车 BLE 自动授权；
+        # 纯油/无绑定桩车型不创建，全车型适配）。注意：汽车 BLE 车控 15 条
+        # 指令（制冷/制热/熄火/门锁/车窗/寻车/前备箱等）是纯 BLE 物理链路
+        # （车旁 + PAAK 安全会话），云端无 HTTP 通道，HA 云集成不可执行，
+        # 全车型用户请用手机在车旁操作福特派 App——README 有边界说明。
+        if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
+            buttons.append(FordPassWallboxBleAddButton(coordinator))
         # v4.2.4: 清空预约出发/充电——cevs 写操作（6.16.0 逆向确认
         # departuretimes/deleteall）。仅 cevs 车型（fuelType ∈ E/P/H 系）
         # 且探测到预约计划数据才创建；纯油/柴油车不创建（探测 200 ≠ 车型
@@ -210,6 +218,55 @@ class FordPassWallboxUnbindButton(ButtonEntity):
             await self.coordinator.api.wallbox_unbind(self.coordinator.vin, wid)
         except Exception as err:  # noqa: BLE001
             raise HomeAssistantError(f"解绑家充桩失败: {err}") from err
+
+
+class FordPassWallboxBleAddButton(ButtonEntity):
+    """家充桩 BLE 自动认证（v4.7.3）：POST auto/charging/ble/add/v3。
+
+    6.16.0 逆向端点——桩车 BLE 自动授权：授权后插枪即由桩与车 BLE
+    自动配对认证（手机不在场也能启动充电）。仅 smartwallbox 探测到
+    绑定桩的车型创建；wallboxId 取默认桩。云端失败如实抛错。
+    """
+
+    _attr_icon = "mdi:bluetooth-connect"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-wallbox_ble_add"
+        self._attr_name = "家充桩 BLE 自动认证"
+        self._attr_has_entity_name = False
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    def _wallbox_id(self) -> str | None:
+        wb = self.coordinator.smartwallbox or {}
+        bind = wb.get("wallbox_binding")
+        data = bind.get("data") if isinstance(bind, dict) else None
+        if not isinstance(data, dict):
+            return None
+        for key in ("wallboxId", "defaultWallboxId", "id", "equipmentId"):
+            v = data.get(key)
+            if v:
+                return str(v)
+        lst = data.get("list") or data.get("wallboxList")
+        if isinstance(lst, list) and lst and isinstance(lst[0], dict):
+            for key in ("wallboxId", "id", "equipmentId", "serialNumber"):
+                v = lst[0].get(key)
+                if v:
+                    return str(v)
+        return None
+
+    async def async_press(self) -> None:
+        wid = self._wallbox_id()
+        if not wid:
+            raise HomeAssistantError("未找到已绑定的家充桩")
+        try:
+            await self.coordinator.api.wallbox_ble_add(self.coordinator.vin, wid)
+        except Exception as err:  # noqa: BLE001
+            raise HomeAssistantError(f"家充桩 BLE 自动认证失败: {err}") from err
 
 
 class FordPassMarkReadButton(ButtonEntity):
