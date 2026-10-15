@@ -152,6 +152,17 @@ PATH_ACTIVE_ALERT = "/api/cnxapi-cds/v1/vha/activealert"
 # activealert 并列的旧版独立端点，结构化为告警列表）。只读 GET 探测，
 # 探测到数据才创建「车辆告警列表」传感器（空列表显示「无告警」）。
 PATH_ACTIVE_ALERT_LIST = "/api/v1/activealertlist"
+
+# 林肯之道专属端点（5.8.0 逆向，2026-10-15）：
+# 与福特派共用 CNESL/CNXAPI 网关，林肯专属命名空间：cnesl-lincoln-club
+# （林肯俱乐部会员）与 cnxapi-lwosb（取送车/代驾服务总线）。端点↔动词配对
+# 逆向为 0%（动态部分阻塞），按只读 GET 探测接入——探测到数据才创建、
+# 404/业务拒绝落盘不重探（与既有账号级探测一致）。
+PATH_LINCOLN_MEMBER_INFO = "/api/cnesl-lincoln-club/v1/member-info"
+PATH_LINCOLN_MY_PAGE = "/api/cnesl-lincoln-club/v1/my-page"
+PATH_LWOSB_BOOKINGS = "/api/cnxapi-lwosb/v2/app/bookings"
+PATH_LWOSB_ORDER_STATUS = "/api/cnxapi-lwosb/v2/app/bookingorderstatus"
+
 # OTA 设置状态（v3.1.3，实测 2026-10-02）：GET /api/alert/v1/ota/setting-info
 # 走标准 R3 签名（timestamp+sign+encryptedVin/xjw）返回 HTTP 200；同族的
 # ota/detail、ota/versions 在锐际上被服务端拒绝（errorCode 206004
@@ -500,6 +511,8 @@ BRAND_PROFILE = {
         "b2c_policy": None,
         "b2c_client_id": None,
         "b2c_redirect": None,
+        # v4.8.1: 林肯之道 5.8.0 逆向确认包名（X-Requested-With 客户端指纹）
+        "app_package": "com.lincoln.lincolnwaycn",
         "ready": False,
     },
 }

@@ -1820,6 +1820,61 @@ class FordPassApi:
             return {"signed": True, "raw": str(data)[:200]}
         return None
 
+    # -------------------------------------------------- lincoln exclusive
+    async def _probe_lincoln_get(self, path: str, tag: str) -> dict[str, Any] | None:
+        """林肯专属只读 GET 探测（v4.8.1，林肯之道 5.8.0 逆向）。
+
+        动词未逆向配对（静态 100%/动态 0%），按只读 GET 探测：HTTP 200
+        业务成功视为该品牌账号有数据（探测到才创建）；404 = 确定性无该
+        服务转 ProbeRejected 落盘（TTL 内不重探）；其它异常降噪返回 None。
+        """
+        try:
+            data = await self._request("GET", path)
+        except FordPassApiError as exc:
+            if exc.code in (404,):
+                raise FordPassProbeRejected(exc.code, str(exc)) from exc
+            self._log.debug("Lincoln %s failed: %s", tag, exc)
+            return None
+        except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+            self._log.debug("Lincoln %s failed: %s", tag, exc)
+            return None
+        if isinstance(data, dict):
+            if "errorCode" in data or "error" in data:
+                self._log.info(
+                    "Lincoln %s -> (rejected: %s)",
+                    tag, json.dumps(data, ensure_ascii=False)[:200],
+                )
+                return None
+            self._log.info(
+                "Lincoln %s probe -> %s",
+                tag, json.dumps(data, ensure_ascii=False)[:800],
+            )
+            return {"signed": True, "data": data}
+        if data is not None:
+            self._log.info("Lincoln %s probe -> raw %s", tag, str(data)[:200])
+            return {"signed": True, "raw": str(data)[:200]}
+        return None
+
+    async def probe_lincoln_member_info(self) -> dict[str, Any] | None:
+        """GET /api/cnesl-lincoln-club/v1/member-info — 林肯俱乐部会员信息。"""
+        return await self._probe_lincoln_get(
+            PATH_LINCOLN_MEMBER_INFO, "member-info"
+        )
+
+    async def probe_lincoln_my_page(self) -> dict[str, Any] | None:
+        """GET /api/cnesl-lincoln-club/v1/my-page — 林肯「我的页面」聚合。"""
+        return await self._probe_lincoln_get(PATH_LINCOLN_MY_PAGE, "my-page")
+
+    async def probe_lwosb_bookings(self) -> dict[str, Any] | None:
+        """GET /api/cnxapi-lwosb/v2/app/bookings — 取送车/代驾预约列表。"""
+        return await self._probe_lincoln_get(PATH_LWOSB_BOOKINGS, "lwosb-bookings")
+
+    async def probe_lwosb_order_status(self) -> dict[str, Any] | None:
+        """GET /api/cnxapi-lwosb/v2/app/bookingorderstatus — 预约订单状态。"""
+        return await self._probe_lincoln_get(
+            PATH_LWOSB_ORDER_STATUS, "lwosb-order-status"
+        )
+
     # ------------------------------------------------------------ ota setting
     async def get_ota_setting(self, vin: str) -> dict[str, Any] | None:
         """GET /api/alert/v1/ota/setting-info — OTA 设置状态（v3.1.3）。
