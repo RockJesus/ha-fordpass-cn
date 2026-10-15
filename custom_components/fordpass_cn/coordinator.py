@@ -764,15 +764,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
-            eid = reg.async_get_entity_id(
+            return reg.async_get_entity_id(
                 "sensor", DOMAIN, f"{self.vin}-vehicle_info"
             )
-            if eid:
-                return eid
-            # v4.7.6: "车辆信息"传感器已删除（用户要求）——回退到 lock
-            # 实体（unique_id={vin}-lock，每车稳定存在），保证活动事件在
-            # 集成详情页活动标签可见（entity_id=None 会被设备过滤）。
-            return reg.async_get_entity_id("lock", DOMAIN, f"{self.vin}-lock")
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
 
