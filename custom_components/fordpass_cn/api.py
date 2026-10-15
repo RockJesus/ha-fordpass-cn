@@ -992,6 +992,106 @@ class FordPassApi:
             except json.JSONDecodeError:
                 return {"raw": text}
 
+    async def idul_lock(self, vin: str, doortype: str) -> dict[str, Any]:
+        """DELETE /api/vehicles/v5/{vin}/door/{doortype}/lock — 分车门锁定（IDUL）。
+
+        逆向（福特派 6.16.0 Dart 深度反编译，2026-10-15）：
+        FordRemoteControlApiService::sendIDULCommand = DELETE + doortype 路径
+        参数，指定单门上锁（如 front-left=驾驶员门）。v5 网关明文 JSON（无
+        wbsk 加密信封），返回 commandId → getIDULCommandState 轮询。
+        doortype 按福特 v5 惯例：front-left/front-right/rear-left/rear-right；
+        实测若个别车型枚举不同会返回网关明确报错（如实提示用户）。
+        """
+        url = V5_BASE_URL + PATH_V5_DOOR_LOCK.format(vin=vin, doortype=doortype)
+        async with self._session.request("DELETE", url, headers=self._headers()) as resp:
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass v5 IDUL -> 非文本响应 %d bytes (status=%s): %s",
+                    len(raw_bytes), resp.status, raw_bytes[:80].hex(),
+                )
+                raise FordPassApiError(
+                    resp.status, "网关返回非文本响应（瞬时异常）"
+                ) from None
+            self._log.debug("FordPass v5 IDUL %s DELETE -> %s %s", doortype, resp.status, text[:400])
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    async with self._session.request("DELETE", url, headers=self._headers()) as resp2:
+                        text2 = await resp2.text()
+                        if resp2.status >= 400:
+                            raise FordPassApiError(resp2.status, text2[:300])
+                        if not text2:
+                            return {}
+                        try:
+                            return json.loads(text2)
+                        except json.JSONDecodeError:
+                            return {"raw": text2}
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass v5 IDUL token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
+            if resp.status >= 400:
+                raise FordPassApiError(resp.status, text[:300])
+            if not text:
+                return {}
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"raw": text}
+
+    async def idul_lock_status(self, vin: str, command_id: str) -> dict[str, Any]:
+        """GET /api/vehicles/v5/{vin}/door/lock/{commandId} — IDUL 分车门命令状态。"""
+        url = V5_BASE_URL + PATH_V5_DOOR_LOCK_STATUS.format(vin=vin, commandId=command_id)
+        async with self._session.request("GET", url, headers=self._headers()) as resp:
+            try:
+                text = await resp.text()
+            except UnicodeDecodeError:
+                raw_bytes = await resp.read()
+                self._log.warning(
+                    "FordPass v5 IDUL status -> 非文本响应 %d bytes (status=%s)",
+                    len(raw_bytes), resp.status,
+                )
+                raise FordPassApiError(resp.status, "网关返回非文本响应（瞬时异常）") from None
+            self._log.debug("FordPass v5 IDUL status -> %s %s", resp.status, text[:400])
+            if resp.status == 401 and self._refresh_token and not self._retrying:
+                self._retrying = True
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                    async with self._session.request("GET", url, headers=self._headers()) as resp2:
+                        text2 = await resp2.text()
+                        if resp2.status >= 400:
+                            raise FordPassApiError(resp2.status, text2[:300])
+                        if not text2:
+                            return {}
+                        try:
+                            return json.loads(text2)
+                        except json.JSONDecodeError:
+                            return {"raw": text2}
+                except Exception as exc:  # noqa: BLE001
+                    self._log.error("FordPass v5 IDUL status token refresh failed: %s", exc)
+                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
+                finally:
+                    self._retrying = False
+            if resp.status >= 400:
+                raise FordPassApiError(resp.status, text[:300])
+            if not text:
+                return {}
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"raw": text}
+
     async def honk_cancel_command(self, vin: str) -> dict[str, Any]:
         """DELETE /api/vehicles/v5/{vin}/honk — 鸣笛寻车「关」通道。
 
