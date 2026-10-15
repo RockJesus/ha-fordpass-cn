@@ -2638,6 +2638,18 @@ class FordPassApi:
         body = {"wallboxId": wallbox_id}
         return await self._request("POST", PATH_SMARTWALLBOX_UNBIND, body)
 
+    async def wallbox_ble_add(self, vin: str, wallbox_id: str) -> dict[str, Any]:
+        """家充桩 BLE 自动认证（v4.7.3）：POST auto/charging/ble/add/v3。
+
+        6.16.0 独立逆向确认（桩车 BLE 自动授权——插枪后桩与车 BLE
+        自动配对认证，无需手机在场）。仅 smartwallbox 探测到绑定桩的
+        车型创建按钮；纯油/柴油车不创建（无绑定桩）。请求体按端点收窄
+        只带 wallboxId（同 unbind 范式）；若网关要求额外字段，日志会给出
+        Unrecognized field 提示，届时按错误消息补字段（见 lessons.md）。
+        """
+        body = {"wallboxId": wallbox_id}
+        return await self._request("POST", PATH_SMARTWALLBOX_BLE_ADD, body)
+
     # ------------------------------------------------ v3.5.0 新增命令/查询
     async def mark_messages_read(
         self, category_id: str | None = None, message_id: str | None = None

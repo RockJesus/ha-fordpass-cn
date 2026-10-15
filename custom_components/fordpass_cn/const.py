@@ -336,6 +336,7 @@ PATH_EVSS_EVENTS_V3 = "/api/evss/chargers/v3/events"
 PATH_EVSS_EVALUATE_URL = "/api/evss/orders/v1/evaluate/evaluate-url"
 # --- 家充桩 BLE 充电车辆信息（smartwallbox，探测到绑定桩才创建） ---
 PATH_WALLBOX_BLE_VEHICLES = "/api/smartwallbox/processor/auto/charging/ble/queryVehicleInfos/v3"
+PATH_SMARTWALLBOX_BLE_ADD = "/api/smartwallbox/processor/auto/charging/ble/add/v3"
 # --- app-init 域（全车型：应用设置/车型主数据，公开配置类只读） ---
 PATH_APP_INIT_SETTINGS = "/api/app-init/v1/app-setting/info"
 PATH_VEHICLE_MODEL_MASTERDATA = "/api/app-init/vehicleModel/v1/masterdata"
