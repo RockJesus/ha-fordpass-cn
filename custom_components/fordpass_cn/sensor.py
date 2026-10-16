@@ -103,8 +103,9 @@ async def async_setup_entry(
                     partial(_Entity.async_write_ha_state, _ent)
                 )
             )
-    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
-        pass
+        _LOGGER.warning("fordpass_cn v4.8.6 refresh-listener registered for %d sensor entities", len(all_sensors))
+    except Exception as e:  # noqa: BLE001 - 注册失败不影响实体创建
+        _LOGGER.warning("fordpass_cn v4.8.6 refresh-listener FAILED for sensor: %s", e)
 
 
     # v3.5.8: 清理升级残留的旧 sensor 实体——新版不再创建（如双后轮 value=0
