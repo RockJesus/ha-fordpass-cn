@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.8.9**（2026-10-16）：**修复车辆定位实体 unavailable（NameError）**——device_tracker 的 `extra_state_attributes` 里 v4.8.5 引入的 `attrs['last_poll']` 使用了未定义变量 `attrs`（NameError）→ 定位实体写状态失败、永远 unavailable。已并入返回字典修复。v4.8.8 后 9 个控制类实体中 8 个恢复显示，本版补上最后一个（定位）。
 - **v4.8.8**（2026-10-16）：**真根因修复——控制类实体 unavailable 彻底解决**。v4.8.7 只改 `available` 语义未解决实体添加失败：mixin 的 `extra_state_attributes` 里 `super().extra_state_attributes()` 在 HA 2026.10 上抛 `TypeError: 'NoneType' object is not callable`（基类该属性是 @property 返回 None，`except AttributeError` 捕获不到 TypeError）→ 实体 `Error adding entity` → 永远 unavailable。现统一取值（属性→dict 直接用、方法→调用、None→跳过），实体添加成功；叠加 v4.8.7 的「有最后已知数据即可用 + 实体激活时强制写活跃状态」，所有控制类实体恢复显示并随每次刷新更新 `last_updated` 与活动记录。
 - **v4.8.7**（2026-10-16）：**修复控制类实体 unavailable**——lock/switch/select/device_tracker 的 `available` 由「刷新成功才可用」改为「有最后已知数据即可用」（云端瞬时失败/首次刷新未完成时保留最后已知状态正常显示，不再显示不可用）；实体激活时立即强制写一次活跃状态，覆盖历史恢复态（restored）残留导致的「永远 unavailable、不随刷新更新」问题。所有控制类实体在每次刷新后（含手动刷新）随车况数据更新 `last_updated` 与活动记录。
 - **v4.8.6**：修复 v4.8.5 两个缺陷——① 统一 `last_poll` 属性的 mixin 漏 `@property`，导致 lock/switch/select 控制类实体添加报 `TypeError: 'method' object is not iterable`（实体 unavailable）；② 刷新监听回调在实体 hass 注入前被预热刷新触发报 `RuntimeError: hass is None`——已加 hass 判断包装。所有实体（含车况未变）随每次刷新更新 last_updated/活动日志。
