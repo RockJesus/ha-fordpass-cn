@@ -183,9 +183,8 @@ async def async_setup_entry(
                     partial(_Entity.async_write_ha_state, _ent)
                 )
             )
-        _LOGGER.warning("fordpass_cn v4.8.6 refresh-listener registered for %d button entities", len(buttons))
-    except Exception as e:  # noqa: BLE001 - 注册失败不影响实体创建
-        _LOGGER.warning("fordpass_cn v4.8.6 refresh-listener FAILED for button: %s", e)
+    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
+        pass
 
 
 
