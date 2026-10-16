@@ -316,8 +316,8 @@ def _is_err_resp(data: dict) -> bool:
     """业务错误响应判断：errorCode/error 字段存在或 status 非 0/200 → 车型无能力。
 
     v4.0.5: 提升为模块级（原为 probe_extra_endpoints 内嵌套函数，被
-    _probe_cevs_variant_once / probe_cevs_variant 引用会 NameError——
-    v3.7.22 注释只修了 wbk 一处，另两处漏改）。
+    _probe_cevs_variant_once / probe_cevs_auto 引用会 NameError——
+    v3.7.22 注释只修了 wbk 一处，另两处漏改；v4.9.6 移除手动探测服务）。
     """
     if "errorCode" in data or "error" in data:
         return True
@@ -2038,105 +2038,6 @@ class FordPassApi:
             )
         else:
             self.cevs_diag[key] = "ok(empty)"
-
-    async def probe_cevs_variant(self, vin: str, vname: str) -> None:
-        """手动触发 cevs 指定变体探测（service 调用，3 请求/次，防风控降级）。
-
-        v3.7.14: 变体 k{1,2,3}_{plain,vinxjw}——k1=libapp2048 / k2=feed_back2048 /
-        k3=cnesl4096，plain=RSA(VIN)、vinxjw=RSA(VIN+xjw)；**只对 vname 指定公钥发
-        1 次**（3 请求/次，保持风控安全）。departuretimes/commandstatus body 也
-        补 xjw（DTO 可能要求 {vin,xjw}）。plaintext 系列沿用 v3.7.13。
-        """
-        _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-        payloads = dict(self._cevs_variant_payloads(vin, xjw_now))
-        plaintext_ok = vname in ("plaintext", "plaintext_xjw")
-        wbk_ok = vname in ("wbk_plain", "wbk_shared", "wbk_cevs_plain", "wbk_cevs_shared", "wbk_cevs_ev")
-        if vname not in payloads and not plaintext_ok and not wbk_ok:
-            self.cevs_diag["variant_error"] = f"unknown variant {vname}"
-            return
-        pems: list[str] = [None]
-        if not plaintext_ok and not wbk_ok:
-            try:
-                kidx = int(vname.split("_")[0][1:]) - 1
-                pems = [CEVS_RSA_PUBKEYS[kidx]]
-            except Exception:
-                self.cevs_diag["variant_error"] = f"bad variant {vname}"
-                return
-        for name, path, body in (
-            ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
-            ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
-            ("cevs_command_status", PATH_CEVS_COMMAND_STATUS, {"vin": None}),
-        ):
-            b = dict(body)
-            if wbk_ok:
-                # v3.7.16: cevs 真实加密 = 白盒 AES-CBC（与 login/token refresh 同链，
-                # xjw 即 CBC IV hex）——此前全部 RSA 变体方向错误（服务器白盒解密失败）
-                key = f"{name}_wbk_{vname}"
-                try:
-                    # v3.7.19: encrypt_field 的 iv 参数是 bytes（hex str 会抛
-                    # 类型错误——此前 wbk_shared 一直静默失败）
-                    # v3.7.20: wbk_cevs_* 用 cevs 场景专用密钥（服务器按
-                    # cevs 场景解密，x_api 场景密文报 bad key）
-                    if vname.startswith("wbk_cevs_"):
-                        cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
-                        iv = None if vname == "wbk_cevs_plain" else bytes.fromhex(xjw_now)
-                        enc, xjw2 = await asyncio.to_thread(
-                            # v4.0.7: 默认参数绑定消除闭包晚绑定（B023，
-                            # cevs_crypto/iv 在外层 for name,path,body 循环内
-                            # 每轮重新赋值）。
-                            lambda c=cevs_crypto, iv=iv: c.encrypt_field(vin, iv),
-                        )
-                    else:
-                        iv = None if vname == "wbk_plain" else bytes.fromhex(xjw_now)
-                        enc, xjw2 = await asyncio.to_thread(
-                            lambda iv=iv: self.crypto.encrypt_field(vin, iv),
-                        )
-                    # v3.7.22: wbk_cevs_ev 用 encryptedVin 字段名（vcs 域通用）
-                    if vname == "wbk_cevs_ev":
-                        b["encryptedVin"] = enc
-                        b["xjw"] = xjw2
-                    else:
-                        b["vin"] = enc
-                        b["xjw"] = xjw2
-                    data = await self._request("POST", path, b, raw_body=True)
-                except Exception as exc:  # noqa: BLE001
-                    self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
-                    self._log.debug(
-                        "FordPass probe %s wbk_%s failed: %s", name, vname, exc,
-                    )
-                    continue
-                if isinstance(data, dict) and data:
-                    if _is_err_resp(data):
-                        self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
-                        continue
-                    self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
-                else:
-                    self.cevs_diag[key] = "ok(empty)"
-                continue
-            b["xjw"] = xjw_now  # 三端点统一补 xjw（DTO {vin,xjw} 假设）
-            for pem in pems:
-                if plaintext_ok:
-                    b["vin"] = vin
-                    key = f"{name}_rsa_{vname}"
-                    try:
-                        data = await self._request("POST", path, b, raw_body=True)
-                    except Exception as exc:  # noqa: BLE001
-                        self.cevs_diag[key] = f"failed: {str(exc)[:200]}"
-                        self._log.debug(
-                            "FordPass probe %s rsa_%s failed: %s", name, vname, exc,
-                        )
-                        continue
-                    if isinstance(data, dict) and data:
-                        if _is_err_resp(data):
-                            self.cevs_diag[key] = f"rejected: {json.dumps(data, ensure_ascii=False)[:200]}"
-                            continue
-                        self.cevs_diag[key] = f"ok: {json.dumps(data, ensure_ascii=False)[:200]}"
-                    else:
-                        self.cevs_diag[key] = "ok(empty)"
-                else:
-                    await self._probe_cevs_variant_once(
-                        name, path, b, vname, payloads[vname], pem,
-                    )
 
     async def probe_extra_endpoints(
         self, vin: str, fuel_type: str | None = None

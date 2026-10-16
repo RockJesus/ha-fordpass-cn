@@ -76,7 +76,6 @@
       "init": {
         "title": "FordPass China Options",
         "data": {
-          "scan_interval": "Status refresh interval (minutes)",
           "track_location": "Enable vehicle location tracking",
           "coordinate_system": "Coordinate system (WGS-84: GPS raw coordinates for HA/OSM maps; GCJ-02: GCJ coordinates as-is for AMap/Tencent maps)"
         }
