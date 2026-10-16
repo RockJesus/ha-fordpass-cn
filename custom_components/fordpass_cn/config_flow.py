@@ -29,7 +29,6 @@ from .const import (
     APPLICATION_ID,
     BRAND_FORD,
     BRAND_LABELS,
-    BRAND_LINCOLN,
     BRAND_PROFILE,
     CONF_BRAND,
     DEFAULT_BRAND,
