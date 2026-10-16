@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.9.2**（2026-10-16）：清理集成 data/ 目录无用文件 libwbsk_crypto_tool.so（v4.2.7 白盒 AES 纯 Python 化后零 .so 依赖，删除约 430KB）。
 - **v4.9.1**（2026-10-16）：车辆定位传感器 lat/lon 属性数值化（此前为字符串，不便自动化比较），v4.9.0 属性瘦身补漏。
 - **v4.9.0**（2026-10-16）：**实体属性全面瘦身与修正**。① 机油寿命数值化（state=百分比数值 + unit「%」，可图表化；归零/剩余公里移入属性）；② 保养计划清洗云端原文残留（「^」符号、项目前导空格），`plans` 属性由 6 档精简为最近 3 档（防存储膨胀）；③ 云端能力探测删除与 `capabilities` 重复的逐位 `capability_XX` 属性，未映射特性显示原始码（如「未定义特性(23)」）；④ 鸣笛设置云端状态不再暴露原始英文槽位（AnnouncementType/Duration 等重复且新旧槽位数值矛盾），只留解析后的中文类型与时长；⑤ 清理 `source_status: null`、空串等空值属性噪音；⑥ 车辆定位 lat/lon 数值化；⑦ 图片实体删除本地路径 `image_path` 噪音属性。
 - **v4.8.9**（2026-10-16）：**修复车辆定位实体 unavailable（NameError）**——device_tracker 的 `extra_state_attributes` 里 v4.8.5 引入的 `attrs['last_poll']` 使用了未定义变量 `attrs`（NameError）→ 定位实体写状态失败、永远 unavailable。已并入返回字典修复。v4.8.8 后 9 个控制类实体中 8 个恢复显示，本版补上最后一个（定位）。
