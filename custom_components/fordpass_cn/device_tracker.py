@@ -29,7 +29,24 @@ async def async_setup_entry(
     # availability + whether the coordinator fetches LBS data, so flipping
     # "track_location" in the options flow takes effect immediately without
     # restarting HA (see async_update_options in __init__.py).
-    async_add_entities([FordPassDeviceTracker(c) for c in coordinators])
+    trackers = [FordPassDeviceTracker(c) for c in coordinators]
+    async_add_entities(trackers)
+    # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
+    # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
+    # 实体 last_updated 每轮刷新（撤销"实体不随轮询刷新"）；失败轮不触发，
+    # 保留旧值。
+    try:
+        from functools import partial
+        from homeassistant.helpers.entity import Entity as _Entity
+        for _ent in trackers:
+            _ent.async_on_remove(
+                _ent.coordinator.async_add_listener(
+                    partial(_Entity.async_write_ha_state, _ent)
+                )
+            )
+    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
+        pass
+
 
 
 class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
@@ -90,6 +107,12 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
     @property
     def extra_state_attributes(self) -> dict:
         loc = self._location or {}
+        # v4.8.5: last_poll 每轮变化——控制类实体随轮询刷新
+        lp = getattr(self, 'coordinator', None)
+        attrs['last_poll'] = (
+            f"{lp.last_poll:%Y-%m-%d %H:%M:%S}" if lp and lp.last_poll else None
+        )
+
         return {
             "address": loc.get("address"),
             "upload_time": loc.get("uploadTime"),
