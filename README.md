@@ -4,7 +4,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 [![GitHub release](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn.svg)](https://github.com/RockJesus/ha-fordpass-cn/releases)
-[![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-blue.svg)](https://www.home-assistant.io)
+[![HA](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue.svg)](https://www.home-assistant.io)
 
 Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务：支持**手机号验证码 / 用户名密码**两种登录方式，远程控车、车辆状态监控、车辆定位追踪、预约出发/充电、家充桩管理、远程影像等全功能覆盖。
 
@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.9.5**（2026-10-16）：HA 规范合规补全——新增 `diagnostics.py`（官方诊断通道，配置/选项/协调器状态脱敏输出，不含凭据）；新增根目录 `CODEOWNERS`；补 `async_migrate_entry`（官方迁移钩子）；README 最低版本徽章对齐 hacs.json（2024.6+）。
 - **v4.9.4**（2026-10-16）：HA 官方发布规范合规补全——manifest 增加 `quality_scale: bronze`（官方推荐新集成至少 bronze）；ConfigFlow VERSION 核对合规。
 - **v4.9.3**（2026-10-16）：所有实体按车型能力创建——纯电车型（fuelType=E/BEV）不再创建燃油量/续航里程/机油健康/机油寿命实体（无燃油/机油系统，全车型正确性）；远程启动开关改为按 remoteStartStatus 数据或云端 RemoteStart 白名单创建。
 - **v4.9.2**（2026-10-16）：清理集成 data/ 目录无用文件 libwbsk_crypto_tool.so（v4.2.7 白盒 AES 纯 Python 化后零 .so 依赖，删除约 430KB）。
