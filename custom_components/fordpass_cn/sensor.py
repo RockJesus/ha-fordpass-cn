@@ -632,6 +632,13 @@ class FordPassRestoreMixin(RestoreEntity):
         await super().async_added_to_hass()
         if (last := await self.async_get_last_state()) is not None:
             self._restored = last.state
+        # v4.8.7: 实体激活后立即强制写一次活跃状态——覆盖 restore_state 恢复的
+        # unavailable/旧值残留（v4.8.5 添加失败期恢复的 restored 状态会让实体
+        # 一直显示 unavailable 且不随刷新更新）。coordinator 有数据即可用，
+        # 写入后实体恢复显示并随后续每次刷新更新 last_updated。
+        coord = getattr(self, "coordinator", None)
+        if coord is not None and coord.data is not None:
+            self.async_write_ha_state()
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
