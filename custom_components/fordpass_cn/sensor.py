@@ -11,6 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength, UnitOfPressure
 from homeassistant.core import HomeAssistant
@@ -1269,6 +1270,9 @@ class FordPassCloudProbeSensor(SensorEntity):
 
     _attr_has_entity_name = False
     _attr_icon = "mdi:cloud-search"
+    # v4.9.7: 云端能力探测属集成诊断数据（排查车型功能支持），按 HA 官方
+    # 规范归入诊断类目（前端自动进诊断区，不参与常规视图统计）。
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
