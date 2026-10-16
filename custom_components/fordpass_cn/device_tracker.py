@@ -38,11 +38,18 @@ async def async_setup_entry(
     try:
         from functools import partial
         from homeassistant.helpers.entity import Entity as _Entity
+
+        def _mk_refresh(ent):
+            def _refresh():
+                # v4.8.6: hass 注入前（实体添加阶段）回调会被预热刷新触发，
+                # 直接 async_write_ha_state 会 RuntimeError: hass is None
+                if ent.hass is not None:
+                    ent.async_write_ha_state()
+            return _refresh
+
         for _ent in trackers:
             _ent.async_on_remove(
-                _ent.coordinator.async_add_listener(
-                    partial(_Entity.async_write_ha_state, _ent)
-                )
+                _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
     except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
         pass

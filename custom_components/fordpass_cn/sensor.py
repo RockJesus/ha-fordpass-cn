@@ -97,11 +97,18 @@ async def async_setup_entry(
     try:
         from functools import partial
         from homeassistant.helpers.entity import Entity as _Entity
+
+        def _mk_refresh(ent):
+            def _refresh():
+                # v4.8.6: hass 注入前（实体添加阶段）回调会被预热刷新触发，
+                # 直接 async_write_ha_state 会 RuntimeError: hass is None
+                if ent.hass is not None:
+                    ent.async_write_ha_state()
+            return _refresh
+
         for _ent in all_sensors:
             _ent.async_on_remove(
-                _ent.coordinator.async_add_listener(
-                    partial(_Entity.async_write_ha_state, _ent)
-                )
+                _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
     except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
         pass
@@ -626,11 +633,13 @@ class FordPassRestoreMixin(RestoreEntity):
         if (last := await self.async_get_last_state()) is not None:
             self._restored = last.state
 
+    @property
     def extra_state_attributes(self) -> dict[str, object]:
-        """v4.8.5: 统一提供 last_poll（最后刷新时间，每轮变化）——让
+        """v4.8.6: 统一提供 last_poll（最后刷新时间，每轮变化）——让
         lock/switch/select/device_tracker 等控制类实体随轮询刷新（sensor
-        自带 last_poll 的实体自定义 extra_state_attributes 覆盖本方法，
-        不受影响）。"""
+        自带 last_poll 的实体自定义 extra_state_attributes 覆盖本属性，
+        不受影响）。v4.8.5 曾漏 @property 导致控制类实体添加报
+        TypeError: 'method' object is not iterable——@property 必加。"""
         attrs: dict[str, object] = {}
         try:
             parent = super().extra_state_attributes()
