@@ -25,7 +25,6 @@ from .const import (
     CONF_COORDINATE_SYSTEM,
     CONF_HONK_DURATION,
     CONF_REFRESH_TOKEN,
-    CONF_SCAN_INTERVAL,
     DEFAULT_CHIRP_TYPE,
     DEFAULT_COORDINATE_SYSTEM,
     DEFAULT_HONK_DURATION,
@@ -85,17 +84,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 绝不覆盖。async_update_entry 会触发 update_listener，此时
     # coordinator 尚未建立，由 async_update_options 的 guard 兜底
     # （"options saved before entry loaded"，下次 setup 生效）。
-    # v4.3.1: 判定条件收紧为"调度字段缺失即补默认三项"——旧版业务
-    # select 曾把 options 写成只含业务字段的版本（丢失 scan_interval），
-    # "options 非空"会让调度设置永远缺省回 30 分钟（用户实测"刷新间隔
-    # 设置被重置"）。补默认时保留已存在的业务字段，绝不覆盖。
-    if not entry.options.get(CONF_SCAN_INTERVAL):
+    # v4.9.6: 移除用户可配置刷新间隔（HA 官方规则禁止），调度间隔固定
+    # 默认值；此处只补位置跟踪/坐标系两项默认，保留已存在字段绝不覆盖。
+    if not entry.options.get("track_location") or not entry.options.get(
+        CONF_COORDINATE_SYSTEM
+    ):
         try:
             hass.config_entries.async_update_entry(
                 entry,
                 options={
-                    **entry.options,  # v4.3.1: 保留已存在字段（历史业务残留等）
-                    CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
+                    **entry.options,  # 保留已存在字段（历史业务残留等）
                     "track_location": True,
                     CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
                 },
@@ -107,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # 便于确认 options 已写入（此前 options 显示为空无法区分
             # "API 脱敏"与"真未写入"）。
             _LOGGER.info(
-                "fordpass_cn options defaults persisted: scan_interval=%smin "
+                "fordpass_cn options defaults persisted: track_location=%s "
                 "track_location=True coordinate_system=%s",
                 DEFAULT_SCAN_INTERVAL_MINUTES,
                 DEFAULT_COORDINATE_SYSTEM,
@@ -152,8 +150,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         json.dumps(vehicles[0], ensure_ascii=False, default=str)[:2500],
     )
 
-    # v2.7.8: scan_interval is stored/entered in MINUTES (default 30).
-    interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES))
+    # v4.9.6: 轮询间隔不再用户可配置（HA 官方规则），固定默认 30 分钟。
+    interval = DEFAULT_SCAN_INTERVAL_MINUTES
     track_location = bool(entry.options.get("track_location", True))
     coordinate_system = entry.options.get(
         CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
@@ -279,26 +277,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "honk_settings": honk_settings,
     }
 
-    # v3.7.10: cevs 加密链变体手动探测服务——初始探测只发 plain 单变体
-    # （v3.7.9 一次 12 请求被福特云风控静默降级），其余变体（json_vin /
-    # json_vin_xjw / aes_ecb）用本 service 人工逐个触发，每次 3 请求，
-    # 结果写 api.cevs_diag 供日志/排查（v3.8.3 起不再创建诊断实体）。
-    async def _svc_probe_cevs_variant(call: ServiceCall) -> None:
-        vname = str(call.data.get("variant", "plain"))
-        for co in coordinators:
-            await co.api.probe_cevs_variant(co.vin, vname)
-
-    hass.services.async_register(
-        DOMAIN, "probe_cevs_variant", _svc_probe_cevs_variant,
-        schema=vol.Schema({vol.Optional("variant", default="plain"): str}),
-    )
-    # v3.8.2: async_register 返回 None，不能 `lambda: _reg()`（卸载时报
-    # TypeError: 'NoneType' object is not callable → 重新加载集成失败）；
-    # 显式 async_remove 注销服务。
-    entry.async_on_unload(
-        lambda: hass.services.async_remove(DOMAIN, "probe_cevs_variant")
-    )
-
+    # v4.9.6: 移除 cevs 变体手动探测调试服务（probe_cevs_variant）——
+    # 合规审查项：逆向调试服务残留，自动化探测（probe_cevs_auto）已覆盖
+    # 所需变体，无需人工触发。对应 services.yaml 一并删除。
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
@@ -329,30 +310,28 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
             entry.entry_id,
         )
         return
-    interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES))
     track_location = bool(entry.options.get("track_location", True))
     coordinate_system = entry.options.get(
         CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
     )
-    # v4.0.0: 仅"调度相关选项"（刷新间隔/定位/坐标系）变化才更新并立即刷新。
-    # 鸣笛设置/远程空调温度等业务 select 每次云端同步写入 entry.options 也会
-    # 触发本 listener——旧版无条件 async_request_refresh 导致每轮主轮询后
-    # 10 秒（Debouncer cooldown）又打一轮福特云请求，产生双轮双 logbook，
-    # 既浪费请求量又制造噪音。快照比较：业务设置变化时三项不变 → 直接跳过。
+    # v4.0.0: 仅"调度相关选项"（定位/坐标系，v4.9.6 起不含刷新间隔）变化才
+    # 更新并立即刷新。鸣笛设置/远程空调温度等业务 select 每次云端同步写入
+    # entry.options 也会触发本 listener——旧版无条件 async_request_refresh
+    # 导致每轮主轮询后 10 秒（Debouncer cooldown）又打一轮福特云请求，产生
+    # 双轮双 logbook，既浪费请求量又制造噪音。快照比较：业务设置变化时两项
+    # 不变 → 直接跳过。
     store = hass.data[DOMAIN][entry.entry_id]
-    snapshot = (interval, track_location, coordinate_system)
+    snapshot = (track_location, coordinate_system)
     if store.get("_opt_snapshot") == snapshot:
         return
     store["_opt_snapshot"] = snapshot
     for coordinator in coordinators:
-        coordinator.update_interval = timedelta(minutes=interval)
         coordinator.track_location = bool(entry.options.get("track_location", True))
         coordinator.coordinate_system = entry.options.get(
             CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
         )
     _LOGGER.info(
-        "fordpass_cn options updated: scan_interval=%smin track_location=%s coordinate_system=%s (vehicles=%d)",
-        interval,
+        "fordpass_cn options updated: track_location=%s coordinate_system=%s (vehicles=%d)",
         track_location,
         coordinate_system,
         len(coordinators),
