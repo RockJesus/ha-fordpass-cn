@@ -114,13 +114,13 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
     @property
     def extra_state_attributes(self) -> dict:
         loc = self._location or {}
-        # v4.8.5: last_poll 每轮变化——控制类实体随轮询刷新
-        lp = getattr(self, 'coordinator', None)
-        attrs['last_poll'] = (
-            f"{lp.last_poll:%Y-%m-%d %H:%M:%S}" if lp and lp.last_poll else None
-        )
-
+        # v4.8.9: 修复 v4.8.5 引入的 NameError（attrs 未定义）——该 bug 导致
+        # 定位实体写状态失败、永远 unavailable；last_poll 并入返回字典。
+        lp = getattr(self, "coordinator", None)
         return {
             "address": loc.get("address"),
             "upload_time": loc.get("uploadTime"),
+            "last_poll": (
+                f"{lp.last_poll:%Y-%m-%d %H:%M:%S}" if lp and lp.last_poll else None
+            ),
         }
