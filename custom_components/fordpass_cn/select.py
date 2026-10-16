@@ -289,7 +289,7 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         ①打一条"options updated"日志；②快照未初始化时误判变化并
         async_request_refresh，制造 setup 后的额外整轮福特云请求；
         ③HA 对 options 写入可能触发 entry 重载，重载后 entry.options
-        若在写入瞬间不含调度字段（scan_interval 等），调度设置回退默认
+        若在写入瞬间丢失其它选项字段，相关设置回退默认（v4.9.6 起无刷新间隔）
         30 分钟——用户实测"刷新间隔设置失效、被重置"。
         业务设置（鸣笛类型/时长等）持久化的权威来源是**福特账户云端**
         （preference-list，_save_cloud 已上传、_on_cloud_update 已回读

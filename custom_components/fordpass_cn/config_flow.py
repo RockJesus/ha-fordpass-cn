@@ -41,12 +41,10 @@ from .const import (
     CONF_LOGIN_MODE,
     CONF_PASSWORD,
     CONF_PHONE,
-    CONF_SCAN_INTERVAL,
     CONF_USERNAME,
     COORDINATE_GCJ02,
     COORDINATE_WGS84,
     DEFAULT_COORDINATE_SYSTEM,
-    DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     LOGIN_MODE_PASSWORD,
     LOGIN_MODE_SMS,
@@ -64,18 +62,11 @@ COORDINATE_LABELS = {
     COORDINATE_GCJ02: "GCJ-02（高德/腾讯地图）",
 }
 
-# 集成偏好表单（状态刷新间隔 / 位置跟踪 / 坐标系）——OptionsFlow 与
+# 集成偏好表单（位置跟踪 / 坐标系；v4.9.6 起无刷新间隔）——OptionsFlow 与
 # reconfigure 共用，避免两份 schema 漂移。
 def _preference_schema(defaults: dict) -> vol.Schema:
     return vol.Schema(
         {
-            # v2.7.8: scan interval is entered in MINUTES (default 30).
-            vol.Required(
-                CONF_SCAN_INTERVAL,
-                default=defaults.get(
-                    CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1440)),
             vol.Optional(
                 "track_location", default=defaults.get("track_location", True)
             ): bool,
@@ -164,6 +155,10 @@ def _normalize_phone(raw: str) -> str:
 
 class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    # v4.7.10: HA 2026.x 前端"重新配置"入口需 supports_reconfigure=True
+    # 才显示（async_step_reconfigure v3.9.7 已实现但缺此开关）；补上后
+    # 集成卡片"重新配置"可用，与 OptionsFlow 并存。
+    supports_reconfigure = True
 
     def __init__(self) -> None:
         self._phone: str | None = None
@@ -312,7 +307,6 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "refresh_token": tokens["refresh_token"],
             },
             options={
-                CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_MINUTES,
                 "track_location": True,
                 CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
             },

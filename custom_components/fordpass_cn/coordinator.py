@@ -387,8 +387,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.logger.debug("Lincoln %s probe failed: %s", _lkey, exc)
         # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
         # 直接读取——不再依赖导出日志即可从 HA 侧确认探测成败）
-        # v3.7.10: 直接引用 api.cevs_diag 同一 dict——probe_cevs_variant 服务
-        # 写入后 sensor 立即可见（拷贝会失去同步）
+        # v3.7.10: 直接引用 api.cevs_diag 同一 dict——自动探测写入后 sensor
+        # 立即可见（拷贝会失去同步）；v4.9.6 起无 probe_cevs_variant 服务
         # v3.7.18: cevs 自动探测独立 try（probe_cevs_auto）——此前嵌在
         # extra_probes 探测内部，前段失败即中断、diag 不创建
         # v3.8.5: 按车型跳过探测——纯油(G)/柴油(D)车 cevs 三端点（预约出发/
