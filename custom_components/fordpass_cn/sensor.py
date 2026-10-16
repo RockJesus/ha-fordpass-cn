@@ -90,6 +90,22 @@ async def async_setup_entry(
     for coordinator in coordinators:
         all_sensors.extend(_make_sensors(coordinator))
     async_add_entities(all_sensors)
+    # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
+    # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
+    # 实体 last_updated 每轮刷新（撤销"实体不随轮询刷新"）；失败轮不触发，
+    # 保留旧值。
+    try:
+        from functools import partial
+        from homeassistant.helpers.entity import Entity as _Entity
+        for _ent in all_sensors:
+            _ent.async_on_remove(
+                _ent.coordinator.async_add_listener(
+                    partial(_Entity.async_write_ha_state, _ent)
+                )
+            )
+    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
+        pass
+
 
     # v3.5.8: 清理升级残留的旧 sensor 实体——新版不再创建（如双后轮 value=0
     # 非该能力车型）但旧 registry 条目仍在时会一直 unavailable，违反
@@ -609,6 +625,24 @@ class FordPassRestoreMixin(RestoreEntity):
         await super().async_added_to_hass()
         if (last := await self.async_get_last_state()) is not None:
             self._restored = last.state
+
+    def extra_state_attributes(self) -> dict[str, object]:
+        """v4.8.5: 统一提供 last_poll（最后刷新时间，每轮变化）——让
+        lock/switch/select/device_tracker 等控制类实体随轮询刷新（sensor
+        自带 last_poll 的实体自定义 extra_state_attributes 覆盖本方法，
+        不受影响）。"""
+        attrs: dict[str, object] = {}
+        try:
+            parent = super().extra_state_attributes()
+            if parent and isinstance(parent, dict):
+                attrs.update(parent)
+        except AttributeError:
+            pass
+        lp = getattr(self, "coordinator", None)
+        attrs["last_poll"] = (
+            f"{lp.last_poll:%Y-%m-%d %H:%M:%S}" if lp and lp.last_poll else None
+        )
+        return attrs
 
     def _restore_bool(self, live: bool | None) -> bool | None:
         """bool 状态兜底（is_locked/is_on）：live 有效返回 live，
