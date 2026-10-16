@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.9.4**（2026-10-16）：HA 官方发布规范合规补全——manifest 增加 `quality_scale: bronze`（官方推荐新集成至少 bronze）；ConfigFlow VERSION 核对合规。
 - **v4.9.3**（2026-10-16）：所有实体按车型能力创建——纯电车型（fuelType=E/BEV）不再创建燃油量/续航里程/机油健康/机油寿命实体（无燃油/机油系统，全车型正确性）；远程启动开关改为按 remoteStartStatus 数据或云端 RemoteStart 白名单创建。
 - **v4.9.2**（2026-10-16）：清理集成 data/ 目录无用文件 libwbsk_crypto_tool.so（v4.2.7 白盒 AES 纯 Python 化后零 .so 依赖，删除约 430KB）。
 - **v4.9.1**（2026-10-16）：车辆定位传感器 lat/lon 属性数值化（此前为字符串，不便自动化比较），v4.9.0 属性瘦身补漏。
