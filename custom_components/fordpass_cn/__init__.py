@@ -112,7 +112,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
     try:
-        vehicles = await api.get_vehicles()
+        # v4.9.8: setup 首次刷新加 20s 短超时——福特云慢响应（实测挂起
+        # 32s+，_request 通用超时 60s）会让 setup 长期卡在 SETUP_IN_PROGRESS，
+        # 用户此时点"重新加载"会取消挂起的 setup 协程 → 前端弹错
+        # "Setup ... cancelled"。20s 足够正常响应（实测 <5s），超时立即转
+        # ConfigEntryNotReady 交给 HA 自动重试，用户无感知。
+        async with asyncio.timeout(20):
+            vehicles = await api.get_vehicles()
     except asyncio.TimeoutError as err:
         raise ConfigEntryNotReady(f"FordPass timeout: {err}") from err
     except FordPassApiError as err:
