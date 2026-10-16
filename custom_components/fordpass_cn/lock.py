@@ -84,7 +84,7 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v4.8.7: 有最后已知数据即可用——修复控制实体 unavailable（restored 残留）
 
     @property
     def is_locked(self) -> bool:
@@ -129,7 +129,7 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v4.8.7: 有最后已知数据即可用——修复控制实体 unavailable（restored 残留）
 
     @property
     def is_locked(self) -> bool | None:
@@ -191,7 +191,7 @@ class FordPassFrunkLock(FordPassRestoreMixin, LockEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v4.8.7: 有最后已知数据即可用——修复控制实体 unavailable（restored 残留）
 
     @property
     def is_locked(self) -> bool | None:
