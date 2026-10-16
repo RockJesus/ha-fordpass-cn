@@ -107,10 +107,10 @@ class FordPassVehicleImage(ImageEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
+        # v4.9.0: 删除 image_path（本地 /config/www 路径噪音）
         return {
             "vehicle_model": self.coordinator.vehicle_model,
             "image_url": getattr(self.coordinator, self._url_key, None) or "",
-            "image_path": self._persist_path,
         }
 
     async def async_image(self) -> bytes | None:
@@ -213,7 +213,6 @@ class FordPassRemoteImageEntity(ImageEntity):
             "image_url": self._image_url() or "",
             "kind": self._kind,
             "car_id": (img or {}).get("car_id") or getattr(self.coordinator, "car_id", None),
-            "image_path": self._persist_path,
         }
         resp = (img or {}).get("resp") if img else None
         if isinstance(resp, dict):
@@ -296,10 +295,10 @@ class FordPass3dModelImage(ImageEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
+        # v4.9.0: 删除 image_path（本地 /config/www 路径噪音）
         return {
             "vehicle_model": self.coordinator.vehicle_model,
             "image_url": self._model_url() or "",
-            "image_path": self._persist_path,
         }
 
     async def async_image(self) -> bytes | None:

@@ -155,6 +155,6 @@ def parse_cloud_features(ccfeatures_data: dict | None) -> list[dict[str, Any]]:
                 fid = int(p, 10)
             else:
                 continue
-        en, zh = VDS_FEATURE_NAMES.get(fid, ("unknown", "未定义特性"))
+        en, zh = VDS_FEATURE_NAMES.get(fid, ("unknown", f"未定义特性({p})"))
         out.append({"id": fid, "en": en, "zh": zh, "raw": p})
     return out
