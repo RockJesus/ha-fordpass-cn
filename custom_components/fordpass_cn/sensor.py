@@ -648,11 +648,17 @@ class FordPassRestoreMixin(RestoreEntity):
         不受影响）。v4.8.5 曾漏 @property 导致控制类实体添加报
         TypeError: 'method' object is not iterable——@property 必加。"""
         attrs: dict[str, object] = {}
+        # v4.8.8: 兼容 HA 2026.10——基类 Entity.extra_state_attributes 是
+        # @property（返回 None），直接 super().extra_state_attributes() 会
+        # TypeError: 'NoneType' object is not callable（实体添加失败、永远
+        # unavailable）。统一取值：属性→dict 直接用，方法→调用，None→跳过。
         try:
-            parent = super().extra_state_attributes()
+            parent = super().extra_state_attributes
+            if callable(parent):
+                parent = parent()
             if parent and isinstance(parent, dict):
                 attrs.update(parent)
-        except AttributeError:
+        except (AttributeError, TypeError):
             pass
         lp = getattr(self, "coordinator", None)
         attrs["last_poll"] = (
