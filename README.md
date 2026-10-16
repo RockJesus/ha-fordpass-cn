@@ -80,6 +80,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v4.9.8**（2026-10-16）：**修复重新加载弹错**——setup 首次刷新加 20s 短超时：福特云慢响应时 setup 不再长期挂起（此前实测挂起 32s+），快速转 ConfigEntryNotReady 由 HA 自动重试，用户点「重新加载」不再触发「Setup ... cancelled」报错。
 - **v4.9.7**（2026-10-16）：**第二轮合规整改**——① 探测/诊断类传感器补 `entity_category: diagnostic`（云端能力探测归入诊断区，前端自动归类）；② 补全 pytest 单测（`tests/`：白盒 AES 表加载/密钥解析/固定 IV 确定性/加解密自洽 6 项 + 能力位图解析 3 项 + manifest 规范 5 项，14 项全过）。
 - **v4.9.6**（2026-10-16）：**HA 规范合规整改三项**——① 移除用户可配置的刷新间隔（`scan_interval`，HA 官方规则"轮询间隔不可用户配置"），后台刷新固定默认 30 分钟；② 删除 `probe_cevs_variant` 调试服务（逆向调试残留，自动探测已覆盖）；③ README 大幅精简（删除历史版本日志，完整历史移至 GitHub Releases）。
 - **v4.9.5**（2026-10-16）：HA 规范合规补全——新增 `diagnostics.py`（官方诊断通道，配置/选项/协调器状态脱敏输出，不含凭据）；新增根目录 `CODEOWNERS`；补 `async_migrate_entry`（官方迁移钩子）；README 最低版本徽章对齐 hacs.json（2024.6+）。
