@@ -584,9 +584,15 @@ class FordPassLocationSensor(SensorEntity):
         loc = data.get("location")
         attrs: dict = {}
         if isinstance(loc, dict):
+            def _to_float(v):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return None
             attrs = {
-                "latitude": loc.get("lat"),
-                "longitude": loc.get("lon"),
+                # v4.9.1: 数值化 lat/lon（此前是字符串，自动化比较不便）
+                "latitude": _to_float(loc.get("lat")),
+                "longitude": _to_float(loc.get("lon")),
                 "upload_time": loc.get("uploadTime"),
                 "address": loc.get("address"),
             }
