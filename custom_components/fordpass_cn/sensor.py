@@ -751,7 +751,8 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
             if self.coordinator.last_poll
             else None
         )
-        return attrs
+        # v4.9.0: 过滤空值属性（source_status: null 等噪音键）
+        return {k: v for k, v in attrs.items() if k == "last_poll" or v not in (None, "")}
 
     @property
     def native_value(self):
@@ -838,7 +839,8 @@ class FordPassAlertSensor(SensorEntity):
                 attrs["source"] = "vehicle_status"
                 attrs["timestamp"] = node.get("timestamp")
                 attrs["source_status"] = node.get("status")
-        return attrs
+        # v4.9.0: 过滤空值属性（source_status/timestamp null 噪音）
+        return {k: v for k, v in attrs.items() if v not in (None, "")}
 
     def _active_titles(self) -> str | None:
         data = self.coordinator.data or {}
@@ -1132,7 +1134,8 @@ class FordPassOtaSettingSensor(SensorEntity):
             if self.coordinator.last_poll
             else None
         )
-        return attrs
+        # v4.9.0: 过滤空值（未开通 OTA 时的 8 个空串属性噪音）
+        return {k: v for k, v in attrs.items() if k == "last_poll" or v not in (None, "")}
 
     @property
     def native_value(self):
@@ -1285,8 +1288,7 @@ class FordPassCloudProbeSensor(SensorEntity):
             return attrs
         attrs["capabilities"] = [f"{f['zh']}（{f['en']}）" for f in feats]
         attrs["feature_ids"] = ", ".join(f["raw"] for f in feats)
-        for f in feats:
-            attrs[f"capability_{f['id']:02x}"] = f"{f['zh']}（{f['en']}）"
+        # v4.9.0: 删除逐位 capability_XX 属性（与 capabilities 数组重复）
         return attrs
 
 
@@ -1436,6 +1438,8 @@ class FordPassOilLifeSensor(_ServiceInfoSensor):
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "prognostic", "机油寿命", "mdi:oil")
+        # v4.9.0: 百分比数值单位（此前拼在 state 字符串里无法图表化）
+        self._attr_native_unit_of_measurement = "%"
 
     def _format(self, data: dict) -> str | None:
         payload = data.get("data") if isinstance(data, dict) else None
@@ -1450,12 +1454,9 @@ class FordPassOilLifeSensor(_ServiceInfoSensor):
                 iolm = oil.get("oilLifeActual")
         if iolm is None:
             return None
-        parts = [f"{int(iolm)}%"]
-        if payload.get("dateOnZero"):
-            parts.append(f"归零 {payload['dateOnZero']}")
-        if payload.get("remainingKMs") is not None:
-            parts.append(f"剩余 {int(payload['remainingKMs'])} km")
-        return " · ".join(parts)
+        # v4.9.0: 数值化——state 只放百分比数值 + unit(%),「归零/剩余」移入
+        # 属性（_summary 的 zero_on/remaining_km），支持图表与数值比较。
+        return str(int(iolm))
 
     def _summary(self, data: dict) -> dict:
         payload = data.get("data") if isinstance(data, dict) else None
@@ -1574,11 +1575,15 @@ class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
             return None
 
         def _ops_of(it: dict) -> list[str]:
-            return [
-                str(o.get("description"))
-                for o in (it.get("operations") or [])
-                if isinstance(o, dict) and o.get("description")
-            ]
+            out = []
+            for o in (it.get("operations") or []):
+                if not isinstance(o, dict):
+                    continue
+                # v4.9.0: 清洗云端原文残留（前导空格 / "6个月^)" 的 ^）
+                d = str(o.get("description") or "").strip().replace("^", "")
+                if d:
+                    out.append(d)
+            return out
 
         def _mileage(it: dict) -> int | None:
             m = it.get("mileage")
@@ -1646,11 +1651,17 @@ class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
         if not isinstance(items, list) or not items:
             return {}
         plans = []
-        for it in items[:6]:  # 只保留前 6 个保养节点，防 attributes 超限
+        for it in items[:3]:  # v4.9.0: 只保留最近 3 档（当前/下一档最有价值），
+            # 防 attributes 膨胀（此前 6 档×9 项每轮重写几十 KB）
             if not isinstance(it, dict):
                 continue
-            ops = it.get("operations") or []
-            ops_desc = [str(o.get("description")) for o in ops if isinstance(o, dict) and o.get("description")]
+            ops_desc = []
+            for o in (it.get("operations") or []):
+                if not isinstance(o, dict):
+                    continue
+                d = str(o.get("description") or "").strip().replace("^", "")
+                if d:
+                    ops_desc.append(d)
             plans.append({
                 "mileage": it.get("mileage"),
                 "items": ops_desc,
@@ -1865,13 +1876,29 @@ class FordPassChirpCloudSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
+        # v4.9.0: 不再暴露云端原始字段（AnnouncementType/Duration/
+        # vehicleAnnouncement* 重复且新老槽位数值矛盾）——只留解析后
+        # 的中文类型与显示时长，与 native_value 一致。
         pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
-        attrs = dict(pref) if isinstance(pref, dict) else {}
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
+        attrs: dict[str, Any] = {
+            "last_poll": (
+                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
+                if self.coordinator.last_poll
+                else None
+            )
+        }
+        if isinstance(pref, dict) and pref:
+            sound = pref.get("AnnouncementType") or pref.get("vehicleAnnouncementSoundType")
+            duration = pref.get("Duration") or pref.get("vehicleAnnouncementDuration")
+            type_cn = next(
+                (cn for cn, en in CHIRP_TO_ANNOUNCE.items() if en == str(sound)),
+                None,
+            )
+            if type_cn is None:
+                type_cn = ANNOUNCE_ENUM_CN.get(str(sound), str(sound))
+            attrs["type"] = type_cn
+            if duration is not None:
+                attrs["duration"] = f"{duration} 秒"
         return attrs
 
 
