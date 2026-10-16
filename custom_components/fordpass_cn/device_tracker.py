@@ -67,8 +67,8 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
 
     @property
     def available(self) -> bool:
-        """v4.5.5: 刷新失败时如实显示不可用（撤销保留最后坐标）。"""
-        return self.coordinator.last_update_success
+        """v4.8.7: 有最后已知坐标即可用——修复控制实体 unavailable。"""
+        return bool(self.coordinator.data)
 
     @property
     def source_type(self) -> str:

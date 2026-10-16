@@ -79,6 +79,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>v4.5.x（最新）</summary>
 
+- **v4.8.7**（2026-10-16）：**修复控制类实体 unavailable**——lock/switch/select/device_tracker 的 `available` 由「刷新成功才可用」改为「有最后已知数据即可用」（云端瞬时失败/首次刷新未完成时保留最后已知状态正常显示，不再显示不可用）；实体激活时立即强制写一次活跃状态，覆盖历史恢复态（restored）残留导致的「永远 unavailable、不随刷新更新」问题。所有控制类实体在每次刷新后（含手动刷新）随车况数据更新 `last_updated` 与活动记录。
 - **v4.8.6**：修复 v4.8.5 两个缺陷——① 统一 `last_poll` 属性的 mixin 漏 `@property`，导致 lock/switch/select 控制类实体添加报 `TypeError: 'method' object is not iterable`（实体 unavailable）；② 刷新监听回调在实体 hass 注入前被预热刷新触发报 `RuntimeError: hass is None`——已加 hass 判断包装。所有实体（含车况未变）随每次刷新更新 last_updated/活动日志。
 - **v4.8.5**：**实体随轮询刷新**——修复 lock/switch/select/车辆定位等控制类实体不随刷新更新的问题（此前只有车况真实变化才更新最后时间）。现在每次刷新成功（即使车况未变）所有实体同步刷新，`last_poll`（最后刷新时间）属性每轮更新，可在开发者工具/实体页看到全部实体最后更新时间每轮刷新。刷新失败轮不触发，保留旧值。
 - **v4.8.4**：**撤销 v4.8.3 无效改动**——HA 平台机制：历史（recorder）与活动日志（logbook）对「状态值未变」的事件去重，同值强制写状态不产生任何可见记录且每轮制造 91 个无效 state_changed 事件，已回退。「每次刷新有记录」的正确载体为每轮刷新摘要（含全部实体状态，车况未变也写）。
