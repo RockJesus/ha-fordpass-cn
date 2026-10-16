@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import asyncio
 import logging
-from datetime import timedelta
 
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -12,9 +11,8 @@ from homeassistant.config_entries import (
     ConfigEntryNotReady,
 )
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import voluptuous as vol
 
 from .api import FordPassApi, FordPassApiError
 from . import capability

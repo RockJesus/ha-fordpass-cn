@@ -51,8 +51,6 @@ async def async_setup_entry(
     # 实体 last_updated 每轮刷新（撤销"实体不随轮询刷新"）；失败轮不触发，
     # 保留旧值。
     try:
-        from functools import partial
-        from homeassistant.helpers.entity import Entity as _Entity
 
         def _mk_refresh(ent):
             def _refresh():
