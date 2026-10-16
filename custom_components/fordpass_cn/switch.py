@@ -53,9 +53,16 @@ async def async_setup_entry(
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     switches: list[SwitchEntity] = []
     for coordinator in coordinators:
-        switches.append(FordPassEngineSwitch(coordinator))
-        # 远程控车能力 crccFlag 有效才创建寻车类开关
         status = coordinator.data.get("vehiclestatus", {}) or {}
+        # v4.9.3: 远程启动开关按车型能力创建——remoteStartStatus 字段
+        # 数据可用或云端命令白名单含 RemoteStart 才创建（纯电/无远程
+        # 启动能力车型不创建，全车型正确性）
+        _wl0 = coordinator.command_whitelist
+        if capability.usable(status, [["remoteStartStatus"]]) or (
+            isinstance(_wl0, list) and any("RemoteStart" in c for c in _wl0)
+        ):
+            switches.append(FordPassEngineSwitch(coordinator))
+        # 远程控车能力 crccFlag 有效才创建寻车类开关
         if capability.usable(status, [["crccFlag"]]):
             # v3.1.10: 恢复灯光寻车（v3.1.8 曾因锐际网关 228205 移除；
             # 其他车型云端可能支持——登录后按能力创建，按下报错即如实提示）

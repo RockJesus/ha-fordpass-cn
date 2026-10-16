@@ -142,9 +142,18 @@ async def async_setup_entry(
 
 
 def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
-    sensors = [
-        FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),
-        FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
+    # v4.9.3: 按车型能力创建——纯电（fuelType=E/BEV）无燃油/机油系统，
+    # 燃油量/续航里程/机油健康/机油寿命实体不创建（全车型正确性；
+    # 燃油/柴油/混动/插混车型照常创建）。
+    _fuel = str(coordinator.vehicle_info.get("fuelType") or "").upper()
+    _not_ev = _fuel not in ("E", "BEV")
+    sensors: list[SensorEntity] = []
+    if _not_ev:
+        sensors += [
+            FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),
+            FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
+        ]
+    sensors += [
         FordPassSensor(coordinator, "odometer", "总里程", UnitOfLength.KILOMETERS, None, "mdi:counter", ["odometer"]),
         # v3.3.9: 机油寿命仅保留 prognostic 版（FordPassOilLifeSensor，含归零月份/
         # 剩余公里属性）；原 oil_life（oil.oilLifeActual）重复实体已删除。
@@ -198,8 +207,9 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # ===== B 组：健康诊断（机油 / 电池 / 胎压） =====
     _health_map = {"STATUS_GOOD": "良好", "STATUS_NEEDS_SERVICE": "需要保养", "STATUS_WARNING": "警告", "STATUS_CRITICAL": "严重"}
     _tire_status_map = {"Fault": "故障", "OK": "正常", "Normal": "正常", "Not_Supported": "不支持"}
+    if _not_ev:  # v4.9.3: 机油健康仅非纯电车型创建
+        sensors.append(FordPassSensor(coordinator, "oil_health", "机油健康状态", None, None, "mdi:oil", ["oil", "oilLife"], enum_map=_health_map))
     sensors += [
-        FordPassSensor(coordinator, "oil_health", "机油健康状态", None, None, "mdi:oil", ["oil", "oilLife"], enum_map=_health_map),
         FordPassSensor(coordinator, "battery_health", "蓄电池健康状态", None, None, "mdi:car-battery", ["battery", "batteryHealth"], enum_map=_health_map),
         FordPassSensor(coordinator, "tpms_system_status", "胎压系统状态", None, None, "mdi:car-tire-alert", ["TPMS", "tirePressureSystemStatus"],
                        enum_map={"Systm_Fault_Composite_Stat": "系统故障", "Systm_Normal_Stat": "正常", "Systm_Warning_Stat": "系统警告", "Normal": "正常"}),
@@ -510,7 +520,9 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     if isinstance(prog, dict):
         prog_payload = prog.get("data") if isinstance(prog.get("data"), dict) else None
         if isinstance(prog_payload, dict):
-            sensors.append(FordPassOilLifeSensor(coordinator))
+            # v4.9.3: 机油寿命仅非纯电车型创建（纯电 prognostic 无 iolm）
+            if _not_ev:
+                sensors.append(FordPassOilLifeSensor(coordinator))
             # v3.3.9: 剩余可行驶里程仅在 remainingKMs 有值时创建
             # （锐际 prognostic 曾返回无该字段 → 实体恒 unknown，不创建）
             if prog_payload.get("remainingKMs") is not None:
