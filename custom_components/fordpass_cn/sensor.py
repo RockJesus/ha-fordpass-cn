@@ -10,7 +10,7 @@ import time
 _LOGGER = logging.getLogger(__name__)
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength, UnitOfPressure
@@ -149,7 +149,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors: list[SensorEntity] = []
     if _not_ev:
         sensors += [
-            FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),
+            FordPassSensor(coordinator, "fuel_level", "燃油量", "%", None, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),  # v5.0.7: 燃油量不再用 battery device_class（图标语义错误）
             FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
         ]
     sensors += [
@@ -732,6 +732,8 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         self._attr_icon = icon
         if unit:
             self._attr_native_unit_of_measurement = unit
+            # v5.0.7: 带单位的数值传感器标记为 measurement，启用长期统计/趋势图
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         if device_class:
             self._attr_device_class = device_class
 

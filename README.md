@@ -138,6 +138,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.0.7**（2026-10-17）：**传感器规范修复**——数值传感器补充 `state_class: measurement`（燃油量/续航/电压/里程/机油寿命/胎压等），启用长期统计与趋势图；修复燃油量 device_class（不再误显示电池图标）
 - **v5.0.6**（2026-10-17）：**修复分车门锁定按钮显示 unknown**——所有按钮实体增加初始状态「待命」（HA button 平台默认按下前无状态）；顺带修复 S110 裸异常
 - **v5.0.5**（2026-10-17）：**README 法律敏感叙述清理 + 视频说明书卡片模板完善**——
   ① 删除 README 中私有二进制/密钥素材相关法律敏感叙述
