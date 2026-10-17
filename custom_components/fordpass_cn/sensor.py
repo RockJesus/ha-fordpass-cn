@@ -538,6 +538,23 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         msg_payload = msg.get("data") if isinstance(msg.get("data"), dict) else None
         if isinstance(msg_payload, dict) and isinstance(msg_payload.get("summary"), dict):
             sensors.append(FordPassMessageSensor(coordinator))
+    # v5.0.8: 设备页主显示传感器按车型匹配（HA 设备页取设备第一个 sensor 实体）——
+    # 汽油/柴油：燃油量；纯电：动力电池电量；混动/插混/油电混合：油量+电量都靠前
+    _fuel = str(coordinator.vehicle_info.get("fuelType") or "").upper()
+    if _fuel in ("E", "BEV"):
+        _primary_order = ["battery_fill_level"]
+    elif _fuel in ("G", "D"):
+        _primary_order = ["fuel_level"]
+    else:  # 混动等：油量、电量并列为设备主显示
+        _primary_order = ["fuel_level", "battery_fill_level"]
+    if _primary_order:
+        _pri: list = []
+        for _key in _primary_order:
+            for _s in list(sensors):
+                if getattr(_s, "_key", None) == _key:
+                    _pri.append(_s)
+                    sensors.remove(_s)
+        sensors = _pri + sensors
     return sensors
 
 
