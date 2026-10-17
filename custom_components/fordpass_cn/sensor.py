@@ -1438,17 +1438,28 @@ class FordPassServiceFieldSensor(SensorEntity):
         v = _service_field_value(self._payload() or {}, self._path)
         if v is None or v == "":
             return "暂无"
+        # v5.0.2: 视频说明书 URL 太长（如 https://h5fya.fuyu.club/manual/xxx/
+        # index.html）刷屏——状态显示短文案，完整 URL 移入 manual_url 属性，
+        # 前端 Markdown 卡片引用即可点击跳转浏览器打开（见 README）。
+        if self._key == "video_manual":
+            return "查看视频说明书"
         return str(v)
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {
+        attrs = {
             "last_poll": (
                 f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
                 if self.coordinator.last_poll
                 else None
             )
         }
+        # v5.0.2: 完整 URL 入属性供前端链接使用
+        if self._key == "video_manual":
+            url = _service_field_value(self._payload() or {}, self._path)
+            if url:
+                attrs["manual_url"] = url
+        return attrs
 
 
 class FordPassOilLifeSensor(_ServiceInfoSensor):
