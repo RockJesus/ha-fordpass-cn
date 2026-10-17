@@ -26,8 +26,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
+from .api import extract_remote_image_url
 from .const import (
-        CMD_ASU_SETTING,
+    CMD_ASU_SETTING,
     CMD_AUTO_REFRESH,
     CMD_CENTRAL_LIGHTING,
     CMD_OTA_SCHEDULE,
@@ -36,7 +37,6 @@ from .const import (
     CMD_TRAILER_CHECK_STOP,
     DOMAIN,
 )
-from .api import extract_remote_image_url
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -188,12 +188,13 @@ async def async_setup_entry(
             _ent.async_on_remove(
                 _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
-    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
-        pass
+    except Exception:  # 注册失败不影响实体创建
+        _LOGGER.debug("FordPass 实体注册回调失败（忽略）", exc_info=True)
 
 
 
 class FordPassWallboxUnbindButton(ButtonEntity):
+    _attr_state = "待命"
     """解绑家充桩（v3.7.2）：POST binding/unbind/v2。
 
     仅 smartwallbox 探测到绑定桩的车型创建；wallboxId 取默认桩。
@@ -237,11 +238,12 @@ class FordPassWallboxUnbindButton(ButtonEntity):
             raise HomeAssistantError("未找到已绑定的家充桩")
         try:
             await self.coordinator.api.wallbox_unbind(self.coordinator.vin, wid)
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             raise HomeAssistantError(f"解绑家充桩失败: {err}") from err
 
 
 class FordPassWallboxBleAddButton(ButtonEntity):
+    _attr_state = "待命"
     """家充桩 BLE 自动认证（v4.7.3）：POST auto/charging/ble/add/v3。
 
     6.16.0 逆向端点——桩车 BLE 自动授权：授权后插枪即由桩与车 BLE
@@ -286,11 +288,12 @@ class FordPassWallboxBleAddButton(ButtonEntity):
             raise HomeAssistantError("未找到已绑定的家充桩")
         try:
             await self.coordinator.api.wallbox_ble_add(self.coordinator.vin, wid)
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             raise HomeAssistantError(f"家充桩 BLE 自动认证失败: {err}") from err
 
 
 class FordPassMarkReadButton(ButtonEntity):
+    _attr_state = "待命"
     """标记消息已读（v3.5.0）：POST messages/read。
 
     messages_page 探测有数据才创建；按 message 实体的最新分类/消息 id
@@ -322,11 +325,12 @@ class FordPassMarkReadButton(ButtonEntity):
             await self.coordinator.api.mark_messages_read(
                 category_id or None, message_id or None
             )
-        except Exception as exc:  # noqa: BLE001 - 按钮失败向用户如实报错
+        except Exception as exc:
             raise HomeAssistantError(f"标记已读失败: {exc}") from exc
 
 
 class FordPassVideoStartButton(ButtonEntity):
+    _attr_state = "待命"
     """开始行车记录仪录制（v3.5.0）：POST start-video-recording。
 
     仅带行车记录仪硬件车型（video_file 探测有数据）创建。
@@ -343,11 +347,12 @@ class FordPassVideoStartButton(ButtonEntity):
     async def async_press(self) -> None:
         try:
             await self.coordinator.api.start_video_recording(self.coordinator.vin)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HomeAssistantError(f"开始录制失败: {exc}") from exc
 
 
 class FordPassVideoStopButton(ButtonEntity):
+    _attr_state = "待命"
     """停止行车记录仪录制（v3.5.0）：POST stop-video-recording。"""
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
@@ -361,11 +366,12 @@ class FordPassVideoStopButton(ButtonEntity):
     async def async_press(self) -> None:
         try:
             await self.coordinator.api.stop_video_recording(self.coordinator.vin)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HomeAssistantError(f"停止录制失败: {exc}") from exc
 
 
 class _FordPassWlButton(ButtonEntity):
+    _attr_state = "待命"
     """白名单驱动的通用按钮（v3.3.7，车型专属功能）。
 
     仅在云端命令白名单包含对应命令时创建；按下发送匹配命令，
@@ -406,6 +412,7 @@ _IDUL_DOORS: list[tuple[str, str]] = [
 
 
 class FordPassIdulLockButton(ButtonEntity):
+    _attr_state = "待命"
     """分车门锁定（IDUL，v4.7.1）——按车门单独上锁。
 
     逆向福特派 6.16.0 v5 命令族（Dart 深度反编译）：
@@ -465,6 +472,7 @@ class FordPassIdulLockButton(ButtonEntity):
 
 
 class FordPassButton(ButtonEntity):
+    _attr_state = "待命"
     def __init__(self, coordinator, key, label, icon, command, cmd_spec=None) -> None:
         self.coordinator = coordinator
         self._command = command
@@ -590,7 +598,7 @@ class FordPassV5RefreshButton(ButtonEntity):
         resp: Any = None
         try:
             resp = await self.coordinator.api.v5_refresh_status(self.coordinator.vin)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning(
                 "FordPass v5 主动刷新失败: %s（v5 PUT 命令通道网关 500 属已知状态，"
                 "可改用 send-command 手动刷新；网关恢复后自动可用）", exc,
@@ -659,7 +667,7 @@ class FordPassV5RefreshStatusButton(ButtonEntity):
             st = await self.coordinator.api.v5_refresh_status_poll(
                 self.coordinator.vin, cid)
             _LOGGER.info("FordPass v5 刷新轮询 -> %s", str(st)[:300])
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass v5 刷新轮询失败: %s", exc)
             raise
 
@@ -720,7 +728,7 @@ class FordPassManualRefreshButton(ButtonEntity):
         # 1) 请求车机刷新状态（上报云端）
         try:
             await self.coordinator.api.send_command(vin, CMD_AUTO_REFRESH)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 请求车机刷新状态失败: %s", exc)
             raise
         # 2) 延时 30 秒（v3.3.10：车机上报 + 云端落盘需要时间，实测 3 秒过短
@@ -729,7 +737,7 @@ class FordPassManualRefreshButton(ButtonEntity):
         # 3) 手动拉取最新状态（ForceRefresh）+ 全量刷新实体（复刻 App 下拉刷新）
         try:
             await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 手动拉取最新状态失败: %s", exc)
             raise
         try:
@@ -752,7 +760,6 @@ class FordPassManualRefreshButton(ButtonEntity):
         except Exception as exc:  # noqa: BLE001 - logbook 失败不影响主流程
             _LOGGER.warning("FordPass 手动刷新状态活动写入失败: %s", exc)
         _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA 全量）")
-        return
 
 
 class FordPassAirFilterResetButton(ButtonEntity):
@@ -782,7 +789,7 @@ class FordPassAirFilterResetButton(ButtonEntity):
         try:
             resp = await self.coordinator.api.reset_air_filter(self.coordinator.vin)
             _LOGGER.info("FordPass 空调滤芯重置成功: %s", str(resp)[:200])
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 空调滤芯重置失败: %s", exc)
             raise
         # 重置后立即刷新，让传感器显示新的 lastReplaceTime
@@ -824,7 +831,7 @@ class FordPassCevsDeleteAllButton(ButtonEntity):
                 self.coordinator.vin
             )
             _LOGGER.info("FordPass 预约清空结果: %s", str(resp)[:300])
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 预约清空失败: %s", exc)
             raise
         try:
@@ -869,7 +876,7 @@ class FordPassImageButton(ButtonEntity):
                 resp = await self.coordinator.api.parking_image(self.coordinator.vin, car_id)
             else:
                 resp = await self.coordinator.api.monitor_traffic(self.coordinator.vin, car_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass %s 查询失败: %s", self._kind, exc)
             raise
         self.coordinator.data["remote_image"] = {
