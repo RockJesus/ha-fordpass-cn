@@ -753,12 +753,10 @@ class FordPassManualRefreshButton(ButtonEntity):
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 手动刷新后探测端点重探失败: %s", exc)
         # v4.7.7: 手动刷新完成后逐实体写刷新后的状态值（用户要求：不要
-        # 笼统的"手动刷新完成"，要显示各实体刷新后的状态）——每个实体
-        # 活动历史显示「实体名：状态值(单位)」（车况未变时亦显示当前值）。
-        try:
-            await self.coordinator._log_refresh_states()
-        except Exception as exc:  # noqa: BLE001 - logbook 失败不影响主流程
-            _LOGGER.warning("FordPass 手动刷新状态活动写入失败: %s", exc)
+        # 笼统的"手动刷新完成"，要显示各实体刷新后的状态）。
+        # v5.1.3: 逐实体状态活动已统一由 coordinator._async_update_data
+        # 成功路径写（自动轮询与手动刷新共用，每轮一次）——button 层不再
+        # 重复调用，避免手动刷新双写同一条状态活动。
         _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA 全量）")
 
 
