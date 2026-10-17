@@ -6,6 +6,27 @@
 [![GitHub release](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn.svg)](https://github.com/RockJesus/ha-fordpass-cn/releases)
 [![HA](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue.svg)](https://www.home-assistant.io)
 
+Custom Home Assistant integration for **FordPass China (Changan Ford) / Lincoln Way (China)** cloud services. Unofficial, reverse-engineered from the FordPass CN / Lincoln Way mobile app.
+
+## Features
+
+- **Remote control** — lock / unlock / remote start / stop / honk / lights / manual refresh
+- **Vehicle status** — fuel & range, odometer, tire pressure, doors & windows, ignition, location tracking, alerts
+- **Smart features** — departure scheduling & charging (EV/PHEV/HEV), wallbox management, remote image, OTA status, maintenance plan, recall info
+- **Per-vehicle entities** — entities are created per vehicle capability (fuel type, cloud feature bitmap), no useless entities
+- **Two brands** — FordPass CN and Lincoln Way share the same cloud encryption; brand is selected at first login step
+- **Two login methods** — SMS passcode or username/password (Azure B2C)
+
+## Installation
+
+1. In Home Assistant go to **Settings → Devices & Services → HACS → ⋯ → Custom repositories**
+2. Add `https://github.com/RockJesus/ha-fordpass-cn` with category **Integration**
+3. Click **Download** (or use the `update` entity to update later versions), then **restart Home Assistant**
+4. Add the integration via **Settings → Devices & Services → Add Integration → "FordPass China 福特派互联"**
+
+> Disclaimer: This is an independent, non-official project for research and personal use only. Use it at your own risk. No affiliation with Ford Motor Company.
+
+---
 Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务：支持**手机号验证码 / 用户名密码**两种登录方式，覆盖远程控车、车辆状态监控、定位追踪、预约出发/充电、家充桩管理、远程影像等全功能。
 
 > ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
@@ -111,6 +132,11 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.0.3**（2026-10-17）：**仓库合规整改（PR 审核准备）+ 9 个功能 bug 修复**——
+  ① 新增 GitHub Actions `hassfest` + `hacs` 两个官方校验工作流（持续全绿）
+  ② README 新增英文安装/功能说明（英文优先，符合 HACS 默认仓库审核要求）
+  ③ 修复 api.py 缺失的 9 个路径常量 import（IDUL 分车门锁定、v5 状态刷新、林肯会员/我的页面、lwosb 维保预约、家充桩蓝牙添加——此前点击按钮即 NameError）
+  ④ 清理测试未使用导入；ruff 全绿 + pytest 14 通过
 - **v5.0.2**（2026-10-17）：**视频说明书改为可点击链接**——状态显示「查看视频说明书」短文案（不再刷屏长 URL），完整链接在属性 `manual_url`；README 常见问题新增 Markdown 卡片配置模板，点击即跳浏览器打开。
 - **v5.0.1**（2026-10-17）：**所有实体按车型+按数据非空创建**——19 个探测实体（全车型 6 种 + 充电域 13 种）由无条件创建改为「探测数据非空才创建」，无数据不显示「暂无数据」占位噪音；旧实体由清理逻辑自动移除。
 - **v5.0.0**（2026-10-16）：**README 优化与免责声明**——重写精炼 README（功能分组、常见问题、精简实体表）；免责声明扩容为五项（非官方/仅供研究/风险自担/数据本地/下架配合）。
