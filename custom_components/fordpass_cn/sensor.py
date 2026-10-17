@@ -149,7 +149,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors: list[SensorEntity] = []
     if _not_ev:
         sensors += [
-            FordPassSensor(coordinator, "fuel_level", "燃油量", "%", None, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),  # v5.0.7: 燃油量不再用 battery device_class（图标语义错误）
+            FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),  # v5.0.9: 燃油量用 battery device_class——HA 设备页右上角主显示只认 battery 类传感器（前端 findBatteryEntity 硬规则），改 None 会导致右上角不显示油量；图标由 HA 固定渲染电池样式（官方机制限制，无法自定义）
             FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
         ]
     sensors += [
