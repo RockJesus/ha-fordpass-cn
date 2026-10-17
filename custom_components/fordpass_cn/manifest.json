@@ -9,7 +9,7 @@
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/RockJesus/ha-fordpass-cn/issues",
+  "quality_scale": "bronze",
   "requirements": [],
-  "version": "5.0.3",
-  "quality_scale": "bronze"
+  "version": "5.0.4"
 }
