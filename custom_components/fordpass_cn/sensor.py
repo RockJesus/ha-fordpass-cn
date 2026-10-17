@@ -456,14 +456,15 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             # v3.6.2: uservehicles 探测实为注册端点（rejected 不存 _ep），
             # 但 vehicles_list（v5/vehicles/list，登录已验证）恒有值——
             # 「车辆清单」传感器据此创建。
-            # v4.3.9: 按车型创建实体，不要创建无用实体——v4.3.7 无条件创建的
-            # 19 个探测端点实体中，13 个充电域实体（家充桩/EVSS/VPOI/充电
-            # 订单等）对纯油(G)/柴油(D)车业务恒空（探测 200 但无业务数据），
-            # 改为按 fuelType 创建：电/插混/混动（E/BEV/P/PHEV/H/HEV/MHEV）
-            # 才创建，与 coordinator cevs/evss 探测跳过规则对称；6 个全车型
-            # 通用实体（OTA 协议/车辆分享/应用设置/车型主数据/用户登录状态）
-            # 保留无条件创建——不依赖车型的功能入口，任何福特车账号都有意义。
-            # 旧充电域实体由下方清理段（unique_id 不在新集合即移除）自动删除。
+            # v4.3.9: 按车型创建实体，不要创建无用实体——13 个充电域实体
+            # （家充桩/EVSS/VPOI/充电订单等）对纯油(G)/柴油(D)车业务恒空
+            # （探测 200 但无业务数据），按 fuelType 创建：电/插混/混动
+            # （E/BEV/P/PHEV/H/HEV/MHEV）才创建。
+            # v5.0.1: 全部探测实体统一「按车型 + 按数据非空才创建」——全车型
+            # 6 种（OTA 协议/车辆分享/应用设置/车型主数据/用户登录状态）与
+            # 充电域 13 种同样要求探测数据非空（_ep.get(_k) 为真值），无数据
+            # 不创建实体、不显示「暂无数据」占位噪音；旧实体由下方清理段
+            # （unique_id 不在新集合即移除）自动删除。
             _charge_kinds = ("wallbox_bound", "wallbox_info", "wallbox_records_v2",
                              "evss_order_status", "evss_apps_info", "evss_usage_notice",
                              "vpoi_status", "vpoi_saved",
@@ -475,11 +476,12 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                              "user_login_status")
             _fuel = str(coordinator.vehicle_info.get("fuelType") or "").upper()
             _charge_ok = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
+            _probe_ok = bool(_ep.get(_k))  # v5.0.1: 数据非空才创建
             if (
-                _k in _common_kinds
-                or (_k in _charge_kinds and _charge_ok)
+                (_k in _common_kinds and _probe_ok)
+                or (_k in _charge_kinds and _charge_ok and _probe_ok)
                 or (_k not in _charge_kinds and _k not in _common_kinds
-                    and _ep.get(_k))
+                    and _probe_ok)
                 or (_k == "uservehicles"
                     and getattr(coordinator, "vehicles_list", None))
             ):
