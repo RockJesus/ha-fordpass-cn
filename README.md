@@ -132,6 +132,8 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.0.4**（2026-10-17）：**CI 修复**——manifest 键序修正（quality_scale 移入字母序位置，hassfest 校验通过）；
+  tests/test_wbsk.py 移除未用 import pytest 补入 main（ruff 全绿）；v5.0.3 的两个 CI 失败项在 v5.0.4 全绿
 - **v5.0.3**（2026-10-17）：**仓库合规整改（PR 审核准备）+ 9 个功能 bug 修复**——
   ① 新增 GitHub Actions `hassfest` + `hacs` 两个官方校验工作流（持续全绿）
   ② README 新增英文安装/功能说明（英文优先，符合 HACS 默认仓库审核要求）
