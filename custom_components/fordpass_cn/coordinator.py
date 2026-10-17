@@ -728,13 +728,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
         self.last_poll = datetime.now()
-        # v4.0.3: 活动日志 15s 去重——并发刷新（手动按钮立即 force_refresh 与
-        # 自动轮询撞车 / 命令完成后二次拉取）会在几秒内写两条相同摘要，既刷屏
-        # 又无意义。同摘要且距上次写入 <15s 时跳过；轮询间隔 ≥5 分钟，正常
-        # 记录不受影响，每条轮询仍按间隔显示。
-        # v4.3.8: 抽 _log_activity 复用（成功摘要/失败原因/暂无数据实体共用）。
+        # v5.1.2: 每次轮询（自动/手动）都逐实体写各实体刷新状态活动——
+        # 不再只写一条笼统摘要（摘要无实体关联时还会被设备页过滤不可见）。
+        # 用户诉求 2026-10-17：每次轮询活动中要显示各实体的刷新状态。
+        # _log_refresh_states 跳过 button./image. 与 unavailable/unknown/空
+        # 状态实体，每轮为有实际状态的实体写「实体名：状态值」活动。
         try:
-            await self._log_activity(_status_summary(data))
+            await self._log_refresh_states()
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
         # v4.3.8: 无条件创建的探测端点实体中"暂无数据"（探测无数据/拒绝）的
@@ -796,12 +796,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 
     def activity_entity_id(self) -> str | None:
-        """v4.5.10: 实时查 registry 的"车辆信息"传感器 entity_id（活动日志关联）。
+        """v5.1.1: 实时查 registry 的"车辆识别码"传感器 entity_id（活动日志关联）。
 
-        unique_id=f"{vin}-vehicle_info"。**不缓存**（v4.5.1 缓存成功结果，
-        v4.5.2 删除该传感器后旧实体 ID 仍被缓存返回，事件关联已删实体）；
-        每次实时查 registry，实体不存在时返回 None（活动事件不带实体关联，
-        全局活动日志仍完整显示）。查询为内存操作，频率低（每轮刷新 1-2 次）。
+        unique_id=f"{vin}-vehicle_vin"（VIN 实体无条件创建、稳定存在）。
+        历史教训：v4.5.1 关联"车辆信息"传感器（unique_id={vin}-vehicle_info），
+        v4.5.2 删除该传感器后摘要活动 entity_id=None——全局活动页可见但
+        集成设备页"来源"过滤视图不可见（entity_id=None 事件被设备过滤）。
+        **不缓存**（每次实时查 registry），实体不存在时返回 None（活动事件
+        不带实体关联，全局活动日志仍完整显示）。查询为内存操作，频率低
+        （每轮刷新 1-2 次）。
         v4.5.10: 手动刷新完成事件改由 all_entity_ids() 关联全部实体（用户
         诉求：车况未变也要所有实体有刷新活动），本方法仅用于常规轮询摘要。
         """
@@ -809,7 +812,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
             return reg.async_get_entity_id(
-                "sensor", DOMAIN, f"{self.vin}-vehicle_info"
+                "sensor", DOMAIN, f"{self.vin}-vehicle_vin"
             )
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
@@ -838,7 +841,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if eid.startswith(("button.", "image.")):
                 continue  # button=按下时间戳 / image=图片URL，无状态含义
             st = self.hass.states.get(eid)
-            if st is None:
+            # v5.1.0: 跳过不可用/未知/空状态——活动页不显示无意义
+            # 的「不可用」条目（用户 2026-10-17 要求：只显示有实际
+            # 状态的刷新活动）。实体 unavailable 时保留最后已知值，
+            # 但刷新活动不为其写「不可用」噪音。
+            if st is None or st.state in ("unavailable", "unknown", ""):
                 continue
             unit = st.attributes.get("unit_of_measurement", "")
             # v4.7.8: 消息只显示状态值（实体名由活动历史关联显示）——
