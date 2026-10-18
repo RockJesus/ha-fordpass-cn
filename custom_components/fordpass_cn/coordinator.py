@@ -171,6 +171,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 状态不重复刷屏；v4.3.8 起每轮写 1 条，30min 轮询+手动刷新=81 条/24h 噪音）
         self._last_empty_probes: tuple[str, ...] | None = None
         self._last_logbook_msg: str | None = None
+        # v5.1.4: 首轮刷新延迟补写逐实体活动标志（重启/重载后 setup 时
+        # 实体尚未注册，all_entity_ids() 为空 → 45s 后补写一次）
+        self._initial_states_pending = False
         self._v5_refresh_cid: str | None = None  # v4.7.2: v5 主动刷新最近 commandId
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
         # v3.4.1: active_alerts 频率由 TTL 缓存控制（30 分钟）——取代旧
@@ -737,6 +740,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._log_refresh_states()
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
+        # v5.1.4: 首轮刷新（重启/重载后 setup，实体尚未注册）时
+        # all_entity_ids() 为空 → 逐实体活动写不了——调度 45s 后补写
+        # （届时实体已注册，仅写本地 logbook，不额外拉福特云）。
+        if not self.all_entity_ids() and not self._initial_states_pending:
+            self._initial_states_pending = True
+            self.hass.async_create_task(self._delayed_initial_states())
         # v4.3.8: 无条件创建的探测端点实体中"暂无数据"（探测无数据/拒绝）的
         # 也写活动（用户要求"包括不可用活动"）——纯油车充电域/无绑定桩等
         # 实体常驻显示「暂无数据」，活动日志同步可见（数量稳定，15s 去重
@@ -786,7 +795,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 shown = "、".join(empty[:5])
                 more = f" 等 {len(empty)} 项" if len(empty) > 5 else ""
                 await self._log_activity(
-                    f"{len(empty)} 个实体暂无数据（未开通）：{shown}{more}"
+                    f"{len(empty)} 个实体暂无数据（未开通）：{shown}{more}",
+                    associate=False,  # v5.1.4: 不挂车辆识别码（用户要求 VIN 只显示值）
                 )
             elif not empty:
                 self._last_empty_probes = None
@@ -865,6 +875,20 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception:  # noqa: BLE001 - 单条失败不影响其余
                 self.logger.debug("fordpass_cn refresh state logbook failed: %s", eid, exc_info=True)
 
+    async def _delayed_initial_states(self) -> None:
+        """v5.1.4: 首轮刷新延迟补写逐实体活动（45s 后实体已注册）。
+
+        重启/重载后 async_config_entry_first_refresh 先于实体注册执行，
+        all_entity_ids() 为空导致逐实体活动写不了（只剩摘要）——本方法
+        在实体注册完成后补写一次，仅写本地 logbook、不拉福特云。
+        """
+        try:
+            await asyncio.sleep(45)
+        finally:
+            self._initial_states_pending = False
+        if self.data is not None:
+            await self._log_refresh_states()
+
     def all_entity_ids(self) -> list[str]:
         """v4.5.10: 集成全部实体 entity_id 列表（活动事件关联用）。
 
@@ -892,6 +916,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         message: str,
         entity_ids: list[str] | None = None,
         dedup: bool = True,
+        associate: bool = True,
     ) -> None:
         """活动日志写入（v4.3.8 抽取）：成功摘要/失败原因/暂无数据实体共用。
 
@@ -942,7 +967,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "message": message,
                     "domain": DOMAIN,
                 }
-                act_eid = self.activity_entity_id()
+                act_eid = self.activity_entity_id() if associate else None
                 if act_eid:
                     service_data["entity_id"] = act_eid
                 await self.hass.services.async_call("logbook", "log", service_data)
