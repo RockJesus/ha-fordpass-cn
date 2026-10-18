@@ -737,13 +737,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # _log_refresh_states 跳过 button./image. 与 unavailable/unknown/空
         # 状态实体，每轮为有实际状态的实体写「实体名：状态值」活动。
         try:
-            await self._log_refresh_states()
+            _n = await self._log_refresh_states()
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
-        # v5.1.4: 首轮刷新（重启/重载后 setup，实体尚未注册）时
-        # all_entity_ids() 为空 → 逐实体活动写不了——调度 45s 后补写
-        # （届时实体已注册，仅写本地 logbook，不额外拉福特云）。
-        if not self.all_entity_ids() and not self._initial_states_pending:
+            _n = 0
+        # v5.1.4/v5.1.5: 重启/重载后首轮刷新时实体虽已在 entity_registry
+        # （持久化，all_entity_ids() 非空）但状态尚未写入（states.get 全
+        # None），逐实体活动一条都写不了（只剩摘要）——按「本次实际写入
+        # 条数 n==0」判定，调度 45s 后补写一次（届时实体已注册状态就绪，
+        # 仅写本地 logbook、不额外拉福特云）。
+        if _n == 0 and not self._initial_states_pending:
             self._initial_states_pending = True
             self.hass.async_create_task(self._delayed_initial_states())
         # v4.3.8: 无条件创建的探测端点实体中"暂无数据"（探测无数据/拒绝）的
@@ -839,14 +842,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         "false": "否",
     }
 
-    async def _log_refresh_states(self) -> None:
+    async def _log_refresh_states(self) -> int:
         """v4.7.7: 手动刷新完成后逐实体写刷新后的状态值（替代笼统的
         「手动刷新完成」消息）。
 
         每个实体的活动历史显示「实体名：状态值(单位)」——用户可看到
         各实体刷新后的真实状态（车况未变时亦显示当前值）。button 实体
         state 为最后按下时间戳（无状态含义），跳过。单条失败不影响其余。
+        返回实际写入条数（v5.1.5: 首轮 n==0 时调度延迟补写）。
         """
+        _written = 0
         for eid in self.all_entity_ids():
             if eid.startswith(("button.", "image.")):
                 continue  # button=按下时间戳 / image=图片URL，无状态含义
@@ -872,22 +877,28 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "entity_id": eid,
                     },
                 )
+                _written += 1
             except Exception:  # noqa: BLE001 - 单条失败不影响其余
                 self.logger.debug("fordpass_cn refresh state logbook failed: %s", eid, exc_info=True)
+        return _written
 
     async def _delayed_initial_states(self) -> None:
         """v5.1.4: 首轮刷新延迟补写逐实体活动（45s 后实体已注册）。
 
-        重启/重载后 async_config_entry_first_refresh 先于实体注册执行，
-        all_entity_ids() 为空导致逐实体活动写不了（只剩摘要）——本方法
-        在实体注册完成后补写一次，仅写本地 logbook、不拉福特云。
+        重启/重载后 async_config_entry_first_refresh 先于实体状态写入，
+        逐实体活动写不了（只剩摘要）——本方法在实体注册/状态就绪后
+        补写一次，仅写本地 logbook、不拉福特云。
         """
+        self.logger.warning("fordpass_cn v5.1.5 首轮补写开始（45s 延迟）")
         try:
             await asyncio.sleep(45)
         finally:
             self._initial_states_pending = False
         if self.data is not None:
-            await self._log_refresh_states()
+            n = await self._log_refresh_states()
+            self.logger.warning("fordpass_cn v5.1.5 首轮补写完成，写入 %d 条", n)
+        else:
+            self.logger.warning("fordpass_cn v5.1.5 首轮补写跳过（data 为空）")
 
     def all_entity_ids(self) -> list[str]:
         """v4.5.10: 集成全部实体 entity_id 列表（活动事件关联用）。
