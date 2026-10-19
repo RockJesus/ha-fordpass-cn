@@ -889,16 +889,18 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         逐实体活动写不了（只剩摘要）——本方法在实体注册/状态就绪后
         补写一次，仅写本地 logbook、不拉福特云。
         """
-        self.logger.warning("fordpass_cn v5.1.5 首轮补写开始（45s 延迟）")
+        # v5.1.6: 验证完成，特征日志降级 debug——重启后不再产生
+        # system_log warning 噪音（调试时开 debug 日志仍可查）。
+        self.logger.debug("fordpass_cn v5.1.6 首轮补写开始（45s 延迟）")
         try:
             await asyncio.sleep(45)
         finally:
             self._initial_states_pending = False
         if self.data is not None:
             n = await self._log_refresh_states()
-            self.logger.warning("fordpass_cn v5.1.5 首轮补写完成，写入 %d 条", n)
+            self.logger.debug("fordpass_cn v5.1.6 首轮补写完成，写入 %d 条", n)
         else:
-            self.logger.warning("fordpass_cn v5.1.5 首轮补写跳过（data 为空）")
+            self.logger.debug("fordpass_cn v5.1.6 首轮补写跳过（data 为空）")
 
     def all_entity_ids(self) -> list[str]:
         """v4.5.10: 集成全部实体 entity_id 列表（活动事件关联用）。
