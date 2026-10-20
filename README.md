@@ -156,6 +156,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.2.3**（2026-10-20）：**代码审查 ruff 全规则清理**——修复审查发现的 16 项代码风格问题：合并冗余布尔判断与嵌套 if（SIM103/SIM102）、字典遍历改用 values()（PERF102）、去除冗余 int 转换（RUF046）、日志异常参数精简（TRY401），以及 4 处类级可变默认加 ClassVar 类型注解（单例缓存设计不变，行为不变）；Actions 规则（F/E9/B）与全规则复查全绿
 - **v5.2.2**（2026-10-20）：**回退 HACS 下载方式**——v5.2.1 尝试启用 zip_release（下载发布压缩包）后，HACS 安装文件路径异常导致 HA 找不到集成（全部实体 unavailable）。v5.2.2 回退为原下载方式（仓库分支拉取），恢复稳定；代码内容（ruff 清理 + 文档措辞修正）与 v5.2.1 一致
 - **v5.2.1**（2026-10-20）：**代码风格清理 + 文档措辞修正**——① 按 ruff 清理 40 余处代码风格问题（import 排序、类型注解写法等，功能行为不变）；② README 更新日志去掉分级编号等措辞，表述更直接；③ 尝试启用 zip_release 下载方式，因 HACS 安装路径异常在 v5.2.2 回退
 - **v5.2.0**（2026-10-20）：**按钮「待命」兜底修复生效**——v5.1.9 在 async_added_to_hass 写入「待命」仍被 restore 流程覆盖（HA button 平台从未按过的按钮无历史状态时置 unknown，写入时序竞争）。v5.2.0 改为 override state property：读取时 _attr_state 为空/unknown 一律返回「待命」，按下后返回时间戳，不受恢复时序影响

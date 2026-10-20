@@ -8,7 +8,7 @@ import re
 import time
 
 _LOGGER = logging.getLogger(__name__)
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -80,9 +80,7 @@ def _is_usable(status, paths) -> bool:
         return False
     if isinstance(val, str):
         return val.strip().lower() not in _INVALID_VALUES
-    if isinstance(val, (list, dict)):
-        return False
-    return True
+    return not isinstance(val, (list, dict))
 
 
 async def async_setup_entry(
@@ -811,7 +809,7 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         if self._multiplier is not None and isinstance(value, (int, float)) and not isinstance(value, bool):
             value = value * self._multiplier
         if self._round_value and isinstance(value, (int, float)) and not isinstance(value, bool):
-            return int(round(value))
+            return round(value)
         if self._enum_map is not None:
             value = self._enum_map.get(value, value)
         if self._transform is not None:
@@ -829,7 +827,7 @@ class FordPassAlertSensor(SensorEntity):
     the vehicle-status PrmtAlarmEvent / warning fields (Null => 无异常).
     """
 
-    _FALLBACK_PATHS = [
+    _FALLBACK_PATHS: ClassVar[list[list[str]]] = [
         ["PrmtAlarmEvent"], ["warning"], ["warnings"], ["alerts"],
         ["vehicleAbnormal"], ["abnormal"], ["abnormalWarning"],
         ["abnormalStatus"], ["warningStatus"], ["faults"],
@@ -1142,7 +1140,7 @@ class FordPassOtaSettingSensor(SensorEntity):
     OTA 配置（远程 OTA 开关、激活排程、当前/目标版本、状态描述）。
     """
 
-    _OTA_FLAG_MAP = {0: "未开通远程OTA", 1: "已开通", 2: "未知", None: "未知"}
+    _OTA_FLAG_MAP: ClassVar[dict[int, str]] = {0: "未开通远程OTA", 1: "已开通", 2: "未知", None: "未知"}
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
@@ -2028,7 +2026,7 @@ def _swb_find(node, key: str):
 def _swb_list(node):
     """递归找第一个充电桩（wallbox/charger）对象列表（v3.4.5）。"""
     if isinstance(node, dict):
-        for _k, v in node.items():
+        for v in node.values():
             if isinstance(v, list) and v and all(isinstance(x, dict) for x in v) and any(
                 str(kk).lower() in ("wallboxid", "wallbox", "chargerid", "serialnumber",
                                     "serialno", "equipmentid")

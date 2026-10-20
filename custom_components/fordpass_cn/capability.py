@@ -53,9 +53,7 @@ def usable(status: dict | None, paths: list[list[str]]) -> bool:
         return False
     if isinstance(val, str):
         return val.strip().lower() not in _INVALID_VALUES
-    if isinstance(val, (list, dict)):
-        return False
-    return True
+    return not isinstance(val, (list, dict))
 
 
 def node_usable(status: dict | None, paths: list[list[str]]) -> bool:

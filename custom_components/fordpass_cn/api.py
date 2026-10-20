@@ -1707,13 +1707,16 @@ class FordPassApi:
                     continue
                 last = result
                 vs = result.get("vehiclestatus", result)
-                if isinstance(vs, dict) and vs.get("vin"):
+                if (
+                    isinstance(vs, dict)
+                    and vs.get("vin")
                     # fresh snapshot: key fields carry status=CURRENT
-                    if any(
+                    and any(
                         isinstance(v, dict) and v.get("status") == "CURRENT"
                         for v in vs.values()
-                    ):
-                        return True, result
+                    )
+                ):
+                    return True, result
             except Exception as exc:  # noqa: BLE001 - keep polling on transient errors
                 self._log.debug("wait_command_complete poll failed: %s", exc)
             await asyncio.sleep(poll)

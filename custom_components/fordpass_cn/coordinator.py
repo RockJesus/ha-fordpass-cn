@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -86,7 +86,7 @@ def _status_summary(data: dict[str, Any]) -> str:
             parts.append(f"里程：{odo} km")
     wp = vs.get("windowPosition") or {}
     win_states: list[str] = []
-    for _k, node in wp.items():
+    for node in wp.values():
         if isinstance(node, dict):
             st = win_state(val(node))
             if st and st != "已关闭":
@@ -858,7 +858,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None
 
-    _STATE_ZH = {
+    _STATE_ZH: ClassVar[dict[str, str]] = {
         "locked": "已锁定",
         "unlocked": "已解锁",
         "jammed": "卡住",

@@ -338,17 +338,17 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 api = FordPassApi(session, _LOGGER)
                 try:
                     self._xjw = await api.generate_passcode(self._phone)
-                except ImportError as err:
+                except ImportError:
                     errors["base"] = "missing_deps"
-                    _LOGGER.exception("dependency import failed: %s", err)
+                    _LOGGER.exception("dependency import failed")
                 except FordPassApiError as err:
                     errors["base"] = "passcode_failed"
                     _LOGGER.warning(
                         "send passcode failed: code=%s msg=%s", err.code, err.message
                     )
-                except Exception as err:
+                except Exception:
                     errors["base"] = "unknown"
-                    _LOGGER.exception("unexpected error sending passcode: %s", err)
+                    _LOGGER.exception("unexpected error sending passcode")
                 else:
                     return self.async_show_form(
                         step_id="code",
@@ -373,17 +373,17 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input["passcode"].strip(),
                     self._xjw,
                 )
-            except ImportError as err:
+            except ImportError:
                 errors["base"] = "missing_deps"
-                _LOGGER.exception("dependency import failed: %s", err)
+                _LOGGER.exception("dependency import failed")
             except FordPassApiError as err:
                 errors["base"] = "login_failed"
                 _LOGGER.warning(
                     "login failed: code=%s msg=%s", err.code, err.message
                 )
-            except Exception as err:
+            except Exception:
                 errors["base"] = "unknown"
-                _LOGGER.exception("unexpected error during login: %s", err)
+                _LOGGER.exception("unexpected error during login")
             else:
                 return self._finish_login(LOGIN_MODE_SMS, tokens)
         return self.async_show_form(
@@ -438,17 +438,17 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     tokens = await api.password_login(
                         self._username or "", code=code
                     )
-                except ImportError as err:
+                except ImportError:
                     errors["base"] = "missing_deps"
-                    _LOGGER.exception("dependency import failed: %s", err)
+                    _LOGGER.exception("dependency import failed")
                 except FordPassApiError as err:
                     errors["base"] = "bad_code"
                     _LOGGER.warning(
                         "b2c code exchange failed: code=%s msg=%s", err.code, err.message
                     )
-                except Exception as err:
+                except Exception:
                     errors["base"] = "unknown"
-                    _LOGGER.exception("unexpected error during b2c code exchange: %s", err)
+                    _LOGGER.exception("unexpected error during b2c code exchange")
                 else:
                     # v4.4.6: 密码按用户要求持久化到 entry.data（仅本地配置），
                     # 供浏览器辅助重登录/自动化使用；token 与短信登录一致持久化。

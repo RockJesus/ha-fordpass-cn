@@ -57,10 +57,8 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     async_update_entry 渐进写入，不涉及 minor 迁移），此处返回 True
     即视为迁移完成，并为未来 schema 变更预留分段迁移入口。
     """
-    if config_entry.version > 1:
-        # 未来版本降级到此版时的保护（正常不应发生）
-        return False
-    return True
+    # 未来版本降级到此版时的保护（正常不应发生）
+    return config_entry.version <= 1
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
