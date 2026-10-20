@@ -1,12 +1,11 @@
 """The FordPass China integration."""
 from __future__ import annotations
 
-import json
 import asyncio
+import json
 import logging
 
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryAuthFailed,
@@ -17,9 +16,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import FordPassApi, FordPassApiError
 from . import capability
-from .wbsk import FordPassCrypto
+from .api import FordPassApi, FordPassApiError
 from .const import (
     CONF_ACCESS_TOKEN,
     CONF_CHIRP_TYPE,
@@ -33,6 +31,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
+from .wbsk import FordPassCrypto
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,7 +123,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # ConfigEntryNotReady 交给 HA 自动重试，用户无感知。
         async with asyncio.timeout(20):
             vehicles = await api.get_vehicles()
-    except asyncio.TimeoutError as err:
+    except TimeoutError as err:
         raise ConfigEntryNotReady(f"FordPass timeout: {err}") from err
     except FordPassApiError as err:
         if err.code in (401, 403):
@@ -136,7 +135,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             raise ConfigEntryAuthFailed(f"FordPass login expired: {err}") from err
         # 其它 4xx/5xx：多数为临时网络/网关故障，交给 HA 自动重试
         raise ConfigEntryNotReady(f"FordPass login failed: {err}") from err
-    except Exception as err:  # noqa: BLE001 - 未知错误同样按临时故障重试
+    except Exception as err:
         raise ConfigEntryNotReady(f"FordPass setup error: {err}") from err
 
     if not vehicles:
@@ -267,7 +266,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "fordpass_cn 全车型能力检测: %s",
                 json.dumps(_caps, ensure_ascii=False),
             )
-        except Exception:  # noqa: BLE001 - 检测失败不影响集成运行
+        except Exception:
             _LOGGER.debug("fordpass_cn capability detection failed", exc_info=True)
 
     # v3.0.8: 鸣笛寻车设置（持续时长/鸣笛类型）初始值——来自 entry.options

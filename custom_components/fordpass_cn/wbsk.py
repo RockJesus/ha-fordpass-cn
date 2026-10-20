@@ -177,11 +177,11 @@ class FordPassCrypto:
     共享只读单例，构造零阻塞（不再加载 ELF/映射内存/Unicorn）。
     """
 
-    _instances: dict[str, "FordPassCrypto"] = {}
+    _instances: dict[str, FordPassCrypto] = {}
     _lock = threading.Lock()
 
     @classmethod
-    def get(cls, key_file: str | None = None, scene: str = "x_api") -> "FordPassCrypto":
+    def get(cls, key_file: str | None = None, scene: str = "x_api") -> FordPassCrypto:
         """Per-identity instance cache; key_file + scene select the white-box key.
         The default is the main prod key (x_api); the LBS gateway uses its own
         key (lbs_p2c for request fields, lbs for response fields), cevs uses

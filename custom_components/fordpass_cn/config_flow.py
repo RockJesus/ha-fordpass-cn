@@ -19,7 +19,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -27,15 +26,14 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import FordPassApi, FordPassApiError
 from .const import (
     APPLICATION_ID,
-    BRAND_FORD,
-    BRAND_LABELS,
-    BRAND_PROFILE,
-    CONF_BRAND,
-    DEFAULT_BRAND,
     B2C_AUTHORITY,
     B2C_CLIENT_ID,
     B2C_PATH_AUTHORIZE,
     B2C_REDIRECT_URI,
+    BRAND_FORD,
+    BRAND_LABELS,
+    BRAND_PROFILE,
+    CONF_BRAND,
     CONF_COORDINATE_SYSTEM,
     CONF_LOGIN_MODE,
     CONF_PASSWORD,
@@ -43,6 +41,7 @@ from .const import (
     CONF_USERNAME,
     COORDINATE_GCJ02,
     COORDINATE_WGS84,
+    DEFAULT_BRAND,
     DEFAULT_COORDINATE_SYSTEM,
     DOMAIN,
     LOGIN_MODE_PASSWORD,
@@ -145,8 +144,7 @@ def _build_b2c_login_url() -> str:
 def _normalize_phone(raw: str) -> str:
     """Strip whitespace and an optional +86 / 86 country prefix."""
     phone = raw.strip()
-    if phone.startswith("+"):
-        phone = phone[1:]
+    phone = phone.removeprefix("+")
     if phone.startswith("86") and len(phone) == 13:
         phone = phone[2:]
     return phone
@@ -348,7 +346,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.warning(
                         "send passcode failed: code=%s msg=%s", err.code, err.message
                     )
-                except Exception as err:  # noqa: BLE001
+                except Exception as err:
                     errors["base"] = "unknown"
                     _LOGGER.exception("unexpected error sending passcode: %s", err)
                 else:
@@ -383,7 +381,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.warning(
                     "login failed: code=%s msg=%s", err.code, err.message
                 )
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 errors["base"] = "unknown"
                 _LOGGER.exception("unexpected error during login: %s", err)
             else:
@@ -448,7 +446,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.warning(
                         "b2c code exchange failed: code=%s msg=%s", err.code, err.message
                     )
-                except Exception as err:  # noqa: BLE001
+                except Exception as err:
                     errors["base"] = "unknown"
                     _LOGGER.exception("unexpected error during b2c code exchange: %s", err)
                 else:
