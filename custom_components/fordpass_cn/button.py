@@ -193,7 +193,29 @@ async def async_setup_entry(
 
 
 
-class FordPassWallboxUnbindButton(ButtonEntity):
+class _FordPassButtonBase(ButtonEntity):
+    """未按下过的按钮显示「待命」兜底（v5.1.9）。
+
+    HA ButtonEntity 内置 RestoreEntity——实体重启后恢复最后按下时间戳；
+    但**从未按下过的按钮无历史状态，restore 流程会把 state 置为 unknown**
+    （覆盖 _attr_state="待命" 类属性，v5.0.6 修复在集成重载时有效、HA
+    完整重启后失效）。本基类在实体加入后检查：无历史状态时写「待命」，
+    有历史（按下时间戳）保持原样。
+    """
+    _attr_state = "待命"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        try:
+            last = await self.async_get_last_state()
+        except Exception:  # noqa: BLE001 - restore 失败不阻塞
+            last = None
+        if last is None or last.state in ("unknown", "unavailable", "", None):
+            self._attr_state = "待命"
+            self.async_write_ha_state()
+
+
+class FordPassWallboxUnbindButton(_FordPassButtonBase):
     _attr_state = "待命"
     """解绑家充桩（v3.7.2）：POST binding/unbind/v2。
 
@@ -242,7 +264,7 @@ class FordPassWallboxUnbindButton(ButtonEntity):
             raise HomeAssistantError(f"解绑家充桩失败: {err}") from err
 
 
-class FordPassWallboxBleAddButton(ButtonEntity):
+class FordPassWallboxBleAddButton(_FordPassButtonBase):
     _attr_state = "待命"
     """家充桩 BLE 自动认证（v4.7.3）：POST auto/charging/ble/add/v3。
 
@@ -292,7 +314,7 @@ class FordPassWallboxBleAddButton(ButtonEntity):
             raise HomeAssistantError(f"家充桩 BLE 自动认证失败: {err}") from err
 
 
-class FordPassMarkReadButton(ButtonEntity):
+class FordPassMarkReadButton(_FordPassButtonBase):
     _attr_state = "待命"
     """标记消息已读（v3.5.0）：POST messages/read。
 
@@ -329,7 +351,7 @@ class FordPassMarkReadButton(ButtonEntity):
             raise HomeAssistantError(f"标记已读失败: {exc}") from exc
 
 
-class FordPassVideoStartButton(ButtonEntity):
+class FordPassVideoStartButton(_FordPassButtonBase):
     _attr_state = "待命"
     """开始行车记录仪录制（v3.5.0）：POST start-video-recording。
 
@@ -351,7 +373,7 @@ class FordPassVideoStartButton(ButtonEntity):
             raise HomeAssistantError(f"开始录制失败: {exc}") from exc
 
 
-class FordPassVideoStopButton(ButtonEntity):
+class FordPassVideoStopButton(_FordPassButtonBase):
     _attr_state = "待命"
     """停止行车记录仪录制（v3.5.0）：POST stop-video-recording。"""
 
@@ -370,7 +392,7 @@ class FordPassVideoStopButton(ButtonEntity):
             raise HomeAssistantError(f"停止录制失败: {exc}") from exc
 
 
-class _FordPassWlButton(ButtonEntity):
+class _FordPassWlButton(_FordPassButtonBase):
     _attr_state = "待命"
     """白名单驱动的通用按钮（v3.3.7，车型专属功能）。
 
@@ -411,7 +433,7 @@ _IDUL_DOORS: list[tuple[str, str]] = [
 ]
 
 
-class FordPassIdulLockButton(ButtonEntity):
+class FordPassIdulLockButton(_FordPassButtonBase):
     _attr_state = "待命"
     """分车门锁定（IDUL，v4.7.1）——按车门单独上锁。
 
@@ -471,7 +493,7 @@ class FordPassIdulLockButton(ButtonEntity):
             _LOGGER.warning("FordPass IDUL %s 刷新失败: %s", self._doortype, exc)
 
 
-class FordPassButton(ButtonEntity):
+class FordPassButton(_FordPassButtonBase):
     _attr_state = "待命"
     def __init__(self, coordinator, key, label, icon, command, cmd_spec=None) -> None:
         self.coordinator = coordinator
@@ -570,7 +592,7 @@ class FordPassButton(ButtonEntity):
                 _LOGGER.warning("FordPass refresh after %s failed: %s", self._command, exc)
 
 
-class FordPassV5RefreshButton(ButtonEntity):
+class FordPassV5RefreshButton(_FordPassButtonBase):
     """v5 主动刷新车况（v4.7.2）——PUT /api/vehicles/v5/{vin}/status。
 
     Dart 还原：sendRefreshVehicleStatusRequest = PUT /status → commandId →
@@ -638,7 +660,7 @@ class FordPassV5RefreshButton(ButtonEntity):
             _LOGGER.warning("FordPass v5 主动刷新后拉取状态失败: %s", exc)
 
 
-class FordPassV5RefreshStatusButton(ButtonEntity):
+class FordPassV5RefreshStatusButton(_FordPassButtonBase):
     """v5 刷新轮询（v4.7.2）——查询最近一次 v5 主动刷新的命令状态。
 
     GET /api/vehicles/v5/{vin}/statusrefresh/{commandId}；未先执行过
@@ -672,7 +694,7 @@ class FordPassV5RefreshStatusButton(ButtonEntity):
             raise
 
 
-class FordPassManualRefreshButton(ButtonEntity):
+class FordPassManualRefreshButton(_FordPassButtonBase):
     """手动刷新车辆状态（v3.3.4）——合并 v3.0.3 的两个刷新按钮。
 
     与 App「下拉刷新车辆状态」时序一致，顺序执行：
@@ -760,7 +782,7 @@ class FordPassManualRefreshButton(ButtonEntity):
         _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA 全量）")
 
 
-class FordPassAirFilterResetButton(ButtonEntity):
+class FordPassAirFilterResetButton(_FordPassButtonBase):
     """重置空调滤芯（v3.1.7）。
 
     PUT /api/cnxapi-vds/v1/aar/status body={channel:"IVI", filterStatus:0,
@@ -797,7 +819,7 @@ class FordPassAirFilterResetButton(ButtonEntity):
             _LOGGER.warning("FordPass 空调滤芯重置后刷新失败: %s", exc)
 
 
-class FordPassCevsDeleteAllButton(ButtonEntity):
+class FordPassCevsDeleteAllButton(_FordPassButtonBase):
     """清空全部预约出发/充电计划（v4.2.4）。
 
     逆向 6.16.0（Dart 深度反编译）：POST /api/cevs/v2/departuretimes/
@@ -838,7 +860,7 @@ class FordPassCevsDeleteAllButton(ButtonEntity):
             _LOGGER.warning("FordPass 预约清空后刷新失败: %s", exc)
 
 
-class FordPassImageButton(ButtonEntity):
+class FordPassImageButton(_FordPassButtonBase):
     """停车影像 / 行车监控查询按钮（v3.1.13）。
 
     仅当车辆列表 encryptedCarId 非空时创建（锐际 null = 车型无远程影像
