@@ -20,15 +20,15 @@ import json
 import math
 import re
 import time
-import uuid
 import urllib.parse
+import uuid
 from typing import Any
 
 import aiohttp
 
 from .const import (
-    APPLICATION_ID,
     APP_VERSION,
+    APPLICATION_ID,
     B2C_AUTHORITY,
     B2C_CLIENT_ID,
     B2C_PATH_AUTHORIZE,
@@ -57,21 +57,39 @@ from .const import (
     PATH_APP_INIT_SETTINGS,
     PATH_B2C_TOKEN,
     PATH_CCFEATURES,
+    PATH_CEVS_COMMAND_STATUS,
     PATH_CHARGELOGS_RETRIEVE,
+    PATH_CMCC_TRAFFIC,
     PATH_COMMAND_STATUS,
     PATH_CVFEATURES,
-    PATH_CEVS_COMMAND_STATUS,
-    PATH_CMCC_TRAFFIC,
     PATH_DEPARTURE_DELETE_ALL,
     PATH_DEPARTURE_TIMES_RETRIEVE,
     PATH_DEPARTURE_TOGGLE_OFF,
     PATH_DEPARTURE_TOGGLE_ON,
     PATH_DEVICE_LIST,
+    PATH_EVSS_ACCOUNTS,
+    PATH_EVSS_APPS_INFO,
+    PATH_EVSS_CHARGER_INFO,
+    PATH_EVSS_EVALUATE_URL,
+    PATH_EVSS_EVENTS_V3,
+    PATH_EVSS_FREEPASS_STATUS,
+    PATH_EVSS_INVOICEABLES,
+    PATH_EVSS_ORDER_EVENTS,
+    PATH_EVSS_ORDER_STATUS,
+    PATH_EVSS_ORDERS,
+    PATH_EVSS_PARKING,
+    PATH_EVSS_PAYMENT_SUMMARY,
+    PATH_EVSS_STATIONS,
+    PATH_EVSS_USAGE_NOTICE,
     PATH_FPOSB_BOOKING_DETAIL,
     PATH_FPOSB_HISTORY,
     PATH_FPOSB_PUD_DETAIL,
     PATH_FPOSB_SA_INFO,
     PATH_GENERATE_PASSCODE,
+    PATH_LINCOLN_MEMBER_INFO,
+    PATH_LINCOLN_MY_PAGE,
+    PATH_LWOSB_BOOKINGS,
+    PATH_LWOSB_ORDER_STATUS,
     PATH_MAINTENANCE_HISTORY,
     PATH_MAINTENANCE_PLAN,
     PATH_MCM_MESSAGES_V3,
@@ -99,24 +117,25 @@ from .const import (
     PATH_SCHEDULE_DEPARTURE,
     PATH_SEND_COMMAND,
     PATH_SENSOR_SHADOW,
-    PATH_SHARE_LIST,
     PATH_SHARE_CAPABILITY,
     PATH_SHARE_HISTORY,
+    PATH_SHARE_LIST,
     PATH_SIM_INFO,
+    PATH_SMARTWALLBOX_AUTHORITY,
     PATH_SMARTWALLBOX_BINDING,
+    PATH_SMARTWALLBOX_BLE_ADD,
+    PATH_SMARTWALLBOX_BOUND,
     PATH_SMARTWALLBOX_CHARGE_START,
     PATH_SMARTWALLBOX_CHARGE_STOP,
-    PATH_SMARTWALLBOX_UNBIND,
-    PATH_SMARTWALLBOX_AUTHORITY,
     PATH_SMARTWALLBOX_CHG_STATUS_WB,
     PATH_SMARTWALLBOX_CHG_WB,
-    PATH_SMARTWALLBOX_ORDERS,
-    PATH_SMARTWALLBOX_SHARING_QUERY,
     PATH_SMARTWALLBOX_CONFIG,
-    PATH_SMARTWALLBOX_BOUND,
     PATH_SMARTWALLBOX_INFO,
+    PATH_SMARTWALLBOX_ORDERS,
     PATH_SMARTWALLBOX_RECORDS,
     PATH_SMARTWALLBOX_RECORDS_V2,
+    PATH_SMARTWALLBOX_SHARING_QUERY,
+    PATH_SMARTWALLBOX_UNBIND,
     PATH_SRS_PROFILE,
     PATH_THIRD_PARTY_TOKEN,
     PATH_USER_AUTH_STATUS,
@@ -126,41 +145,22 @@ from .const import (
     PATH_USER_REDDOT,
     PATH_USER_VEHICLES,
     PATH_V5_ANNOUNCE_STATUS,
-    PATH_V5_HONK,
-    PATH_V5_PANIC,
-    PATH_EVSS_ACCOUNTS,
-    PATH_EVSS_APPS_INFO,
-    PATH_EVSS_CHARGER_INFO,
-    PATH_EVSS_EVALUATE_URL,
-    PATH_EVSS_EVENTS_V3,
-    PATH_EVSS_FREEPASS_STATUS,
-    PATH_EVSS_INVOICEABLES,
-    PATH_EVSS_ORDER_EVENTS,
-    PATH_EVSS_ORDER_STATUS,
-    PATH_EVSS_ORDERS,
-    PATH_EVSS_PARKING,
-    PATH_EVSS_PAYMENT_SUMMARY,
-    PATH_EVSS_STATIONS,
-    PATH_EVSS_USAGE_NOTICE,
-    PATH_LINCOLN_MEMBER_INFO,
-    PATH_LINCOLN_MY_PAGE,
-    PATH_LWOSB_BOOKINGS,
-    PATH_LWOSB_ORDER_STATUS,
-    PATH_SMARTWALLBOX_BLE_ADD,
     PATH_V5_DOOR_LOCK,
     PATH_V5_DOOR_LOCK_STATUS,
+    PATH_V5_HONK,
+    PATH_V5_PANIC,
     PATH_V5_STATUS,
     PATH_V5_STATUSREFRESH,
-    PATH_VEHICLE_USER_AUTH,
     PATH_VEHICLE_MODEL_MASTERDATA,
-    PATH_VEHICLES_LIST,
-    PATH_VPOI_CHARGESTATIONS,
-    PATH_VPOI_SAVED,
-    PATH_VPOI_STATUS,
     PATH_VEHICLE_STATUS,
+    PATH_VEHICLE_USER_AUTH,
+    PATH_VEHICLES_LIST,
     PATH_VIDEO_FILE,
     PATH_VIDEO_START,
     PATH_VIDEO_STOP,
+    PATH_VPOI_CHARGESTATIONS,
+    PATH_VPOI_SAVED,
+    PATH_VPOI_STATUS,
     PATH_WALLBOX_BLE_VEHICLES,
     PATH_WARRANTY,
     PATH_WIFI_STATUS,
@@ -170,7 +170,7 @@ from .const import (
     PREF_TARGET_TEMP,
     SECRET_KEY,
     TOUCH_POINT,
-    V5_BASE_URL
+    V5_BASE_URL,
 )
 from .wbsk import FordPassCrypto
 
@@ -579,7 +579,7 @@ class FordPassApi:
                     if self.on_token_refresh is not None:
                         self.on_token_refresh(new["access_token"])
                     return await self._request(method, path, body, query, base, raw, headers)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -629,7 +629,7 @@ class FordPassApi:
                     if self.on_token_refresh is not None:
                         self.on_token_refresh(new["access_token"])
                     return await self._request(method, path, body, query, base, raw, headers)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -790,7 +790,7 @@ class FordPassApi:
                     )
                     return result
                 return inner
-            except (FordPassApiError, json.JSONDecodeError, UnicodeDecodeError, asyncio.TimeoutError) as exc:  # v4.0.17: 补超时——ForceRefresh 后偶发慢响应被截断正是超时场景
+            except (TimeoutError, FordPassApiError, json.JSONDecodeError, UnicodeDecodeError) as exc:  # v4.0.17: 补超时——ForceRefresh 后偶发慢响应被截断正是超时场景
                 if attempt == 1:
                     self._log.warning(
                         "FordPass vehicle-status 瞬时异常（第 1 次，2 秒后重试）: %s",
@@ -891,7 +891,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass v5 honk token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -986,7 +986,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass v5 %s token refresh failed: %s", what, exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -1041,7 +1041,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass v5 IDUL token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -1086,7 +1086,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass v5 IDUL status token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -1138,7 +1138,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass v5 status token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -1183,7 +1183,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass v5 statusrefresh token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -1242,7 +1242,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error("FordPass v5 honk token refresh failed: %s", exc)
                     raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
                 finally:
@@ -1302,7 +1302,7 @@ class FordPassApi:
                             return json.loads(text2)
                         except json.JSONDecodeError:
                             return {"raw": text2}
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._log.error(
                         "FordPass v5 announcestatus token refresh failed: %s", exc
                     )
@@ -1955,8 +1955,8 @@ class FordPassApi:
         JSON{"vin","xjw"} / AES-ECB(vin,key=xjw)），服务器解密层行为
         由诊断传感器自读区分。cryptography 为 HA Core 自带依赖。
         """
-        from cryptography.hazmat.primitives.asymmetric import padding
         from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
 
         pub = serialization.load_pem_public_key(pubkey_pem.encode("utf-8"))
         ct = pub.encrypt(payload, padding.PKCS1v15())
@@ -2741,7 +2741,7 @@ class FordPassApi:
 
     def _b2c_login_sync(self, username: str, password: str) -> str:
         """同步 B2C 登录（requests），返回 authorization code。"""
-        import requests  # noqa: F401  (Home Assistant 运行时自带)
+        import requests
 
         # v3.3.0: UA/headers/参数对齐福特派 6.16.0 HAR 实测（2026-10-03）。
         # 此前 UA 用 Android 15 V2284A 且 authorize 不带 consent 参数——

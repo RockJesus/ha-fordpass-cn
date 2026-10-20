@@ -2,27 +2,27 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
 import logging
 import re
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
-from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FordPassApi, FordPassApiError, FordPassProbeRejected
 from .const import (
-    PROBE_FORCE_COOLDOWN,
-    COORDINATE_WGS84,
-    DOMAIN,
-    PROBE_PERSIST_TTL,
-    CONF_BRAND,
-    DEFAULT_BRAND,
     BRAND_LINCOLN,
+    CONF_BRAND,
+    COORDINATE_WGS84,
+    DEFAULT_BRAND,
+    DOMAIN,
+    PROBE_FORCE_COOLDOWN,
+    PROBE_PERSIST_TTL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -603,7 +603,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         try:
             data = await self._async_update_data(force_all=force_all)
-        except Exception as exc:  # noqa: BLE001 - keep old data, log clearly
+        except Exception as exc:
             self.logger.error("FordPass forced refresh failed: %s", exc)
             raise UpdateFailed(f"FordPass update failed: {exc}") from exc
         self.async_set_updated_data(data)
@@ -668,7 +668,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 f"车辆状态刷新失败（保留最后已知状态）：{err}"
             )
             raise UpdateFailed(f"FordPass update failed: {err}") from err
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             await self._log_activity(
                 "车辆状态刷新失败（保留最后已知状态）：请求超时"
             )
@@ -766,7 +766,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 状态实体，每轮为有实际状态的实体写「实体名：状态值」活动。
         try:
             _n = await self._log_refresh_states()
-        except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
+        except Exception:
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
             _n = 0
         # v5.1.4/v5.1.5: 重启/重载后首轮刷新时实体虽已在 entity_registry
@@ -831,7 +831,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             elif not empty:
                 self._last_empty_probes = None
-        except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
+        except Exception:
             self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
         return data
 
@@ -938,7 +938,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     },
                 )
                 _written += 1
-            except Exception:  # noqa: BLE001 - 单条失败不影响其余
+            except Exception:
                 _failed += 1
                 self.logger.debug("fordpass_cn refresh state logbook failed: %s", eid, exc_info=True)
         if _written > 0 and _failed == 0:
@@ -1043,7 +1043,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             },
                         )
                         _ok = True
-                    except Exception:  # noqa: BLE001 - 单条失败不影响其余
+                    except Exception:
                         _fail += 1
                         self.logger.debug("fordpass_cn logbook entry failed: %s", eid, exc_info=True)
             else:
@@ -1057,7 +1057,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     service_data["entity_id"] = act_eid
                 await self.hass.services.async_call("logbook", "log", service_data)
                 _ok = True
-        except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
+        except Exception:
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
             _fail += 1
         if _ok:

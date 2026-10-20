@@ -9,21 +9,20 @@ frontend from the image proxy.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
-import hashlib
 
 import aiohttp
-
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
 from .api import extract_remote_image_url
+from .const import DOMAIN
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)

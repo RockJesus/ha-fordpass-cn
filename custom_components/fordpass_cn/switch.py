@@ -459,7 +459,7 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
             resp = await self.coordinator.api.va_command(
                 self.coordinator.vin, CMD_VA_INIT, vatype=4, duration=duration
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 声光寻车（开）失败: %s", exc)
             raise
         cid = self._command_id(resp)
@@ -477,7 +477,7 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
             resp = await self.coordinator.api.va_command(
                 self.coordinator.vin, CMD_VA_CANCEL, vatype=4
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 声光寻车（关）失败: %s", exc)
             raise
         cid = self._command_id(resp)
@@ -691,7 +691,7 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
                     interval=1,
                     chirp_type=chirp_type,
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 鸣笛寻车失败（类型=%s）: %s", chirp_name, exc)
             raise
         # 类型 0-3（V5 honk 通道）：commandId 走 V5 announcestatus 轮询；
@@ -757,7 +757,7 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
                     )
             else:
                 resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("FordPass 鸣笛寻车（关）失败: %s", exc)
             raise
         if isinstance(resp, dict) and resp.get("commandId"):

@@ -250,7 +250,7 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
                 await self.coordinator.api.save_honk_settings(
                     self.coordinator.vin, duration=duration, chirp_type=chirp_type
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _LOGGER.warning(
                     "FordPass 鸣笛设置云端保存失败（本地设置仍生效）: %s", exc
                 )
@@ -443,7 +443,7 @@ class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
         try:
             try:
                 await self.coordinator.api.save_remote_climate_target_temp(value)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _LOGGER.warning(
                     "FordPass 远程空调目标温度云端保存失败（本地设置仍生效，通道待 EV 车型实测）: %s", exc,
                 )
