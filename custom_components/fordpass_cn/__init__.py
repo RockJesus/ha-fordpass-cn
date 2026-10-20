@@ -5,6 +5,8 @@ import json
 import asyncio
 import logging
 
+import voluptuous as vol
+
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryAuthFailed,
@@ -12,6 +14,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import FordPassApi, FordPassApiError
@@ -42,6 +45,10 @@ PLATFORMS = [
     Platform.IMAGE,
     Platform.SELECT,
 ]
+
+# v5.1.7: 服务层（对齐 HA 官方 services.yaml 规范，自动化可直接调用）
+SERVICE_REFRESH_STATUS = "refresh_status"
+SERVICE_CLEAR_TOKENS = "clear_tokens"
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -280,6 +287,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "vin": coordinators[0].vin,
         "honk_settings": honk_settings,
     }
+
+    # v5.1.7: 注册服务（services.yaml）——refresh_status（可选 VIN 全车/单车
+    # 刷新）+ clear_tokens（清令牌重置会话）。闭包持有 coordinators/api，
+    # 多 entry 同域注册同名服务由 HA 覆盖，无副作用。
+    async def _service_refresh_status(call) -> None:
+        vin = call.data.get("vin")
+        targets = [c for c in coordinators if not vin or c.vin == vin]
+        if not targets:
+            _LOGGER.warning(
+                "fordpass_cn refresh_status: VIN %s 不在当前账号车辆中", vin
+            )
+            return
+        for coord in targets:
+            _LOGGER.info(
+                "fordpass_cn service refresh_status vin=%s", coord.vin
+            )
+            await coord.async_request_refresh()
+
+    async def _service_clear_tokens(call) -> None:
+        _LOGGER.warning(
+            "fordpass_cn clear_tokens: 已清除访问令牌，重载集成后需重新认证"
+        )
+        api.set_token("", "")
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REFRESH_STATUS,
+        _service_refresh_status,
+        schema=vol.Schema({vol.Optional("vin"): cv.string}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLEAR_TOKENS,
+        _service_clear_tokens,
+        schema=vol.Schema({}),
+    )
 
     # v4.9.6: 移除 cevs 变体手动探测调试服务（probe_cevs_variant）——
     # 合规审查项：逆向调试服务残留，自动化探测（probe_cevs_auto）已覆盖

@@ -1,0 +1,20 @@
+# 服务层（v5.1.7，借鉴 itchannel refresh_status / marq24 clear_tokens）
+# 自动化可直接调用；对齐 HA 官方 services.yaml 规范（name/description/fields/selector）。
+
+refresh_status:
+  name: 刷新车辆状态
+  description: 立即向福特云端请求刷新车辆状态（可选指定 VIN；缺省刷新账号下全部车辆）。注意云端刷新为命令式，响应时效约 30-60 秒。
+  fields:
+    vin:
+      name: VIN
+      description: 车辆识别码（16 位）。缺省时刷新账号下全部车辆；指定时仅刷新该车。
+      required: false
+      example: "XXXXXXXXXXXXXXXX"
+      selector:
+        text:
+          type: text
+
+clear_tokens:
+  name: 清除令牌
+  description: 清除已保存的访问令牌并重置 API 会话。下次重新加载集成时需重新认证（登录方式与手机号不变）。用于登录异常、令牌疑似失效时重置。
+  fields: {}
