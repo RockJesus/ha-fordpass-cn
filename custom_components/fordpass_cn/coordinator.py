@@ -225,16 +225,31 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 防止福特云限流：只有 vehicle-status 每轮拉取，其余按 TTL 命中
         # 直接复用上次数据，不发请求；请求失败保留旧缓存（最后已知状态）。
         self._cache: dict[str, tuple[float, Any]] = {}
+        # v5.1.8: 账号级共享缓存（问题 7 P2 修复）——chirp_cloud / messages
+        # 等账户级端点（云端 UserPreference/未读消息摘要，多车共享同一份）
+        # 存到这里，多车账号下每轮只真拉一次，其余车辆命中缓存，消除
+        # 每车每轮重复请求同一账户数据的浪费。由 __init__.py 在 payload
+        # 创建后回填（hass.data[DOMAIN][entry_id]["account_cache"]），
+        # 所有 coordinator 共享同一 dict。
+        self.account_cache: dict[str, tuple[float, Any]] | None = None
+        # v5.1.8: logbook 失败节流（问题 11 P2 修复）——logbook 服务连续
+        # 失败时暂停活动写入 1 小时，防止"每轮失败重试 + 日志风暴"；
+        # 正常时行为不变（用户诉求：每轮显示各实体刷新状态）。
+        self._logbook_fail_streak = 0
+        self._logbook_hold_until: float | None = None
 
-    def _cache_hit(self, key: str) -> tuple[bool, Any]:
-        ent = self._cache.get(key)
+    def _cache_hit(self, key: str, account: bool = False) -> tuple[bool, Any]:
+        store = self.account_cache if account else self._cache
+        if not store:
+            return False, None
+        ent = store.get(key)
         if ent and time.monotonic() < ent[0]:
             return True, ent[1]
         return False, None
 
     async def _cached_fetch(
         self, key: str, ttl: float, factory, persist: bool = False,
-        force: bool = False,
+        force: bool = False, account: bool = False,
     ) -> Any:
         """TTL 缓存包装：命中直接返回旧值；失败保留旧值；成功写缓存。
 
@@ -249,12 +264,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         「手动刷新车辆状态」按钮复刻 App 下拉刷新（全量拉取所有状态端点），
         成功后照常写缓存刷新过期时间。force 时同样保留 old（内存现值）供
         失败兜底（实体保留最后已知状态），只是不因 TTL 命中短路。
+        v5.1.8: ``account=True`` 走账号级共享缓存（self.account_cache）——
+        账户级端点（chirp_cloud/messages 等，多车共享同一份）只真拉一次，
+        其余车辆命中账号级缓存；force 时同样绕过并更新账号级缓存。
         """
+        store = self.account_cache if account else self._cache
         if not force:
-            hit, old = self._cache_hit(key)
+            hit, old = self._cache_hit(key, account=account)
             if hit:
                 return old
-            if persist and self._probe_cache:
+            if not account and persist and self._probe_cache:
                 ent = self._probe_cache.get(key)
                 if ent and time.time() < ent.get("expire", 0):
                     # 持久化命中：回填内存缓存（防止同轮重复读盘）
@@ -262,7 +281,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return ent["value"]
             old = None
         else:
-            ent = self._cache.get(key)
+            ent = (store or {}).get(key)
             old = ent[1] if ent else None
         try:
             val = await factory()
@@ -271,8 +290,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # TTL 内不再重探（reload 不制造 6 次 404 噪音），与"瞬时故障"
             # 严格区分。
             self.logger.debug("FordPass %s probe rejected: %s", key, exc)
-            self._cache[key] = (time.monotonic() + ttl, None)
-            if persist and self._probe_store is not None:
+            if store is not None:
+                store[key] = (time.monotonic() + ttl, None)
+            if not account and persist and self._probe_store is not None:
                 self._probe_cache[key] = {"expire": time.time() + ttl, "value": None}
                 try:
                     await self._probe_store.async_save(self._probe_cache)
@@ -285,18 +305,19 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.debug("FordPass %s fetch failed: %s", key, exc)
             if old is not None:
                 return old
-            if persist and self._probe_cache:
+            if not account and persist and self._probe_cache:
                 ent = self._probe_cache.get(key)
                 if ent:
                     return ent["value"]
             return None
         if val is not None:
-            self._cache[key] = (time.monotonic() + ttl, val)
+            if store is not None:
+                store[key] = (time.monotonic() + ttl, val)
             # v4.0.9: 落盘只发生在"探测成功有数据"（本分支）或
             # FordPassProbeRejected（确定性能力缺失，落盘 None）——
             # val=None 的其它来源（空响应/网络瞬时失败）不再落盘，
             # 下次 reload 重探，避免把瞬时故障钉死 7 天。
-            if persist and self._probe_store is not None:
+            if not account and persist and self._probe_store is not None:
                 self._probe_cache[key] = {
                     "expire": time.time() + ttl,
                     "value": val,
@@ -706,10 +727,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 覆盖后的值写回 data → select 云端回调回写 → 改设置回弹"移出
         # 轮询——回弹已由 v3.9.0 的 _syncing 上传保护根治（上传期间
         # select 忽略云端回写），故恢复轮询不再有回弹风险。
-        try:
-            data["chirp_cloud"] = await self.api.get_chirp_preference()
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass chirp preference fetch failed: %s", exc)
+        # v5.1.8: 云端 UserPreference 为账户级（多车共享同一份）——改为
+        # 账号级共享缓存（TTL 600s），多车账号每轮只真拉一次，其余车辆
+        # 命中账号级缓存；单车主每轮（30min > TTL）行为不变。App 端改动
+        # 同步延迟最多 10 分钟（select 上传仍即时）。
+        data["chirp_cloud"] = await self._cached_fetch(
+            "chirp_cloud", 600, lambda: self.api.get_chirp_preference(),
+            force=force_all, account=True,
+        )
+        if data["chirp_cloud"] is None:
             data["chirp_cloud"] = (self.data or {}).get("chirp_cloud")
         # 空调滤芯状态（6 小时 TTL——健康度变化慢）
         data["air_filter"] = await self._cached_fetch(
@@ -724,9 +750,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data[key] = await self._cached_fetch(
                 key, ttl, factory, force=force_all
             )
-        # 未读消息摘要（30 分钟 TTL）
+        # 未读消息摘要（30 分钟 TTL；v5.1.8: 账号级共享缓存——账户级
+        # 端点多车共享一份，多车每轮只真拉一次）
         data["messages"] = await self._cached_fetch(
-            "messages", 1800, lambda: self.api.get_messages_summary(), force=force_all
+            "messages", 1800, lambda: self.api.get_messages_summary(),
+            force=force_all, account=True,
         )
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
@@ -842,6 +870,34 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         "false": "否",
     }
 
+    def _logbook_throttled(self) -> bool:
+        """v5.1.8: logbook 失败节流判定（问题 11 P2 修复）。
+
+        连续失败（3 轮）后暂停活动写入 1 小时——logbook 服务故障时
+        「每轮失败重试 + 每条日志」会无限放大，暂停避免日志风暴与无效
+        重试；服务恢复后（写入成功一轮）自动解除。正常时恒 False，
+        不影响用户「每轮显示各实体刷新状态」诉求。
+        """
+        return bool(
+            self._logbook_hold_until
+            and time.monotonic() < self._logbook_hold_until
+        )
+
+    def _logbook_fail(self) -> None:
+        self._logbook_fail_streak += 1
+        if self._logbook_fail_streak >= 3 and (
+            not self._logbook_hold_until
+            or time.monotonic() >= self._logbook_hold_until
+        ):
+            self._logbook_hold_until = time.monotonic() + 3600
+            self._logbook_fail_streak = 0
+            _LOGGER.warning(
+                "fordpass_cn logbook 连续失败，暂停活动写入 1 小时"
+            )
+
+    def _logbook_ok(self) -> None:
+        self._logbook_fail_streak = 0
+
     async def _log_refresh_states(self) -> int:
         """v4.7.7: 手动刷新完成后逐实体写刷新后的状态值（替代笼统的
         「手动刷新完成」消息）。
@@ -850,8 +906,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         各实体刷新后的真实状态（车况未变时亦显示当前值）。button 实体
         state 为最后按下时间戳（无状态含义），跳过。单条失败不影响其余。
         返回实际写入条数（v5.1.5: 首轮 n==0 时调度延迟补写）。
+        v5.1.8: 失败节流——整轮 0 成功连续 3 轮则暂停 1 小时（问题 11）。
         """
+        if self._logbook_throttled():
+            return 0
         _written = 0
+        _failed = 0
         for eid in self.all_entity_ids():
             if eid.startswith(("button.", "image.")):
                 continue  # button=按下时间戳 / image=图片URL，无状态含义
@@ -879,7 +939,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 _written += 1
             except Exception:  # noqa: BLE001 - 单条失败不影响其余
+                _failed += 1
                 self.logger.debug("fordpass_cn refresh state logbook failed: %s", eid, exc_info=True)
+        if _written > 0 and _failed == 0:
+            self._logbook_ok()
+        elif _written == 0 and _failed > 0:
+            self._logbook_fail()
         return _written
 
     async def _delayed_initial_states(self) -> None:
@@ -940,7 +1005,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         HA 前端集成设备页活动标签不可见（entity_id=None 被设备过滤）。
         v4.5.10: 可选 entity_ids 参数——手动刷新完成事件传全实体列表，
         车况未变时每个实体的活动历史也有刷新记录（用户诉求）。
+        v5.1.8: 失败节流——连续 3 次调用全部失败则暂停 1 小时（问题 11）。
         """
+        if self._logbook_throttled():
+            return
         now = datetime.now()
         last_at = self._last_logbook_at
         if dedup and not (
@@ -949,6 +1017,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or message != self._last_logbook_msg
         ):
             return
+        _ok = False
+        _fail = 0
         try:
             # v4.4.8: 活动日志不带车辆实体——事件恢复全局日志面板可见、
             # 门锁等实体活动历史不被集成事件刷屏（用户 2026-10-14 要求）。
@@ -972,7 +1042,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 "entity_id": eid,
                             },
                         )
+                        _ok = True
                     except Exception:  # noqa: BLE001 - 单条失败不影响其余
+                        _fail += 1
                         self.logger.debug("fordpass_cn logbook entry failed: %s", eid, exc_info=True)
             else:
                 service_data: dict[str, Any] = {
@@ -984,8 +1056,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if act_eid:
                     service_data["entity_id"] = act_eid
                 await self.hass.services.async_call("logbook", "log", service_data)
+                _ok = True
         except Exception:  # noqa: BLE001 - logbook 失败不影响数据刷新
             self.logger.debug("fordpass_cn logbook entry failed", exc_info=True)
+            _fail += 1
+        if _ok:
+            self._logbook_ok()
+        elif _fail > 0:
+            self._logbook_fail()
         if dedup:
             self._last_logbook_at = now
             self._last_logbook_msg = message

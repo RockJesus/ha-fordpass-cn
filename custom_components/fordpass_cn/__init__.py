@@ -286,7 +286,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "vehicles": vehicles,
         "vin": coordinators[0].vin,
         "honk_settings": honk_settings,
+        # v5.1.8: 账号级共享缓存（问题 7 P2 修复）——账户级端点
+        # （chirp_cloud/messages 等）多车共享同一份缓存，消除多车每轮
+        # 重复请求同一账户数据的浪费。创建后回填给所有 coordinator。
+        "account_cache": {},
     }
+    for coordinator in coordinators:
+        coordinator.account_cache = hass.data[DOMAIN][entry.entry_id]["account_cache"]
 
     # v5.1.7: 注册服务（services.yaml）——refresh_status（可选 VIN 全车/单车
     # 刷新）+ clear_tokens（清令牌重置会话）。闭包持有 coordinators/api，
