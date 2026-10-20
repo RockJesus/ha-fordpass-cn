@@ -194,25 +194,23 @@ async def async_setup_entry(
 
 
 class _FordPassButtonBase(ButtonEntity):
-    """未按下过的按钮显示「待命」兜底（v5.1.9）。
+    """未按下过的按钮显示「待命」兜底（v5.1.9 初版 → v5.2.0 决定性修复）。
 
-    HA ButtonEntity 内置 RestoreEntity——实体重启后恢复最后按下时间戳；
-    但**从未按下过的按钮无历史状态，restore 流程会把 state 置为 unknown**
-    （覆盖 _attr_state="待命" 类属性，v5.0.6 修复在集成重载时有效、HA
-    完整重启后失效）。本基类在实体加入后检查：无历史状态时写「待命」，
-    有历史（按下时间戳）保持原样。
+    HA ButtonEntity 平台：按下时自动把 state 写为按下时间戳；但**从未按下过的
+    按钮无历史状态，重启/reload 时 restore 流程把 state 置为 unknown**——无论
+    在 async_added_to_hass 里何时写「待命」都会被后续覆盖（时序竞争，v5.1.9
+    实测仍 unknown）。v5.2.0 改为 **override state property 兜底**：读取时
+    _attr_state 为空/unknown 一律返回「待命」，按下后 _attr_state=时间戳则
+    原样返回——不受恢复时序影响，逻辑必然生效。
     """
     _attr_state = "待命"
 
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        try:
-            last = await self.async_get_last_state()
-        except Exception:  # noqa: BLE001 - restore 失败不阻塞
-            last = None
-        if last is None or last.state in ("unknown", "unavailable", "", None):
-            self._attr_state = "待命"
-            self.async_write_ha_state()
+    @property
+    def state(self) -> str | None:
+        st = self._attr_state
+        if st is None or st in ("unknown", "unavailable", ""):
+            return "待命"
+        return st
 
 
 class FordPassWallboxUnbindButton(_FordPassButtonBase):
