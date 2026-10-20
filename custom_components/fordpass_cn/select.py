@@ -202,8 +202,12 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
                     self._attr_current_option = cur
                     self._persist(CONF_HONK_DURATION, dv)
                     self.async_write_ha_state()
-        if type_cn is not None and isinstance(self, FordPassChirpTypeSelect):
-            if type_cn in CHIRP_TYPE_OPTIONS and self._attr_current_option != type_cn:
+        if (
+            type_cn is not None
+            and isinstance(self, FordPassChirpTypeSelect)
+            and type_cn in CHIRP_TYPE_OPTIONS
+            and self._attr_current_option != type_cn
+        ):
                 self._attr_current_option = type_cn
                 self._persist(CONF_CHIRP_TYPE, type_cn)
                 self.async_write_ha_state()

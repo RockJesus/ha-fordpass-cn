@@ -28,6 +28,7 @@ import random
 import string
 import struct
 import threading
+from typing import ClassVar
 
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _KEY_PATH = os.path.join(_DATA_DIR, "whitebox_keys_for_prod.json")
@@ -177,7 +178,7 @@ class FordPassCrypto:
     共享只读单例，构造零阻塞（不再加载 ELF/映射内存/Unicorn）。
     """
 
-    _instances: dict[str, FordPassCrypto] = {}
+    _instances: ClassVar[dict[str, FordPassCrypto]] = {}
     _lock = threading.Lock()
 
     @classmethod
