@@ -23,6 +23,7 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
@@ -177,6 +178,24 @@ async def async_setup_entry(
             )
     except Exception:  # 注册失败不影响实体创建
         _LOGGER.debug("FordPass 实体注册回调失败（忽略）", exc_info=True)
+
+    # v5.2.6: 清理移除控件的 registry 残留——v5.2.4 移除 IDUL 分车门锁定/
+    # 遥控泊车/远程关窗/哨兵/立即充电/车载冰箱/前备箱锁，v5.2.5 移除
+    # v5 主动刷新/v5 刷新轮询后，"不再创建"≠"自动消失"：旧 registry 条目
+    # 会一直 unavailable 占位（实测 6 个）。凡本 entry 的 button 且 unique_id
+    # 不在新实体集合、未被用户手动禁用的，显式移除（与 sensor.py 同款，
+    # 限定本 entry，多账号互不误删）。
+    reg = er.async_get(hass)
+    new_ids = {b.unique_id for b in buttons}
+    reg_entries = er.async_entries_for_config_entry(reg, entry.entry_id)
+    btn_regs = [e for e in reg_entries if e.entity_id.startswith("button.")]
+    _LOGGER.debug("button cleanup: entry=%s registry=%d new_ids=%d", entry.entry_id, len(btn_regs), len(new_ids))
+    for entry_ in btn_regs:
+        if entry_.disabled_by is not None:
+            continue
+        if entry_.unique_id not in new_ids:
+            _LOGGER.debug("button cleanup: removing stale %s", entry_.entity_id)
+            reg.async_remove(entry_.entity_id)
 
 
 
