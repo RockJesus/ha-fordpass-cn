@@ -419,6 +419,20 @@ def _log_summary(text: str, limit: int = 2000) -> str:
     return out[:limit]
 
 
+def _token_resp_summary(text: str) -> str:
+    """LBS third-party-token 响应 DEBUG 摘要（v5.2.7，frenck 审核 #11629 二轮）：
+    data.encryptedAccessToken 的密钥（x_api scene）随集成发布，值不得进日志——
+    只保留状态码与 data 字段名（含加密字段的键名，不含任何值）。"""
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return f"<non-json {len(text)} bytes>"
+    data = obj.get("data")
+    if isinstance(data, dict):
+        return "data_fields=" + ",".join(sorted(data.keys()))
+    return "data=<non-dict>"
+
+
 class FordPassApi:
     _last_wifi_reject_log: float = 0.0  # v4.3.0: wifi/status 业务拒绝降噪限频
 
@@ -2962,17 +2976,28 @@ class FordPassApi:
                 raise FordPassApiError(
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
-            self._log.debug("FordPass third-party-token -> %s %s", resp.status, text[:300])
+            # v5.2.7: LBS token 响应日志只保留字段名，不打印任何值——
+            # data.encryptedAccessToken 的密钥（x_api scene）随集成发布，
+            # 值进 debug 日志即等于泄露（frenck 审核 #11629 二轮）。
+            self._log.debug(
+                "FordPass third-party-token -> %s %s", resp.status, _token_resp_summary(text)
+            )
             if resp.status >= 400:
-                raise FordPassApiError(resp.status, text[:300])
+                raise FordPassApiError(
+                    resp.status, f"third-party-token request failed (status={resp.status})"
+                )
         try:
             data = json.loads(text)
         except json.JSONDecodeError as err:
-            raise FordPassApiError(resp.status, f"non-JSON token response: {text[:200]}") from err
+            raise FordPassApiError(
+                resp.status, f"non-JSON token response ({len(text)} bytes)"
+            ) from err
         inner = data.get("data", {})
         enc_token = inner.get("encryptedAccessToken")
         if not enc_token:
-            raise FordPassApiError(data.get("code"), f"no token in response: {text[:200]}")
+            raise FordPassApiError(
+                data.get("code"), f"no encryptedAccessToken in response (data_fields={','.join(sorted(inner.keys()))})"
+            )
         token = await asyncio.to_thread(
             lambda: xapi.decrypt_field(enc_token, inner.get("xjw", xjw))
         )

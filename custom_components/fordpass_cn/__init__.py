@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import shutil
 
 import voluptuous as vol
 from homeassistant.config_entries import (
@@ -148,6 +150,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await asyncio.to_thread(FordPassCrypto.get, None, scene)
         except Exception as exc:  # noqa: BLE001 - 预热失败不阻断 setup
             _LOGGER.warning("FordPass crypto warmup %s failed: %s", scene, exc)
+
+    # v5.2.7: 清理旧版（<v5.2.4）写入 /config/www/fordpass_cn 的遗留车辆
+    # 图片/泊车/行驶监控帧——/www 下内容无需认证即可经 /local/ 下载
+    # （frenck 审核 #11629 二轮）。v5.2.4 起缓存已迁至 .storage/fordpass_cn
+    # 私有目录；此处 setup 时在 executor 中删除一次遗留目录，目录删掉后
+    # 不存在，天然只执行一次，不影响新版本私有缓存。
+    legacy_www_dir = hass.config.path("www", "fordpass_cn")
+    if os.path.isdir(legacy_www_dir):
+        try:
+            await asyncio.to_thread(shutil.rmtree, legacy_www_dir, ignore_errors=False)
+            _LOGGER.info(
+                "fordpass_cn removed legacy /config/www/fordpass_cn: %s",
+                legacy_www_dir,
+            )
+        except Exception as exc:  # noqa: BLE001 - 清理失败不阻断 setup
+            _LOGGER.warning("fordpass_cn legacy www cleanup failed: %s", exc)
 
     # v3.1.6: 多 VIN 支持——账号下每一辆车建立独立的 coordinator / 设备 /
     # 实体组。各平台按各自车型的 vehicle-status 数据创建实体（无效字段不建），
