@@ -37,14 +37,9 @@ async def async_setup_entry(
             status, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
         ):
             locks.append(FordPassTrunkLock(coordinator))
-        # v3.3.7: 前备箱锁（电马等）——云端命令白名单含 Frunk 命令才创建
-        wl = coordinator.command_whitelist
-        if isinstance(wl, list):
-            frunk_cmds = [c for c in wl if "Frunk" in c]
-            if frunk_cmds:
-                on = next((c for c in frunk_cmds if any(k in c for k in ("Unlock", "Open", "ON"))), frunk_cmds[0])
-                off = next((c for c in frunk_cmds if any(k in c for k in ("Lock", "Close", "OFF"))), frunk_cmds[-1])
-                locks.append(FordPassFrunkLock(coordinator, on, off))
+        # v3.3.7: 前备箱锁——v5.2.4 起移除：开/关命令按子串匹配 + fallback
+        # "first/last" 属猜测命令，未对照官方 App 抓包确认前不得下发
+        # （frenck 审核 hacs/default#11629 要求移除，待确认后恢复）。
     async_add_entities(locks)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
@@ -156,56 +151,6 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
         """解锁后备箱（TrunkUnlock）。"""
         try:
             await self.coordinator.run_command(CMD_TRUNK_UNLOCK)
-        except Exception:
-            raise
-        self._state = False
-        self.async_write_ha_state()
-
-
-class FordPassFrunkLock(FordPassRestoreMixin, LockEntity):
-    """前备箱锁（v3.3.7，电马等车型——按云端命令白名单创建）。
-
-    解锁 = 白名单 Frunk 开启类命令；锁定 = Frunk 关闭类命令。
-    初始状态从白名单存在推断为锁定（保守），操作后按记忆状态显示。
-    """
-
-    _attr_assumed_state = True
-    _attr_icon = "mdi:car"
-
-    def __init__(
-        self,
-        coordinator: FordPassCoordinator,
-        open_cmd: str,
-        close_cmd: str,
-    ) -> None:
-        self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-frunk"
-        self._attr_name = "前备箱锁"
-        self._attr_has_entity_name = False
-        self._attr_device_info = coordinator.device_info
-        self._open_cmd = open_cmd
-        self._close_cmd = close_cmd
-        self._state: bool = True  # 保守：默认锁定
-
-    @property
-    def available(self) -> bool:
-        return bool(self.coordinator.data)  # v4.8.7: 有最后已知数据即可用——修复控制实体 unavailable（restored 残留）
-
-    @property
-    def is_locked(self) -> bool | None:
-        return self._state
-
-    async def async_lock(self, **kwargs: Any) -> None:
-        try:
-            await self.coordinator.run_command(self._close_cmd)
-        except Exception:
-            raise
-        self._state = True
-        self.async_write_ha_state()
-
-    async def async_unlock(self, **kwargs: Any) -> None:
-        try:
-            await self.coordinator.run_command(self._open_cmd)
         except Exception:
             raise
         self._state = False
