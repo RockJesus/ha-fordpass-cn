@@ -2,16 +2,17 @@
 
 <div align="center">
 
+![FordPass China 福特派互联](custom_components/fordpass_cn/brand/logo.png)
+
 [![HACS 官方收录](https://img.shields.io/badge/HACS-官方收录-41BDF5.svg)](https://github.com/hacs/default)
 [![最新版本](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn)](https://github.com/RockJesus/ha-fordpass-cn/releases/latest)
 [![GitHub 下载量](https://img.shields.io/github/downloads/RockJesus/ha-fordpass-cn/total)](https://github.com/RockJesus/ha-fordpass-cn/releases)
 [![HA 版本](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue)](https://www.home-assistant.io/)
 [![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn)](LICENSE)
-[![Blog](https://img.shields.io/badge/Blog-RockJesus-purple.svg)](https://rockjesus.cn)
 
 </div>
 
-欢迎来我的 blog：[rockjesus.cn](https://rockjesus.cn) —— 智能家居、车机互联与各类硬件的折腾记录都在这里。
+✍️ 欢迎来我的 blog：[![Blog](https://img.shields.io/badge/Blog-RockJesus-purple.svg)](https://rockjesus.cn)
 
 ---
 
