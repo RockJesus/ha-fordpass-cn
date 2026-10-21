@@ -77,8 +77,7 @@ async def async_setup_entry(
             switches.append(FordPassVAswitch(coordinator))
         # v3.3.7: 哨兵模式/立即充电/车载冰箱白名单开关——v5.2.4 起移除：
         # 开/关命令按子串匹配 + "first for on, last for off" 兜底属猜测
-        # 命令，未对照官方 App 抓包确认前不得下发（frenck 审核
-        # hacs/default#11629 要求移除，待确认后恢复）。
+        # 命令，未对照官方 App 抓包确认前不得下发（# 要求移除，待确认后恢复）。
         # v3.5.0: 预约充电/预约出发开关——departuretimes/retrieve 探测有数据
         # 才创建（支持该功能的车型自动出现；toggle 参数随探测结果自动带）
         _ep = coordinator.extra_probes
@@ -107,8 +106,8 @@ async def async_setup_entry(
             _ent.async_on_remove(
                 _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
-    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
-        pass
+    except Exception:
+        _LOGGER.debug("entity listener registration failed", exc_info=True)
 
 
 
@@ -438,18 +437,12 @@ class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
         return self._restore_bool(self._state)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        try:
-            await self.coordinator.run_command(CMD_LIGHT_FIND_ON)
-        except Exception:
-            raise
+        await self.coordinator.run_command(CMD_LIGHT_FIND_ON)
         self._state = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        try:
-            await self.coordinator.run_command(CMD_LIGHT_FIND_OFF)
-        except Exception:
-            raise
+        await self.coordinator.run_command(CMD_LIGHT_FIND_OFF)
         self._state = False
         self.async_write_ha_state()
 

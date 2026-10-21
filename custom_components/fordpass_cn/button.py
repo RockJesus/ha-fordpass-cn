@@ -110,8 +110,7 @@ async def async_setup_entry(
         # 与 v5.2.4 移除的猜测命令同类（send-command 手动刷新保留，已确认）。
         # v4.7.1: 分车门锁定（IDUL）——v5.2.4 起移除：doortype 四门枚举属
         # "按福特 v5 惯例"推测、未对照官方 App 抓包确认，遥控类命令不得
-        # 发送未验证载荷（frenck 审核 hacs/default#11629 要求移除，待抓包
-        # 确认后恢复）。整车门锁（lock.py）不受影响。
+        # 发送未验证载荷（待官方 App 抓包确认后恢复）。整车门锁（lock.py）不受影响。
         # v3.3.4: 「保存鸣笛设置」按钮已删除——鸣笛类型/时长 select
         # 选择后即时上传云端（见 select.py 云端同步），无需手动保存。
         # v3.1.7: 空调滤芯重置（AAR 能力车型——vehicle-status 无关，按
@@ -127,8 +126,7 @@ async def async_setup_entry(
             buttons.append(FordPassImageButton(coordinator, "停车影像", "mdi:car-multiple", "parking"))
             buttons.append(FordPassImageButton(coordinator, "行车监控", "mdi:cctv", "traffic"))
         # v3.3.7: 遥控泊车/远程关窗按钮——v5.2.4 起移除：白名单命令无参数
-        # 直接下发属"猜测命令"，遥控泊车绝不能触发未确认载荷（frenck 审核
-        # hacs/default#11629 要求移除，待对照官方 App 抓包确认后恢复）。
+        # 直接下发属"猜测命令"，遥控泊车绝不能触发未确认载荷（# 要求移除，待对照官方 App 抓包确认后恢复）。
         # v3.5.0: APK 6.16.0 补全命令——消息已读 / 行车记录仪录制。
         # 消息已读：messages_page 探测有数据才创建（有消息中心的车）。
         # 录制按钮：video_file 探测有数据才创建（带行车记录仪硬件的车），

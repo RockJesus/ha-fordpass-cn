@@ -153,7 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # v5.2.7: 清理旧版（<v5.2.4）写入 /config/www/fordpass_cn 的遗留车辆
     # 图片/泊车/行驶监控帧——/www 下内容无需认证即可经 /local/ 下载
-    # （frenck 审核 #11629 二轮）。v5.2.4 起缓存已迁至 .storage/fordpass_cn
+    # （审核二轮指出）。v5.2.4 起缓存已迁至 .storage/fordpass_cn
     # 私有目录；此处 setup 时在 executor 中删除一次遗留目录，目录删掉后
     # 不存在，天然只执行一次，不影响新版本私有缓存。
     legacy_www_dir = hass.config.path("www", "fordpass_cn")

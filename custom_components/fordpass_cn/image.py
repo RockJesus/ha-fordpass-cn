@@ -8,8 +8,7 @@ model name (e.g. 锐际 Escape) for readability — the picture itself is render
 by the frontend from the image proxy.
 
 v5.2.4: 图片缓存从 /config/www 迁至 /config/.storage 私有目录——www 目录经
-/local/ 无认证可下载，任何人知道 VIN 就能拉取车辆图片（frenck 审核
-hacs/default#11629 指出）。.storage 由 HA 私有管理、不对外服务。
+/local/ 无认证可下载，任何人知道 VIN 就能拉取车辆图片。.storage 由 HA 私有管理、不对外服务。
 """
 from __future__ import annotations
 
@@ -40,7 +39,7 @@ def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
     云端字段异常/被篡改时用 sha1 摘要兜底作文件名（稳定唯一），杜绝把
     用户可控字符写进对外目录路径。
     v5.2.4: 缓存目录由 www/fordpass_cn 改为 .storage/fordpass_cn（私有目录，
-    /local/ 无认证对外暴露被 frenck 审核指出）；hass.config.path(".storage")
+    /local/ 无认证对外暴露）；hass.config.path(".storage")
     即 /config/.storage，由 HA 私有管理。
     """
     safe = vin if re.fullmatch(r"[A-Za-z0-9]{6,20}", vin) else hashlib.sha1(vin.encode("utf-8")).hexdigest()[:16]
@@ -390,6 +389,6 @@ async def async_setup_entry(
             _ent.async_on_remove(
                 _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
-    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
-        pass
+    except Exception:
+        _LOGGER.debug("entity listener registration failed", exc_info=True)
 

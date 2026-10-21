@@ -420,7 +420,7 @@ def _log_summary(text: str, limit: int = 2000) -> str:
 
 
 def _token_resp_summary(text: str) -> str:
-    """LBS third-party-token 响应 DEBUG 摘要（v5.2.7，frenck 审核 #11629 二轮）：
+    """LBS third-party-token 响应 DEBUG 摘要（v5.2.7）：
     data.encryptedAccessToken 的密钥（x_api scene）随集成发布，值不得进日志——
     只保留状态码与 data 字段名（含加密字段的键名，不含任何值）。"""
     try:
@@ -531,8 +531,7 @@ class FordPassApi:
             kwargs = {"params": params}
         # v5.2.4: 请求体日志只记录字段名不记录值——encryptedRefreshToken/
         # encryptedPasscode/encryptedAuthCode 的解密密钥就在集成内，完整值进
-        # debug 日志等于泄露 refresh token（frenck 审核 hacs/default#11629
-        # 指出：用户会把日志贴进 issue）。
+        # debug 日志等于泄露 refresh token（用户会把日志贴进 issue）。
         _payload_fields = (
             ",".join(sorted(kwargs["json"].keys()))
             if "json" in kwargs and isinstance(kwargs["json"], dict)
@@ -2978,7 +2977,7 @@ class FordPassApi:
                 ) from None
             # v5.2.7: LBS token 响应日志只保留字段名，不打印任何值——
             # data.encryptedAccessToken 的密钥（x_api scene）随集成发布，
-            # 值进 debug 日志即等于泄露（frenck 审核 #11629 二轮）。
+            # 值进 debug 日志即等于泄露。
             self._log.debug(
                 "FordPass third-party-token -> %s %s", resp.status, _token_resp_summary(text)
             )
@@ -3047,7 +3046,7 @@ class FordPassApi:
             "x-sign": compute_lbs_sign(body, ts),
         }
         # v5.2.4: LBS 请求日志不记录 body 值——body 携带 LBS 明文 token
-        # （frenck 审核 #11629：token 不得进日志）。header 仅保留键名，
+        # （token 不得进日志）。header 仅保留键名，
         # 省略 x-sign 值。
         self._log.debug("FordPass LBS POST %s header_fields=%s body_fields=%s",
                         PATH_QUERY_LOCATION,
