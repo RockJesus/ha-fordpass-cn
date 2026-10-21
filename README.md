@@ -155,6 +155,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.2.5**（2026-10-21）：**移除 v5 刷新轮询与 v5 主动刷新车况按钮**——两按钮走 v5 PUT 命令通道（`PUT /api/vehicles/v5/{vin}/status`），载荷未经官方 App 抓包确认，与 v5.2.4 移除的猜测命令同类，一并移除（send-command 手动刷新按钮保留，命令载荷已确认）；顺带清理 coordinator 死属性 `_v5_refresh_cid`
 - **v5.2.4**（2026-10-21）：**修复 HACS 审核 5 项问题（frenck 复审）**——① 车辆图片/远程影像/3D 图缓存从 `/config/www` 迁至 `/config/.storage` 私有目录（www 经 `/local/` 无认证可下载，任何知道 VIN 的人都能拉取图片）；② 实体状态与属性不再暴露完整手机号/用户 ID——车辆授权列表、家充桩分享优先显示昵称、手机号仅显示后四位掩码，SIM 传感器与 4 处原始响应复制属性的传感器统一过滤敏感字段；③ debug 日志不再记录请求体值（含 `encryptedRefreshToken`/`encryptedPasscode`/`encryptedAuthCode` 与 LBS token 的请求只记路径与字段名）；④ 传感器清理逻辑限定到本账号（entry）自己的实体，多账号时设置一个账号不再误删其它账号的传感器（重命名/区域/自定义不再丢失）；⑤ 移除未对照官方 App 抓包确认的「猜测命令」控件：分车门锁定、遥控泊车、远程关窗、哨兵模式、立即充电、车载冰箱、前备箱锁（待抓包确认载荷后恢复）
 - **v5.2.3**（2026-10-20）：**代码审查 ruff 全规则清理**——修复审查发现的 16 项代码风格问题：合并冗余布尔判断与嵌套 if（SIM103/SIM102）、字典遍历改用 values()（PERF102）、去除冗余 int 转换（RUF046）、日志异常参数精简（TRY401），以及 4 处类级可变默认加 ClassVar 类型注解（单例缓存设计不变，行为不变）；Actions 规则（F/E9/B）与全规则复查全绿
 - **v5.2.2**（2026-10-20）：**回退 HACS 下载方式**——v5.2.1 尝试启用 zip_release（下载发布压缩包）后，HACS 安装文件路径异常导致 HA 找不到集成（全部实体 unavailable）。v5.2.2 回退为原下载方式（仓库分支拉取），恢复稳定；代码内容（ruff 清理 + 文档措辞修正）与 v5.2.1 一致

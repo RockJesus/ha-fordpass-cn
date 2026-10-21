@@ -174,7 +174,6 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v5.1.4: 首轮刷新延迟补写逐实体活动标志（重启/重载后 setup 时
         # 实体尚未注册，all_entity_ids() 为空 → 45s 后补写一次）
         self._initial_states_pending = False
-        self._v5_refresh_cid: str | None = None  # v4.7.2: v5 主动刷新最近 commandId
         self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
         # v3.4.1: active_alerts 频率由 TTL 缓存控制（30 分钟）——取代旧
         # "_alerts_fail/_alerts_hold_until 连续失败 2 次抑制 1h" 逻辑
