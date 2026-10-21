@@ -155,6 +155,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.2.7**（2026-10-21）：**修复 HACS 审核二轮 2 项（frenck 复审）**——① LBS 定位 token 响应日志收敛：`get_lbs_token` 的 debug 日志不再打印响应正文（原 `text[:300]` 含 `data.encryptedAccessToken`，其解密密钥随集成发布，值进日志即等于泄露 token），改为只记状态码与 data 字段名；相关错误信息（HTTP 错误/non-JSON/缺 token）同步收敛，不带响应正文；② 清理旧版（<v5.2.4）写入 `/config/www/fordpass_cn` 的遗留车辆图片/泊车/行驶监控帧——/www 下内容无需认证可经 `/local/` 下载，setup 时在 executor 中删除一次该目录（删后不存在，天然只执行一次），新版本私有缓存（`.storage/fordpass_cn`）不受影响
 - **v5.2.6**（2026-10-21）：**清理已移除按钮的残留实体**——v5.2.4/v5.2.5 移除的控件（分车门锁定×4、v5 主动刷新、v5 刷新轮询）"不再创建"≠"自动消失"，旧 registry 条目会一直 unavailable 占位；本次在 button 平台加入显式清理（限定本 entry、跳过用户禁用项，与 sensor 平台 v5.2.4 同款逻辑），重载后残留按钮自动移除
 - **v5.2.5**（2026-10-21）：**移除 v5 刷新轮询与 v5 主动刷新车况按钮**——两按钮走 v5 PUT 命令通道（`PUT /api/vehicles/v5/{vin}/status`），载荷未经官方 App 抓包确认，与 v5.2.4 移除的猜测命令同类，一并移除（send-command 手动刷新按钮保留，命令载荷已确认）；顺带清理 coordinator 死属性 `_v5_refresh_cid`
 - **v5.2.4**（2026-10-21）：**修复 HACS 审核 5 项问题（frenck 复审）**——① 车辆图片/远程影像/3D 图缓存从 `/config/www` 迁至 `/config/.storage` 私有目录（www 经 `/local/` 无认证可下载，任何知道 VIN 的人都能拉取图片）；② 实体状态与属性不再暴露完整手机号/用户 ID——车辆授权列表、家充桩分享优先显示昵称、手机号仅显示后四位掩码，SIM 传感器与 4 处原始响应复制属性的传感器统一过滤敏感字段；③ debug 日志不再记录请求体值（含 `encryptedRefreshToken`/`encryptedPasscode`/`encryptedAuthCode` 与 LBS token 的请求只记路径与字段名）；④ 传感器清理逻辑限定到本账号（entry）自己的实体，多账号时设置一个账号不再误删其它账号的传感器（重命名/区域/自定义不再丢失）；⑤ 移除未对照官方 App 抓包确认的「猜测命令」控件：分车门锁定、遥控泊车、远程关窗、哨兵模式、立即充电、车载冰箱、前备箱锁（待抓包确认载荷后恢复）
