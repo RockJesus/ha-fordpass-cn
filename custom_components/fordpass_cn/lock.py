@@ -22,6 +22,8 @@ from .coordinator import FordPassCoordinator
 from .sensor import FordPassRestoreMixin
 
 
+PARALLEL_UPDATES = 1
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:

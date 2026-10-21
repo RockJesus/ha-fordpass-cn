@@ -41,6 +41,8 @@ from .sensor import FordPassRestoreMixin
 _LOGGER = logging.getLogger(__name__)
 
 
+PARALLEL_UPDATES = 1
+
 def _cloud_pref(coordinator: FordPassCoordinator) -> tuple[str | None, str | None]:
     """读云端鸣笛设置（v3.3.3）：返回 (类型中文名, 持续时长数字字符串) 或 None。
 

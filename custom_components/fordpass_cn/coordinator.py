@@ -236,6 +236,24 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 正常时行为不变（用户诉求：每轮显示各实体刷新状态）。
         self._logbook_fail_streak = 0
         self._logbook_hold_until: float | None = None
+        # v5.2.8: 网络/云端不可用一次性警告标志（quality_scale silver 要求：
+        # 不可用只警告一次、恢复时提示一次；重复失败降 debug 避免刷屏）
+        self._update_failure_warned = False
+
+    def _log_exception(self, err: Exception, message: str) -> None:
+        """覆盖 DataUpdateCoordinator 失败日志：网络/云端不可用只警告一次。
+
+        silver 要求「Log a warning once when unavailable, log once when
+        reconnected」。首次失败走父类（error 级）；重复失败（默认 30 分钟
+        一轮轮询）降级为 debug，不刷屏。活动日志不受影响——每轮活动显示
+        各实体刷新状态由 _log_activity 负责，独立于本方法。恢复提示在
+        _async_update_data 成功路径发出。
+        """
+        if self._update_failure_warned:
+            self.logger.debug("%s (suppressed repeat): %s", message, err)
+            return
+        self._update_failure_warned = True
+        super()._log_exception(err, message)
 
     def _cache_hit(self, key: str, account: bool = False) -> tuple[bool, Any]:
         store = self.account_cache if account else self._cache
@@ -832,6 +850,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._last_empty_probes = None
         except Exception:
             self.logger.debug("fordpass_cn probe activity failed", exc_info=True)
+        # v5.2.8: 网络/云端不可用恢复提示——与 _log_exception 的一次性警告
+        # 配对：失败只警告一次，恢复时提示一次（quality_scale silver 要求）
+        if self._update_failure_warned:
+            self._update_failure_warned = False
+            self.logger.info("FordPass 云端恢复：车辆状态刷新成功")
         return data
 
 

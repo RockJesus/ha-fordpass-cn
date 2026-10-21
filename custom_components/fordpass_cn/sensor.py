@@ -28,6 +28,8 @@ from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
 from .coordinator import FordPassCoordinator
 
 
+PARALLEL_UPDATES = 1
+
 def _leaf(status, *keys, default=None):
     cur = status
     for k in keys:
