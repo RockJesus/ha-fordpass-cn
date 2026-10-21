@@ -25,7 +25,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import extract_remote_image_url
-from .const import DOMAIN
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -346,7 +345,7 @@ async def async_setup_entry(
 ) -> None:
     # v3.1.6: 多 VIN——每辆车独立创建图片实体（有车辆图片 URL 才创建）
     # v3.3.9: 侧视（vehicleImageUrl）+ 俯视（imageUrl）分别创建，互不影响
-    payload = hass.data[DOMAIN][entry.entry_id]
+    payload = entry.runtime_data  # v5.3.0: runtime_data 替代 hass.data
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     entities = [
         FordPassVehicleImage(hass, coordinator, kind)

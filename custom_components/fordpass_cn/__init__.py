@@ -15,6 +15,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -294,7 +295,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ),
         CONF_CHIRP_TYPE: entry.options.get(CONF_CHIRP_TYPE, DEFAULT_CHIRP_TYPE),
     }
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+    # v5.3.0: 迁移到 ConfigEntry.runtime_data（quality_scale Bronze runtime-data
+    # 规则）——coordinator/API/缓存统一挂 entry.runtime_data，替代 hass.data 手
+    # 工管理，卸载/多 entry 生命周期由 HA 接管。
+    entry.runtime_data = {
         "api": api,
         "coordinator": coordinators[0],
         "coordinators": coordinators,
@@ -307,7 +311,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "account_cache": {},
     }
     for coordinator in coordinators:
-        coordinator.account_cache = hass.data[DOMAIN][entry.entry_id]["account_cache"]
+        coordinator.account_cache = entry.runtime_data["account_cache"]
 
     # v5.1.7: 注册服务（services.yaml）——refresh_status（可选 VIN 全车/单车
     # 刷新）+ clear_tokens（清令牌重置会话）。闭包持有 coordinators/api，
@@ -316,10 +320,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         vin = call.data.get("vin")
         targets = [c for c in coordinators if not vin or c.vin == vin]
         if not targets:
-            _LOGGER.warning(
-                "fordpass_cn refresh_status: VIN %s 不在当前账号车辆中", vin
+            # v5.3.0: action-exceptions（quality_scale Silver）——服务失败抛异常，
+            # 自动化/脚本可感知（HomeAssistantError 在服务调用处显示失败原因）。
+            raise HomeAssistantError(
+                f"fordpass_cn refresh_status: VIN {vin} 不在当前账号车辆中"
             )
-            return
         for coord in targets:
             _LOGGER.info(
                 "fordpass_cn service refresh_status vin=%s", coord.vin
@@ -361,15 +366,18 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     reloading the whole entry, so no entities flicker.
 
     v3.1.1: 选项可能在集成尚未加载完成时被保存（重启中 / 加载失败 /
-    已卸载后再次打开选项页）——此时 hass.data[DOMAIN] 还不存在，直接
+    已卸载后再次打开选项页）——此时 runtime_data 为空，直接
     索引会抛 KeyError。防御：未加载时安全跳过，新选项会由下次
     async_setup_entry 从 entry.options 读取生效（无状态丢失）。
     """
-    payload = (hass.data.get(DOMAIN) or {}).get(entry.entry_id)
+    # v5.3.0: runtime_data 替代 hass.data——entry 卸载后 runtime_data 值仍保留
+    # （HA 管理），getattr 兜底兼容旧版 HA（无 runtime_data 属性时 None）。
+    payload = getattr(entry, "runtime_data", None)
+    if not payload:
+        return
     coordinators = (
         payload.get("coordinators")
-        if isinstance(payload, dict) and payload.get("coordinators")
-        else ([payload["coordinator"]] if isinstance(payload, dict) else None)
+        or [payload["coordinator"]]
     )
     if not coordinators:
         _LOGGER.info(
@@ -388,7 +396,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # 导致每轮主轮询后 10 秒（Debouncer cooldown）又打一轮福特云请求，产生
     # 双轮双 logbook，既浪费请求量又制造噪音。快照比较：业务设置变化时两项
     # 不变 → 直接跳过。
-    store = hass.data[DOMAIN][entry.entry_id]
+    store = entry.runtime_data  # v5.3.0: runtime_data 替代 hass.data
     snapshot = (track_location, coordinate_system)
     if store.get("_opt_snapshot") == snapshot:
         return
@@ -410,6 +418,5 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+    # v5.3.0: runtime_data 由 HA 生命周期管理，无需手动 pop hass.data
     return unload_ok

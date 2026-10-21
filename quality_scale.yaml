@@ -1,0 +1,138 @@
+# quality_scale 进度跟踪（官方 integration-quality-scale 要求）
+# 状态：done=已实现；pending=规划中；exempt=不适用/豁免（附理由）。
+# 档位升级需向 core 提 PR 并附逐条 checklist；本文件仅作进度与豁免声明。
+
+rules:
+  # ── Bronze ──────────────────────────────────────────────
+  action-setup:
+    status: done
+  appropriate-polling:
+    status: done
+  brands:
+    status: done
+  common-modules:
+    status: done
+  config-flow-test-coverage:
+    status: done
+  config-flow:
+    status: done
+  dependency-transparency:
+    status: done
+  docs-actions:
+    status: done
+  docs-triggers:
+    status: exempt
+    comment: 集成不提供任何触发器
+  docs-conditions:
+    status: exempt
+    comment: 集成不提供任何条件
+  docs-high-level-description:
+    status: done
+  docs-installation-instructions:
+    status: done
+  docs-removal-instructions:
+    status: done
+  entity-event-setup:
+    status: done
+  entity-unique-id:
+    status: done
+  has-entity-name:
+    status: pending
+    comment: 全部实体目前 has_entity_name=False（中文名硬编码）；改 True 需整套
+      实体命名/翻译键重构并会改变默认显示名，规划后续版本单独完成
+  runtime-data:
+    status: done
+  test-before-configure:
+    status: done
+  test-before-setup:
+    status: done
+  unique-config-entry:
+    status: exempt
+    comment: 多账号支持是有意设计——每个手机号一个 config entry（多辆车/多账号
+      并存），不同服务实例允许重复 setup；同一手机号由 reauth 校验防重复
+
+  # ── Silver ──────────────────────────────────────────────
+  action-exceptions:
+    status: done
+  config-entry-unloading:
+    status: done
+  docs-configuration-parameters:
+    status: done
+  docs-installation-parameters:
+    status: done
+  entity-unavailable:
+    status: exempt
+    comment: 设计上实体永不置 unavailable/unknown——云端失败时保留最后已知状态，
+      由 log-when-unavailable 一次性日志提示；用户明确要求
+  integration-owner:
+    status: done
+  log-when-unavailable:
+    status: done
+  parallel-updates:
+    status: done
+  reauthentication-flow:
+    status: done
+  test-coverage:
+    status: pending
+    comment: 当前仅 capability/wbsk 纯函数测试 + config flow 骨架；全模块 95%
+      覆盖率需要完整 HA 测试套件，规划中
+
+  # ── Gold ────────────────────────────────────────────────
+  devices:
+    status: done
+  diagnostics:
+    status: done
+  discovery-update-info:
+    status: exempt
+    comment: 云端账号型服务，无本地网络发现
+  discovery:
+    status: exempt
+    comment: 云端账号型服务，无 mDNS/Bluetooth/DHCP 发现机制
+  docs-data-update:
+    status: done
+  docs-examples:
+    status: done
+    comment: README「自动化示例与用例」提供 2 个可直接使用的自动化模板
+  docs-known-limitations:
+    status: done
+  docs-supported-devices:
+    status: done
+  docs-supported-functions:
+    status: done
+  docs-troubleshooting:
+    status: done
+  docs-use-cases:
+    status: done
+    comment: README「自动化示例与用例」覆盖出门检查/忘锁提醒/远程预热场景
+  dynamic-devices:
+    status: done
+  entity-category:
+    status: done
+  entity-device-class:
+    status: done
+  entity-disabled-by-default:
+    status: pending
+    comment: 诊断类实体未显式默认禁用；规划后续版本按噪音度挑选默认禁用项
+  entity-translations:
+    status: pending
+    comment: 实体名硬编码中文（用户偏好中文显示）；translations 仅 config/options
+  exception-translations:
+    status: pending
+  icon-translations:
+    status: pending
+  reconfiguration-flow:
+    status: done
+  repair-issues:
+    status: pending
+    comment: 无 repairs 流程（当前无需要用户干预的修复场景）
+  stale-devices:
+    status: done
+
+  # ── Platinum ────────────────────────────────────────────
+  async-dependency:
+    status: done
+  inject-websession:
+    status: done
+  strict-typing:
+    status: pending
+    comment: 未启用 mypy strict 全量类型标注

@@ -24,7 +24,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import capability
-from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
+from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE
 from .coordinator import FordPassCoordinator
 
 PARALLEL_UPDATES = 1
@@ -146,7 +146,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     # v3.1.6: 多 VIN——每辆车按各自 vehicle-status 数据独立构建传感器组
-    payload = hass.data[DOMAIN][entry.entry_id]
+    payload = entry.runtime_data  # v5.3.0: runtime_data 替代 hass.data
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     all_sensors: list[SensorEntity] = []
     for coordinator in coordinators:

@@ -40,7 +40,7 @@ async def async_get_config_entry_diagnostics(
         "options": async_redact_data(dict(entry.options), TO_REDACT),
     }
     try:
-        data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        data = getattr(entry, "runtime_data", None)  # v5.3.0
         if isinstance(data, dict) and (coord := data.get("coordinator")):
             payload["coordinator"] = {
                 "last_update": str(getattr(coord, "last_update", None)),

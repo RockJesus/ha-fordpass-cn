@@ -36,7 +36,6 @@ from .const import (
     CMD_VA_INIT,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
-    DOMAIN,
     HONK_AUTO_OFF_SECONDS,
 )
 from .coordinator import FordPassCoordinator
@@ -51,7 +50,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     # v3.1.6: 多 VIN——每辆车独立创建开关组（按各自车型能力过滤）
-    payload = hass.data[DOMAIN][entry.entry_id]
+    payload = entry.runtime_data  # v5.3.0: runtime_data 替代 hass.data
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     switches: list[SwitchEntity] = []
     for coordinator in coordinators:
@@ -504,7 +503,7 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
         entry_id = getattr(self.coordinator, "entry_id", None)
         settings: dict = {}
         if entry_id:
-            payload = self.coordinator.hass.data.get(DOMAIN, {}).get(entry_id) or {}
+            payload = getattr(self.coordinator.config_entry, "runtime_data", None) or {}  # v5.3.0
             settings = payload.get("honk_settings") or {}
         options: dict = {}
         if entry_id:
