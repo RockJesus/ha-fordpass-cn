@@ -238,7 +238,7 @@ class FordPassWallboxUnbindButton(_FordPassButtonBase):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     def _wallbox_id(self) -> str | None:
         wb = self.coordinator.smartwallbox or {}
@@ -288,7 +288,7 @@ class FordPassWallboxBleAddButton(_FordPassButtonBase):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     def _wallbox_id(self) -> str | None:
         wb = self.coordinator.smartwallbox or {}
@@ -603,7 +603,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     async def async_press(self) -> None:
         _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.vin)
@@ -643,7 +643,7 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     async def async_press(self) -> None:
         _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.vin)
@@ -685,7 +685,7 @@ class FordPassImageButton(_FordPassButtonBase):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     async def async_press(self) -> None:
         car_id = getattr(self.coordinator, "car_id", None)
