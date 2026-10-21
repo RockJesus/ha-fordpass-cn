@@ -27,7 +27,6 @@ from . import capability
 from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
 from .coordinator import FordPassCoordinator
 
-
 PARALLEL_UPDATES = 1
 
 def _leaf(status, *keys, default=None):
@@ -86,7 +85,7 @@ def _is_usable(status, paths) -> bool:
 
 
 # v5.2.4: 敏感个人标识字段——实体 state/attributes 会进 recorder/logbook，
-# 手机号/用户 ID 等必须掩码或剔除（frenck 审核 hacs/default#11629 指出：
+# 手机号/用户 ID 等必须掩码或剔除（指出：
 # 车辆授权列表/家充桩分享/SIM 等暴露完整手机号）。
 _PHONE_KEYS = ("phone", "phonenumber", "mobile", "mobileno", "mobilephone")
 _IDENTITY_KEYS = ("userid", "user_id", "uid", "account", "accountid",
@@ -95,7 +94,7 @@ _IDENTITY_KEYS = ("userid", "user_id", "uid", "account", "accountid",
 
 
 def _mask_phone(value) -> str:
-    """手机号掩码——只保留后四位（frenck 审核要求）。"""
+    """手机号掩码——只保留后四位。"""
     s = str(value)
     digits = re.sub(r"\D", "", s)
     if len(digits) >= 4:
@@ -106,7 +105,7 @@ def _mask_phone(value) -> str:
 def _safe_identity_name(user: dict, finder) -> str | None:
     """授权/分享用户显示名：优先昵称/用户名，手机号仅掩码展示，用户 ID 不外泄。
 
-    供 auth_list / wallbox_sharing 使用——frenck 审核 #11629 要求实体
+    供 auth_list / wallbox_sharing 使用——要求实体
     state 不得暴露完整手机号与用户 ID。
     """
     for key in ("userName", "nickName", "nickname", "displayName", "name"):
@@ -123,7 +122,7 @@ def _safe_scalar_attrs(data: dict, limit: int = 12) -> dict:
     """复制原始响应标量字段到 attributes 时的安全过滤器。
 
     v5.2.4: 剔除/掩码敏感字段——手机号、用户 ID、账号、证件号等个人标识
-    不得进入实体 attributes（frenck 审核 #11629：会进 recorder/logbook）。
+    不得进入实体 attributes（会进 recorder/logbook）。
     其余标量字段原样保留（供诊断）。
     """
     out: dict[str, object] = {}
@@ -171,8 +170,8 @@ async def async_setup_entry(
             _ent.async_on_remove(
                 _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
-    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
-        pass
+    except Exception:
+        _LOGGER.debug("entity listener registration failed", exc_info=True)
 
 
     # v3.5.8: 清理升级残留的旧 sensor 实体——新版不再创建（如双后轮 value=0
@@ -181,7 +180,7 @@ async def async_setup_entry(
     # 不在新实体集合、且未被用户手动禁用的，显式移除。
     # v5.2.4: 清理范围限定为【本 entry 自己的实体】——此前按全 domain
     # 过滤会误删其它账号（多 config entry）的传感器，用户的重命名/区域/
-    # 自定义随之丢失（frenck 审核 hacs/default#11629 指出）。config flow
+    # 自定义随之丢失。config flow
     # 支持多账号（一个 entry 对应一个手机号），设置一个 entry 不得删别的。
     reg = er.async_get(hass)
     new_ids = {s.unique_id for s in all_sensors}
@@ -1852,7 +1851,7 @@ class FordPassSimSensor(_ServiceInfoSensor):
                   "returnSuccess", "returnErrCode", "returnErrMsg"):
             if info.get(k) is not None:
                 # v5.2.4: phoneNumber 掩码（后四位）——完整手机号会进实体
-                # attributes 与 recorder/logbook（frenck 审核 #11629）
+                # attributes 与 recorder/logbook
                 keep[k] = _mask_phone(info[k]) if k == "phoneNumber" else info[k]
         return keep
 
@@ -2750,7 +2749,7 @@ class FordPassProbeSensor(SensorEntity):
                         if not isinstance(u, dict):
                             continue
                         # v5.2.4: 优先昵称/用户名，手机号掩码，用户 ID 不外泄
-                        # （frenck 审核 #11629：state 会进 recorder/logbook）
+                        # （state 会进 recorder/logbook）
                         nm = _safe_identity_name(u, _swb_find)
                         if nm is not None:
                             users.append(nm)

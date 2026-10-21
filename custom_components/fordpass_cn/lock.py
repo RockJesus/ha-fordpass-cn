@@ -9,6 +9,7 @@ TrunkUnlock 被网关 228205「cmdSpec can not empty」拒绝（App 端该命令
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.lock import LockEntity
@@ -21,6 +22,7 @@ from .const import CMD_LOCK, CMD_TRUNK_UNLOCK, CMD_UNLOCK, DOMAIN
 from .coordinator import FordPassCoordinator
 from .sensor import FordPassRestoreMixin
 
+_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
 
@@ -41,7 +43,7 @@ async def async_setup_entry(
             locks.append(FordPassTrunkLock(coordinator))
         # v3.3.7: 前备箱锁——v5.2.4 起移除：开/关命令按子串匹配 + fallback
         # "first/last" 属猜测命令，未对照官方 App 抓包确认前不得下发
-        # （frenck 审核 hacs/default#11629 要求移除，待确认后恢复）。
+        # （待官方 App 抓包确认后恢复）。
     async_add_entities(locks)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
@@ -61,8 +63,8 @@ async def async_setup_entry(
             _ent.async_on_remove(
                 _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
-    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
-        pass
+    except Exception:
+        _LOGGER.debug("entity listener registration failed", exc_info=True)
 
 
 
@@ -142,19 +144,13 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
 
     async def async_lock(self, **kwargs: Any) -> None:
         """锁定后备箱：全车上锁（网关无独立 TrunkLock 命令）。"""
-        try:
-            await self.coordinator.run_command(CMD_LOCK)
-        except Exception:
-            raise
+        await self.coordinator.run_command(CMD_LOCK)
         self._state = True
         self.async_write_ha_state()
 
     async def async_unlock(self, **kwargs: Any) -> None:
         """解锁后备箱（TrunkUnlock）。"""
-        try:
-            await self.coordinator.run_command(CMD_TRUNK_UNLOCK)
-        except Exception:
-            raise
+        await self.coordinator.run_command(CMD_TRUNK_UNLOCK)
         self._state = False
         self.async_write_ha_state()
 

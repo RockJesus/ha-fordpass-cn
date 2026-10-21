@@ -51,8 +51,8 @@ async def async_setup_entry(
             _ent.async_on_remove(
                 _ent.coordinator.async_add_listener(_mk_refresh(_ent))
             )
-    except Exception:  # noqa: BLE001 - 注册失败不影响实体创建
-        pass
+    except Exception:
+        _LOGGER.debug("entity listener registration failed", exc_info=True)
 
 
 
