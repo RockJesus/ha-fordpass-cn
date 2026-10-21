@@ -7,8 +7,11 @@
 [![GitHub 下载量](https://img.shields.io/github/downloads/RockJesus/ha-fordpass-cn/total)](https://github.com/RockJesus/ha-fordpass-cn/releases)
 [![HA 版本](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue)](https://www.home-assistant.io/)
 [![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn)](LICENSE)
+[![Blog](https://img.shields.io/badge/Blog-RockJesus-purple.svg)](https://rockjesus.cn)
 
 </div>
+
+欢迎来我的 blog：[rockjesus.cn](https://rockjesus.cn) —— 智能家居、车机互联与各类硬件的折腾记录都在这里。
 
 ---
 
@@ -94,7 +97,14 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 ## 🚀 配置步骤
 
-1. 设置 → 设备与服务 → 添加集成 → 搜索「福特派互联」
+<div align="center">
+
+[![开始配置](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=fordpass_cn)
+[![打开设备与服务](https://my.home-assistant.io/badges/integrations.svg)](https://my.home-assistant.io/redirect/integrations/)
+
+</div>
+
+1. 设置 → 设备与服务 → 添加集成 → 搜索「福特派互联」（点击上方「开始配置」可直接打开添加流程）
 2. 选择登录方式：**手机号验证码登录**（输入手机号 → 获取短信验证码 → 输入完成）或 **用户名密码登录**（密码仅用于本次登录换令牌、不会保存）
 3. 按所选方式完成登录
 4. 在集成选项（Options）中可开启「启用车辆定位追踪」、选择坐标体系（WGS-84 / GCJ-02）；状态刷新间隔为固定默认 30 分钟（v4.9.6 起不再用户可配置）
@@ -188,6 +198,13 @@ action:
 
 ## 🛠 故障排查
 
+<div align="center">
+
+[![查看实体状态](https://my.home-assistant.io/badges/developer_states.svg)](https://my.home-assistant.io/redirect/developer_states/)
+[![查看系统日志](https://my.home-assistant.io/badges/logs.svg)](https://my.home-assistant.io/redirect/logs/)
+
+</div>
+
 | 问题 | 处理 |
 |---|---|
 | 用户名密码登录失败/被拦截（`AADB2C: An exception has occurred`、567） | 微软 Azure AD B2C 网关风控可能拦截非浏览器自动化请求——**改用短信验证码登录**（登录后令牌自动续期，无需频繁重登） |
@@ -212,10 +229,6 @@ content: >-
 3. **风险自担**：使用本集成可能导致账号风控、功能失效、违反服务条款等后果，**一切风险与责任由使用者自行承担**；作者不提供任何服务可用性担保。
 4. **数据本地**：车辆数据（VIN、位置、车况等）仅存储在您自己的 Home Assistant 中，集成除福特/林肯官方服务端外不向任何第三方传输、共享您的数据。
 5. **下架配合**：若相关权利方要求移除逆向素材或本仓库，作者将配合下架。
-
-## ❤️ 致谢
-
-[![RJ](https://img.shields.io/badge/Rock-Jesus-purple.svg)](https://rockjesus.cn)
 
 ## 📜 更新日志
 
