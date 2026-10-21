@@ -2,10 +2,14 @@
 
 The pictures (vehicleImageUrl=侧视45view / imageUrl=俯视birdview from
 /v5/vehicles/list, HAR 2026-10-03 实测) are downloaded once and persisted to
-``/config/www/fordpass_cn/<vin>[.overlook].png`` so they survive restarts and
-never need to be re-downloaded (or lost).  The entity's state shows the model
-name (e.g. 锐际 Escape) for readability — the picture itself is rendered by the
-frontend from the image proxy.
+``/config/.storage/fordpass_cn/<vin>[.overlook].png`` so they survive restarts
+and never need to be re-downloaded (or lost).  The entity's state shows the
+model name (e.g. 锐际 Escape) for readability — the picture itself is rendered
+by the frontend from the image proxy.
+
+v5.2.4: 图片缓存从 /config/www 迁至 /config/.storage 私有目录——www 目录经
+/local/ 无认证可下载，任何人知道 VIN 就能拉取车辆图片（frenck 审核
+hacs/default#11629 指出）。.storage 由 HA 私有管理、不对外服务。
 """
 from __future__ import annotations
 
@@ -32,14 +36,17 @@ def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
     """v4.0.14: VIN 白名单校验——VIN 直接拼路径存在路径穿越风险（../../）。
 
     云端字段异常/被篡改时用 sha1 摘要兜底作文件名（稳定唯一），杜绝把
-    用户可控字符写进 www 对外目录路径。
+    用户可控字符写进对外目录路径。
+    v5.2.4: 缓存目录由 www/fordpass_cn 改为 .storage/fordpass_cn（私有目录，
+    /local/ 无认证对外暴露被 frenck 审核指出）；hass.config.path(".storage")
+    即 /config/.storage，由 HA 私有管理。
     """
     safe = vin if re.fullmatch(r"[A-Za-z0-9]{6,20}", vin) else hashlib.sha1(vin.encode("utf-8")).hexdigest()[:16]
-    return os.path.join(hass.config.path("www"), "fordpass_cn", f"{safe}{suffix}.png")
+    return os.path.join(hass.config.path(".storage"), "fordpass_cn", f"{safe}{suffix}.png")
 
 
 def _read_local(path: str) -> bytes | None:
-    """Read the persisted picture from www/fordpass_cn (run in executor)."""
+    """Read the persisted picture from .storage/fordpass_cn (run in executor)."""
     try:
         if os.path.isfile(path):
             with open(path, "rb") as fh:
@@ -50,7 +57,7 @@ def _read_local(path: str) -> bytes | None:
 
 
 def _persist_sync(path: str, data: bytes) -> None:
-    """Write the picture to www/fordpass_cn atomically (run in executor)."""
+    """Write the picture to .storage/fordpass_cn atomically (run in executor)."""
     try:
         directory = os.path.dirname(path)
         os.makedirs(directory, exist_ok=True)
@@ -115,9 +122,10 @@ class FordPassVehicleImage(ImageEntity):
     async def async_image(self) -> bytes | None:
         """Return the picture: local file first, then remote URL once.
 
-        Once downloaded the bytes are kept in memory AND written to the www
-        folder, so the image is never deleted or re-downloaded on restart.
-        File IO runs in the executor to keep the event loop responsive.
+        Once downloaded the bytes are kept in memory AND written to the
+        private .storage folder, so the image is never deleted or re-downloaded
+        on restart. File IO runs in the executor to keep the event loop
+        responsive.
         """
         if self._image_bytes:
             return self._image_bytes
@@ -158,7 +166,7 @@ class FordPassRemoteImageEntity(ImageEntity):
     按钮同条件；锐际 null = 车型无远程影像硬件，不创建、0 unavailable）。
     图片 URL 来自按钮查询响应（coordinator.data["remote_image"]），
     响应结构随车型/云端变化，由 extract_remote_image_url 宽松提取；
-    有 URL 则下载并持久化到 www/fordpass_cn/{vin}_{kind}.png（保留最后
+    有 URL 则下载并持久化到 .storage/fordpass_cn/{vin}_{kind}.png（保留最后
     一张），无 URL 时状态显示「暂无影像」且不丢已下载图片。
     """
 
@@ -254,7 +262,7 @@ class FordPass3dModelImage(ImageEntity):
     """3D 车型图（v3.5.0）：GET vds/v1/vehicle/search-3d-vehicle-model-url。
 
     探测到 modelUrl 才创建（非能力车型无数据自动跳过，全车型适配）；
-    下载后持久化到 www（_3d 后缀），重启不重复拉取；无 URL 时显示
+    下载后持久化到 .storage（_3d 后缀），重启不重复拉取；无 URL 时显示
     车型名、保留已有图片（v3.1.2 规则，不 unavailable）。
     """
 

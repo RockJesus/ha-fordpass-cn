@@ -83,6 +83,64 @@ def _is_usable(status, paths) -> bool:
     return not isinstance(val, (list, dict))
 
 
+# v5.2.4: 敏感个人标识字段——实体 state/attributes 会进 recorder/logbook，
+# 手机号/用户 ID 等必须掩码或剔除（frenck 审核 hacs/default#11629 指出：
+# 车辆授权列表/家充桩分享/SIM 等暴露完整手机号）。
+_PHONE_KEYS = ("phone", "phonenumber", "mobile", "mobileno", "mobilephone")
+_IDENTITY_KEYS = ("userid", "user_id", "uid", "account", "accountid",
+                  "loginname", "username", "idcard", "idno", "passport",
+                  "openid", "unionid", "email", "identityno")
+
+
+def _mask_phone(value) -> str:
+    """手机号掩码——只保留后四位（frenck 审核要求）。"""
+    s = str(value)
+    digits = re.sub(r"\D", "", s)
+    if len(digits) >= 4:
+        return f"****{digits[-4:]}"
+    return "****"
+
+
+def _safe_identity_name(user: dict, finder) -> str | None:
+    """授权/分享用户显示名：优先昵称/用户名，手机号仅掩码展示，用户 ID 不外泄。
+
+    供 auth_list / wallbox_sharing 使用——frenck 审核 #11629 要求实体
+    state 不得暴露完整手机号与用户 ID。
+    """
+    for key in ("userName", "nickName", "nickname", "displayName", "name"):
+        nm = finder(user, key)
+        if nm is not None:
+            return str(nm)
+    phone = finder(user, "phone") or finder(user, "mobile") or finder(user, "phoneNumber")
+    if phone is not None:
+        return _mask_phone(phone)
+    return None
+
+
+def _safe_scalar_attrs(data: dict, limit: int = 12) -> dict:
+    """复制原始响应标量字段到 attributes 时的安全过滤器。
+
+    v5.2.4: 剔除/掩码敏感字段——手机号、用户 ID、账号、证件号等个人标识
+    不得进入实体 attributes（frenck 审核 #11629：会进 recorder/logbook）。
+    其余标量字段原样保留（供诊断）。
+    """
+    out: dict[str, object] = {}
+    for k, v in list(data.items())[:limit]:
+        if not isinstance(v, (str, int, float, bool)) and v is not None:
+            continue
+        kl = str(k).lower()
+        if kl in _PHONE_KEYS or kl in _IDENTITY_KEYS:
+            continue
+        if any(ident in kl for ident in ("userid", "user_id", "phonenumber",
+                                         "mobile", "idcard", "loginname", "accountid")):
+            continue
+        if kl.endswith(("phone", "mobile", "phonenumber")):
+            out[str(k)] = _mask_phone(v) if isinstance(v, str) else v
+            continue
+        out[str(k)] = v
+    return out
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -119,22 +177,22 @@ async def async_setup_entry(
     # 非该能力车型）但旧 registry 条目仍在时会一直 unavailable，违反
     # "实体不显示不可用"要求。凡 platform==fordpass_cn 的 sensor 且 unique_id
     # 不在新实体集合、且未被用户手动禁用的，显式移除。
+    # v5.2.4: 清理范围限定为【本 entry 自己的实体】——此前按全 domain
+    # 过滤会误删其它账号（多 config entry）的传感器，用户的重命名/区域/
+    # 自定义随之丢失（frenck 审核 hacs/default#11629 指出）。config flow
+    # 支持多账号（一个 entry 对应一个手机号），设置一个 entry 不得删别的。
     reg = er.async_get(hass)
     new_ids = {s.unique_id for s in all_sensors}
     # v3.6.5: HAOS 2026.10 移除 EntityRegistry.async_entries_for_domain，
-    # 改用 reg.entities.values() 过滤 platform==DOMAIN（等价）。
-    reg_entries = [e for e in reg.entities.values() if e.platform == DOMAIN]
+    # 改用 async_entries_for_config_entry 精确限定本 entry（v5.2.4）。
+    reg_entries = er.async_entries_for_config_entry(reg, entry.entry_id)
     # v4.3.0: 日志口径修正——registry 计数只统计 sensor.* 条目
     # （此前打印全 domain 实体数 80，含 lock/switch/button/tracker/image/
     # select 等 16 个非 sensor，与"只清理 sensor 实体"的实际行为不符，
     # 易误导排查）。
     sensor_regs = [e for e in reg_entries if e.entity_id.startswith("sensor.")]
-    _LOGGER.debug("sensor cleanup: registry=%d new_ids=%d", len(sensor_regs), len(new_ids))
+    _LOGGER.debug("sensor cleanup: entry=%s registry=%d new_ids=%d", entry.entry_id, len(sensor_regs), len(new_ids))
     for entry_ in sensor_regs:
-        if not entry_.entity_id.startswith("sensor."):
-            continue
-        if entry_.platform != DOMAIN:
-            continue
         if entry_.disabled_by is not None:
             continue
         if entry_.unique_id not in new_ids:
@@ -1791,7 +1849,9 @@ class FordPassSimSensor(_ServiceInfoSensor):
         for k in ("iccid", "simICCID", "simStatus", "phoneNumber", "carrier", "operator", "status",
                   "returnSuccess", "returnErrCode", "returnErrMsg"):
             if info.get(k) is not None:
-                keep[k] = info[k]
+                # v5.2.4: phoneNumber 掩码（后四位）——完整手机号会进实体
+                # attributes 与 recorder/logbook（frenck 审核 #11629）
+                keep[k] = _mask_phone(info[k]) if k == "phoneNumber" else info[k]
         return keep
 
 
@@ -2133,9 +2193,8 @@ class FordPassSmartWallboxSensor(SensorEntity):
         data = self._probe()
         attrs: dict = {}
         if isinstance(data, dict):
-            for k, v in list(data.items())[:12]:
-                if isinstance(v, (str, int, float, bool)) or v is None:
-                    attrs[str(k)] = v
+            # v5.2.4: 敏感字段过滤（手机号/用户ID 等不进 attributes）
+            attrs = _safe_scalar_attrs(data)
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
@@ -2208,9 +2267,8 @@ class FordPassFposbSensor(SensorEntity):
         attrs: dict = {}
         books = self._booking_list()
         if books and isinstance(books[0], dict):
-            for k, v in list(books[0].items())[:10]:
-                if isinstance(v, (str, int, float, bool)) or v is None:
-                    attrs[str(k)] = v
+            # v5.2.4: 敏感字段过滤（预约记录可能含手机号/用户ID）
+            attrs = _safe_scalar_attrs(books[0], limit=10)
         attrs["count"] = len(books)
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
@@ -2294,9 +2352,8 @@ class FordPassEvssSensor(SensorEntity):
         attrs: dict = {}
         data = self._probe()
         if isinstance(data, dict):
-            for k, v in list(data.items())[:12]:
-                if isinstance(v, (str, int, float, bool)) or v is None:
-                    attrs[str(k)] = v
+            # v5.2.4: 敏感字段过滤（手机号/用户ID 等不进 attributes）
+            attrs = _safe_scalar_attrs(data)
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
@@ -2690,11 +2747,11 @@ class FordPassProbeSensor(SensorEntity):
                     for u in lst:
                         if not isinstance(u, dict):
                             continue
-                        nm = (_swb_find(u, "userName") or _swb_find(u, "nickName")
-                              or _swb_find(u, "phone") or _swb_find(u, "userId")
-                              or _swb_find(u, "name"))
+                        # v5.2.4: 优先昵称/用户名，手机号掩码，用户 ID 不外泄
+                        # （frenck 审核 #11629：state 会进 recorder/logbook）
+                        nm = _safe_identity_name(u, _swb_find)
                         if nm is not None:
-                            users.append(str(nm))
+                            users.append(nm)
                     if users:
                         return f"{len(lst)} 个授权用户：{'、'.join(list(dict.fromkeys(users))[:6])}"
                     return f"{len(lst)} 个授权用户"
@@ -2725,11 +2782,10 @@ class FordPassProbeSensor(SensorEntity):
                     for u in lst:
                         if not isinstance(u, dict):
                             continue
-                        nm = (_swb_find(u, "phone") or _swb_find(u, "userName")
-                              or _swb_find(u, "nickName") or _swb_find(u, "name")
-                              or _swb_find(u, "userId"))
+                        # v5.2.4: 优先昵称/用户名，手机号掩码，用户 ID 不外泄
+                        nm = _safe_identity_name(u, _swb_find)
                         if nm is not None:
-                            users.append(str(nm))
+                            users.append(nm)
                     if users:
                         return f"{len(lst)} 个共享用户：{'、'.join(list(dict.fromkeys(users))[:5])}"
                     return f"{len(lst)} 个共享用户"
@@ -2946,9 +3002,8 @@ class FordPassProbeSensor(SensorEntity):
         data = self._data()
         attrs: dict = {}
         if isinstance(data, dict):
-            for k, v in list(data.items())[:12]:
-                if isinstance(v, (str, int, float, bool)) or v is None:
-                    attrs[str(k)] = v
+            # v5.2.4: 敏感字段过滤（原始响应可能含手机号/用户ID）
+            attrs = _safe_scalar_attrs(data)
         # v4.6.5: 车型主数据附 11 项车辆信息（中文标签 + 可翻译字段中文化，
         # 技术码保留原文供排查）。
         if self._kind == "vehicle_model_masterdata":

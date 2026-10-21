@@ -105,12 +105,10 @@ async def async_setup_entry(
         # v4.7.2: v5 主动刷新车况 + v5 刷新轮询（send-command 手动刷新保留）
         buttons.append(FordPassV5RefreshButton(coordinator))
         buttons.append(FordPassV5RefreshStatusButton(coordinator))
-        # v4.7.1: 分车门锁定（IDUL）——逆向 v5 命令族新增能力（send-command
-        # 网关只有整车 DoorLock）。按福特 v5 惯例 doortype 四门枚举；云端
-        # 不支持的车型按下返回网关明确报错（如实提示，创建条件与整车锁一致）。
-        if capability.usable(status, [["crccFlag"]]):
-            for doortype, label in _IDUL_DOORS:
-                buttons.append(FordPassIdulLockButton(coordinator, doortype, label))
+        # v4.7.1: 分车门锁定（IDUL）——v5.2.4 起移除：doortype 四门枚举属
+        # "按福特 v5 惯例"推测、未对照官方 App 抓包确认，遥控类命令不得
+        # 发送未验证载荷（frenck 审核 hacs/default#11629 要求移除，待抓包
+        # 确认后恢复）。整车门锁（lock.py）不受影响。
         # v3.3.4: 「保存鸣笛设置」按钮已删除——鸣笛类型/时长 select
         # 选择后即时上传云端（见 select.py 云端同步），无需手动保存。
         # v3.1.7: 空调滤芯重置（AAR 能力车型——vehicle-status 无关，按
@@ -125,20 +123,9 @@ async def async_setup_entry(
         if getattr(coordinator, "car_id", None):
             buttons.append(FordPassImageButton(coordinator, "停车影像", "mdi:car-multiple", "parking"))
             buttons.append(FordPassImageButton(coordinator, "行车监控", "mdi:cctv", "traffic"))
-        # v3.3.7: 云端命令白名单驱动——车型专属按钮按各自白名单自动创建
-        # （电马遥控泊车、支持车窗升降的车型等；锐际白名单无则自动跳过）
-        wl = coordinator.command_whitelist
-        if isinstance(wl, list):
-            parking = [c for c in wl if "Parking" in c]
-            if parking:
-                buttons.append(_FordPassWlButton(
-                    coordinator, "parking", "遥控泊车", "mdi:car-shift-pattern",
-                    parking[0]))
-            window = [c for c in wl if "Window" in c and "Check" not in c]
-            if window:
-                buttons.append(_FordPassWlButton(
-                    coordinator, "window_close", "远程关窗", "mdi:car-door",
-                    window[0]))
+        # v3.3.7: 遥控泊车/远程关窗按钮——v5.2.4 起移除：白名单命令无参数
+        # 直接下发属"猜测命令"，遥控泊车绝不能触发未确认载荷（frenck 审核
+        # hacs/default#11629 要求移除，待对照官方 App 抓包确认后恢复）。
         # v3.5.0: APK 6.16.0 补全命令——消息已读 / 行车记录仪录制。
         # 消息已读：messages_page 探测有数据才创建（有消息中心的车）。
         # 录制按钮：video_file 探测有数据才创建（带行车记录仪硬件的车），
@@ -388,107 +375,6 @@ class FordPassVideoStopButton(_FordPassButtonBase):
             await self.coordinator.api.stop_video_recording(self.coordinator.vin)
         except Exception as exc:
             raise HomeAssistantError(f"停止录制失败: {exc}") from exc
-
-
-class _FordPassWlButton(_FordPassButtonBase):
-    _attr_state = "待命"
-    """白名单驱动的通用按钮（v3.3.7，车型专属功能）。
-
-    仅在云端命令白名单包含对应命令时创建；按下发送匹配命令，
-    命令无参数（网关参数格式未知时按下返回错误即如实提示）。
-    """
-
-    def __init__(
-        self,
-        coordinator: FordPassCoordinator,
-        suffix: str,
-        label: str,
-        icon: str,
-        command: str,
-    ) -> None:
-        self.coordinator = coordinator
-        self._command = command
-        self._attr_unique_id = f"{coordinator.vin}-{suffix}"
-        self._attr_name = label
-        self._attr_has_entity_name = False
-        self._attr_device_info = coordinator.device_info
-        self._attr_icon = icon
-
-    @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
-
-    async def async_press(self) -> None:
-        await self.coordinator.run_command(self._command)
-
-
-# 分车门锁定 doortype 枚举（福特 v5 惯例；实测若车型枚举不同会返回网关报错）
-_IDUL_DOORS: list[tuple[str, str]] = [
-    ("front-left", "驾驶员门锁定"),
-    ("front-right", "副驾门锁定"),
-    ("rear-left", "左后门锁定"),
-    ("rear-right", "右后门锁定"),
-]
-
-
-class FordPassIdulLockButton(_FordPassButtonBase):
-    _attr_state = "待命"
-    """分车门锁定（IDUL，v4.7.1）——按车门单独上锁。
-
-    逆向福特派 6.16.0 v5 命令族（Dart 深度反编译）：
-      DELETE /api/vehicles/v5/{vin}/door/{doortype}/lock = sendIDULCommand
-        （指定单门上锁，明文 JSON，返回 commandId）
-      GET   /api/vehicles/v5/{vin}/door/lock/{commandId} = getIDULCommandState
-        （轮询命令结果）
-    两段式（下发→轮询）与 v5 其他命令族（鸣笛/启动/刷新）一致。
-    """
-
-    def __init__(self, coordinator, doortype: str, label: str) -> None:
-        self.coordinator = coordinator
-        self._doortype = doortype
-        self._attr_unique_id = f"{coordinator.vin}-idul_lock_{doortype}"
-        self._attr_name = label
-        self._attr_has_entity_name = False
-        self._attr_device_info = coordinator.device_info
-        self._attr_icon = "mdi:car-door-lock"
-
-    async def async_press(self) -> None:
-        """下发分车门锁定 → 轮询命令状态 → 刷新实体（失败不阻塞刷新）。"""
-        resp: Any = None
-        try:
-            resp = await self.coordinator.api.idul_lock(self.coordinator.vin, self._doortype)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass IDUL %s 下发失败: %s", self._doortype, exc)
-        cid: str | None = None
-        if isinstance(resp, dict):
-            cid = resp.get("commandId")
-            if not cid:
-                inner = resp.get("data")
-                if isinstance(inner, dict):
-                    cid = inner.get("commandId")
-        if cid:
-            _LOGGER.info("FordPass IDUL %s commandId=%s，轮询命令状态", self._doortype, cid)
-            for _ in range(5):
-                await asyncio.sleep(2)
-                try:
-                    st = await self.coordinator.api.idul_lock_status(self.coordinator.vin, str(cid))
-                    _LOGGER.info("FordPass IDUL %s status: %s", self._doortype, str(st)[:200])
-                    if isinstance(st, dict):
-                        inner = st.get("data") or st
-                        if str(inner.get("commandStatus") or "").lower() in (
-                            "success", "complete", "completed", "1",
-                        ):
-                            break
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.debug("FordPass IDUL %s 轮询异常（继续）: %s", self._doortype, exc)
-                    break
-        else:
-            _LOGGER.warning("FordPass IDUL %s: 响应无 commandId, resp=%s",
-                            self._doortype, (str(resp)[:300] if resp is not None else "None"))
-        try:
-            await self.coordinator.force_refresh()
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass IDUL %s 刷新失败: %s", self._doortype, exc)
 
 
 class FordPassButton(_FordPassButtonBase):

@@ -515,7 +515,18 @@ class FordPassApi:
             params["timestamp"] = int(time.time() * 1000)
             params["sign"] = compute_sign(params)
             kwargs = {"params": params}
-        self._log.debug("FordPass %s %s payload=%s", method, url, kwargs)
+        # v5.2.4: 请求体日志只记录字段名不记录值——encryptedRefreshToken/
+        # encryptedPasscode/encryptedAuthCode 的解密密钥就在集成内，完整值进
+        # debug 日志等于泄露 refresh token（frenck 审核 hacs/default#11629
+        # 指出：用户会把日志贴进 issue）。
+        _payload_fields = (
+            ",".join(sorted(kwargs["json"].keys()))
+            if "json" in kwargs and isinstance(kwargs["json"], dict)
+            else ",".join(sorted(kwargs["params"].keys()))
+            if "params" in kwargs and isinstance(kwargs["params"], dict)
+            else ""
+        )
+        self._log.debug("FordPass %s %s payload_fields=%s", method, url, _payload_fields)
         # v3.3.2: 显式超时 60s——HA 默认 aiohttp session timeout 仅 ~10s，
         # 福特网关（尤其 ForceRefresh 后立即拉取 vehicle-status）偶发慢响应
         # 会被截断抛 asyncio.TimeoutError → coordinator 每轮刷
@@ -3010,10 +3021,13 @@ class FordPassApi:
             "clienttype": "FP",
             "x-sign": compute_lbs_sign(body, ts),
         }
-        self._log.debug("FordPass LBS POST %s headers=%s body=%s",
+        # v5.2.4: LBS 请求日志不记录 body 值——body 携带 LBS 明文 token
+        # （frenck 审核 #11629：token 不得进日志）。header 仅保留键名，
+        # 省略 x-sign 值。
+        self._log.debug("FordPass LBS POST %s header_fields=%s body_fields=%s",
                         PATH_QUERY_LOCATION,
-                        {k: v for k, v in headers.items() if k != "x-sign"},
-                        json.dumps(body)[:300])
+                        ",".join(sorted(headers.keys())),
+                        ",".join(sorted(body.keys())) if isinstance(body, dict) else "")
         async with self._session.post(
             LBS_BASE_URL + PATH_QUERY_LOCATION, headers=headers, json=body
         ) as resp:
