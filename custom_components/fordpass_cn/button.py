@@ -74,6 +74,8 @@ _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, lis
 ]
 
 
+PARALLEL_UPDATES = 1
+
 def _capability_ok(status: dict, paths: list[list[str]] | None, check: str | None) -> bool:
     if paths is None or check is None:
         return True

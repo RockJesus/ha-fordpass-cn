@@ -32,6 +32,8 @@ from .coordinator import FordPassCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+PARALLEL_UPDATES = 1
+
 def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
     """v4.0.14: VIN 白名单校验——VIN 直接拼路径存在路径穿越风险（../../）。
 
