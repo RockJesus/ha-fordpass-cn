@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryAuthFailed,
+    ConfigEntryError,
     ConfigEntryNotReady,
 )
 from homeassistant.const import Platform
@@ -72,9 +73,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_REFRESH_TOKEN),
     )
 
-    def _persist_token(tok: str) -> None:
+    # v5.3.1: _persist_token 扩展为 (access, refresh=None) 双参数——api 侧
+    # 常规续期只传 access_token；refresh token 轮换时传双参数，避免新
+    # refresh_token 被误写进 CONF_ACCESS_TOKEN 字段。
+    def _persist_token(tok: str, refresh: str | None = None) -> None:
         hass.config_entries.async_update_entry(
-            entry, data={**entry.data, CONF_ACCESS_TOKEN: tok}
+            entry,
+            data={
+                **entry.data,
+                CONF_ACCESS_TOKEN: tok,
+                **({CONF_REFRESH_TOKEN: refresh} if refresh is not None else {}),
+            },
         )
 
     api.on_token_refresh = _persist_token
@@ -109,10 +118,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # v4.5.0: 兜底落盘成功打一条 INFO（setup 一次，非轮询噪音），
             # 便于确认 options 已写入（此前 options 显示为空无法区分
             # "API 脱敏"与"真未写入"）。
+            # v5.3.1: 修复日志参数错位——旧文案两个 %s 传的是
+            # (DEFAULT_SCAN_INTERVAL_MINUTES, DEFAULT_COORDINATE_SYSTEM)，
+            # 把刷新间隔填进了 track_location 的位置且 track_location=True
+            # 硬编码重复。
             _LOGGER.info(
                 "fordpass_cn options defaults persisted: track_location=%s "
-                "track_location=True coordinate_system=%s",
-                DEFAULT_SCAN_INTERVAL_MINUTES,
+                "coordinate_system=%s",
+                True,
                 DEFAULT_COORDINATE_SYSTEM,
             )
 
@@ -140,7 +153,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"FordPass setup error: {err}") from err
 
     if not vehicles:
-        raise RuntimeError("No vehicles found on this FordPass account")
+        # v5.3.1: 空账号不再抛 RuntimeError（HA 不自动重试、entry 永久失败
+        # 态）——转 ConfigEntryError：显示配置错误、不循环重试、用户在
+        # 配置中修改（如换绑了车辆再重新配置）。
+        raise ConfigEntryError(
+            "账号下未发现车辆——请先在福特派/林肯之道 App 中确认已绑定车辆"
+        )
 
     # v4.2.7: 预热白盒密码学单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
     # 查表实现（v4.2.7 起不再加载 ELF/.so/Unicorn）。表加载与 key 文件读取
@@ -198,6 +216,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return None
 
     coordinators = []
+    # v5.3.1: 账号级共享缓存提前创建——此前在全部 first_refresh 之后才
+    # 回填 account_cache，setup 首轮（load/probe/first_refresh）期间
+    # coordinator.account_cache 为 None，account=True 端点（chirp_cloud/
+    # messages）不缓存直接真拉；现建 coordinator 时立即回填，首轮即生效。
+    account_cache: dict[str, tuple[float, object]] = {}
     for vehicle in vehicles:
         vin = vehicle.get("encryptedVin") or vehicle.get("vin")
         if not vin:
@@ -232,10 +255,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             car_id=vehicle.get("encryptedCarId") or None,
             config_entry=entry,
         )
+        # v5.3.1: 建立即回填账号级共享缓存（首轮刷新即可命中复用）
+        coordinator.account_cache = account_cache
         coordinators.append(coordinator)
 
     if not coordinators:
-        raise RuntimeError("No usable vehicles found on this FordPass account")
+        raise ConfigEntryError(
+            "账号下未发现可用车辆（无有效 VIN）——请检查账号内车辆信息"
+        )
 
     for coordinator in coordinators:
         # v3.6.2: 全量车辆清单（v5/vehicles/list 已验证 live）共享给每车，
@@ -307,11 +334,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "honk_settings": honk_settings,
         # v5.1.8: 账号级共享缓存（问题 7 P2 修复）——账户级端点
         # （chirp_cloud/messages 等）多车共享同一份缓存，消除多车每轮
-        # 重复请求同一账户数据的浪费。创建后回填给所有 coordinator。
-        "account_cache": {},
+        # 重复请求同一账户数据的浪费；v5.3.1 起该 dict 在 coordinator
+        # 建立时即回填（见上方），此处直接挂 runtime_data 供诊断等读取。
+        "account_cache": account_cache,
     }
-    for coordinator in coordinators:
-        coordinator.account_cache = entry.runtime_data["account_cache"]
 
     # v5.1.7: 注册服务（services.yaml）——refresh_status（可选 VIN 全车/单车
     # 刷新）+ clear_tokens（清令牌重置会话）。闭包持有 coordinators/api，
@@ -335,7 +361,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.warning(
             "fordpass_cn clear_tokens: 已清除访问令牌，重载集成后需重新认证"
         )
+        # v5.3.1: 同时清空 entry.data 中的令牌——只清内存的话重载后旧令牌
+        # 又会被 set_token 装回（旧令牌未过期则白清），必须落盘才算彻底。
         api.set_token("", "")
+        try:
+            hass.config_entries.async_update_entry(
+                entry,
+                data={
+                    **entry.data,
+                    CONF_ACCESS_TOKEN: "",
+                    CONF_REFRESH_TOKEN: "",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 落盘失败不阻断清令牌
+            _LOGGER.warning("fordpass_cn clear_tokens persist failed: %s", exc)
 
     hass.services.async_register(
         DOMAIN,

@@ -236,6 +236,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.3.1**（2026-10-22）：**代码审查修复**——① 统一实体可用性策略：sensor/button/image 刷新失败不再显示不可用，与 switch/lock/select/device_tracker 对齐保留最后已知状态（此前同一轮刷新失败一半实体 unavailable）；② `clear_tokens` 服务同时清空配置中的令牌（只清内存会导致重载后旧令牌复活）；③ 林肯之道 4 个专属探测端点走持久化缓存（重载不再重复探测）；④ 空账号转配置错误（不再无限重试）；⑤ refresh_token 加锁 + 5 秒窗口缓存（多车并发 401 不再双刷新），云端轮换 refresh token 时自动回存；⑥ 账号级共享缓存提前到建立协调器时生效；⑦ 修复 options 落盘日志参数错位
 - **v5.3.0**（2026-10-21）：**quality_scale 达标整改**——① 运行时数据迁移到 `ConfigEntry.runtime_data`（替代 `hass.data` 手工管理，多账号/卸载生命周期交给 HA）；② 服务失败抛异常：`refresh_status` 指定 VIN 不在账号车辆中时返回明确错误，自动化可感知；③ 配置表单字段增加说明文案（手机号/验证码/账号密码/品牌/登录方式）；④ 新增 `quality_scale.yaml` 进度跟踪与豁免声明（多账号、保留最后已知状态、无触发器/发现机制）；⑤ 文档补齐：配置参数表、自动化示例与用例、移除集成说明；⑥ 新增配置流测试骨架（品牌选择/验证码步骤/SMS 全路径/选项流，mock 云端 API）
 - **v5.2.9**（2026-10-21）：**代码审查清理**——① ruff 全规则清零：7 个实体平台 6 处裸异常（`except: pass`）改为记录调试日志、lock/switch 4 处冗余异常包裹移除、import 排序整理；测试文件同步清理（编码声明/无用 noqa/import 排序）；② 代码与 README 注释去掉 HACS 审核历史引用，表述更直接；③ `.gitignore` 补 `.ruff_cache/`
 - **v5.2.8**（2026-10-21）：**按官方质量分级补齐两项**——① 7 个实体平台（button/device_tracker/image/lock/select/sensor/switch）各加 `PARALLEL_UPDATES = 1`（单实体并行更新上限）；② 云端刷新失败日志只警告一次：首次失败正常记录（error 级），后续失败降为调试级——默认 30 分钟一轮轮询不再刷屏，恢复成功时提示一次；活动日志不受影响，每轮各实体刷新状态照常显示

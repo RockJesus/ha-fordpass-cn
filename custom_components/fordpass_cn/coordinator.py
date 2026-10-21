@@ -409,6 +409,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 结果并入 extra_probes（探测到数据才创建传感器；福特派账号不探测、
         # 键不存在不创建，零副作用）。404/业务拒绝由 api 抛 ProbeRejected
         # 或返回 None，均不会进入 extra_probes。
+        # v5.3.1: 4 端点改走 _cached_fetch(persist=True)——此前每次
+        # setup/重载都真拉 4 次请求，违背「探测类请求只在登录后执行一次
+        # 并缓存」风控策略；现 TTL 内重载复用、ProbeRejected 落盘 None
+        # 不再重探。
         if self.brand == BRAND_LINCOLN:
             for _lkey, _lfn in (
                 ("lincoln_member_info", self.api.probe_lincoln_member_info),
@@ -417,14 +421,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ("lwosb_order_status", self.api.probe_lwosb_order_status),
             ):
                 try:
-                    _lr = await _lfn()
+                    _lr = await self._cached_fetch(
+                        _lkey, PROBE_PERSIST_TTL, _lfn, persist=True, force=force
+                    )
                     if _lr:
                         self.extra_probes = {
                             **(self.extra_probes or {}), _lkey: _lr,
                         }
-                except FordPassProbeRejected:
-                    continue
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001 - 单端点失败不阻断其余探测
                     self.logger.debug("Lincoln %s probe failed: %s", _lkey, exc)
         # v3.7.6: cevs 探测诊断（预约出发/充电三端点探测结果，供诊断传感器
         # 直接读取——不再依赖导出日志即可从 HA 侧确认探测成败）

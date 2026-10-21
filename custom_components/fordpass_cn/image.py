@@ -99,7 +99,7 @@ class FordPassVehicleImage(ImageEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     @property
     def state(self) -> str:
@@ -186,7 +186,7 @@ class FordPassRemoteImageEntity(ImageEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     def _resp(self):
         data = self.coordinator.data or {}
@@ -294,7 +294,7 @@ class FordPass3dModelImage(ImageEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success  # v4.5.5: 撤销「只保留最后已知状态」——刷新失败如实显示不可用
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     @property
     def state(self) -> str:

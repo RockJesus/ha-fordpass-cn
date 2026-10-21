@@ -444,6 +444,14 @@ class FordPassApi:
         self._lbs_token: str | None = None
         self._lbs_token_expiry: float | None = None
         self._retrying = False
+        # v5.3.1: refresh_token 单飞锁 + 短窗口结果缓存——多车 coordinator
+        # 并发 401 时（同一 api 实例共享 token，过期那轮同时触发），此前
+        # _retrying 布尔在并发检查下会同时放行两个协程各自 refresh 一次
+        # （后写者覆盖 on_token_refresh 持久化）；现所有 refresh 调用在
+        # refresh_token 方法内经锁串行，且 5s 窗口内同 refresh_token 复用
+        # 第一次的结果，真正单飞。_retrying 保留作为递归防环标志。
+        self._refresh_lock = asyncio.Lock()
+        self._refresh_cache: tuple[str, float, dict[str, str]] | None = None
         self.on_token_refresh = None
         # v3.7.6: cevs 域探测诊断（预约出发/充电）——每个端点探测结果
         # 存这里（ok/rejected/failed + 摘要），coordinator 暴露给诊断
@@ -725,22 +733,51 @@ class FordPassApi:
         }
 
     async def refresh_token(self, refresh_token: str) -> dict[str, str]:
-        # The server DTO (RefreshDLTTokenRequest) rejects any extra field
-        # (e.g. touchPoint -> JSON parse error); only these three are allowed.
-        enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
-        data = await self._request(
-            "POST",
-            PATH_REFRESH_TOKEN,
-            {"encryptedRefreshToken": enc, "brand": "FORD", "xjw": xjw},
-        )
-        inner = data.get("data", {})
-        xjw2 = inner.get("xjw", xjw)
-        return {
-            "access_token": await asyncio.to_thread(lambda: self.crypto.decrypt_field(
-                inner["encryptedAccessToken"], xjw2
-            )),
-            "expires_in": inner.get("expiresIn"),
-        }
+        # v5.3.1: 锁 + 5s 窗口结果缓存——并发 401 时多协程同时到达，锁保证
+        # 串行，窗口缓存让后续协程直接复用第一次的刷新结果，避免重复请求
+        # 云端与重复持久化（后写者覆盖）。
+        async with self._refresh_lock:
+            if self._refresh_cache and self._refresh_cache[0] == refresh_token:
+                if time.monotonic() < self._refresh_cache[1]:
+                    return self._refresh_cache[2]
+                self._refresh_cache = None
+            # The server DTO (RefreshDLTTokenRequest) rejects any extra field
+            # (e.g. touchPoint -> JSON parse error); only these three are allowed.
+            enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
+            data = await self._request(
+                "POST",
+                PATH_REFRESH_TOKEN,
+                {"encryptedRefreshToken": enc, "brand": "FORD", "xjw": xjw},
+            )
+            inner = data.get("data", {})
+            xjw2 = inner.get("xjw", xjw)
+            result: dict[str, str] = {
+                "access_token": await asyncio.to_thread(lambda: self.crypto.decrypt_field(
+                    inner["encryptedAccessToken"], xjw2
+                )),
+                "expires_in": inner.get("expiresIn"),
+            }
+            # v5.3.1: 防御性回存新 refresh_token——若云端在刷新响应里轮换了
+            # refresh token（当前福特云实测不轮换，仅防御），解密后更新内存
+            # 与 entry.data（on_token_refresh 持久化），避免下次续期用旧值
+            # 失效触发 reauth。
+            new_refresh = inner.get("encryptedRefreshToken")
+            if new_refresh:
+                try:
+                    rt = await asyncio.to_thread(
+                        lambda body=new_refresh, x=xjw2: self.crypto.decrypt_field(body, x)
+                    )
+                    if rt:
+                        self._refresh_token = rt
+                        if self.on_token_refresh is not None:
+                            # v5.3.1: 回调带 (access, refresh) 双参数——旧签名
+                            # 单参数会把 refresh token 误写进 access_token 字段
+                            self.on_token_refresh(result["access_token"], rt)
+                        result["refresh_token"] = rt
+                except Exception:  # noqa: BLE001 - 轮换回存失败不影响本次刷新
+                    self._log.debug("FordPass refresh token rotation persist failed")
+            self._refresh_cache = (refresh_token, time.monotonic() + 5, result)
+            return result
 
     async def revoke_token(self, refresh_token: str) -> None:
         enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
