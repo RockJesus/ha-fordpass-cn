@@ -1,10 +1,16 @@
 # FordPass China 福特派互联 Home Assistant 集成
 
-![brand](custom_components/fordpass_cn/brand/logo.png)
+将福特中国（长安福特）福特派 / 林肯之道云服务**接入 Home Assistant**：远程控车、车辆状态监控、定位追踪、预约出发/充电、家充桩管理、远程影像等全功能。
 
-[![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
-[![GitHub release](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn.svg)](https://github.com/RockJesus/ha-fordpass-cn/releases)
-[![HA](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue.svg)](https://www.home-assistant.io)
+<div align="center">
+
+[![HACS 官方收录](https://img.shields.io/badge/HACS-官方收录-41BDF5.svg)](https://github.com/hacs/default)
+[![最新版本](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn)](https://github.com/RockJesus/ha-fordpass-cn/releases/latest)
+[![GitHub 下载量](https://img.shields.io/github/downloads/RockJesus/ha-fordpass-cn/total)](https://github.com/RockJesus/ha-fordpass-cn/releases)
+[![HA 版本](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue.svg)](https://www.home-assistant.io/)
+[![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn)](LICENSE)
+
+</div>
 
 Custom Home Assistant integration for **FordPass China (Changan Ford) / Lincoln Way (China)** cloud services. Unofficial, reverse-engineered from the FordPass CN / Lincoln Way mobile app.
 
@@ -19,10 +25,29 @@ Custom Home Assistant integration for **FordPass China (Changan Ford) / Lincoln 
 
 ## Installation
 
-1. In Home Assistant go to **Settings → Devices & Services → HACS → ⋯ → Custom repositories**
-2. Add `https://github.com/RockJesus/ha-fordpass-cn` with category **Integration**
-3. Click **Download** (or use the `update` entity to update later versions), then **restart Home Assistant**
-4. Add the integration via **Settings → Devices & Services → Add Integration → "FordPass China 福特派互联"**
+### Option 1: HACS (recommended)
+
+This integration is now part of the **official HACS default repository**. Click the button below to open HACS on your Home Assistant and install it in one go:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RockJesus&repository=ha-fordpass-cn&category=integration)
+
+> Button not working? You can also do it manually: HACS → Integrations → search "**FordPass China 福特派互联**" → Download → restart Home Assistant.
+
+### Option 2: Manual installation
+
+<details>
+<summary>Expand manual install steps</summary>
+
+1. Download the latest release from [Releases](https://github.com/RockJesus/ha-fordpass-cn/releases)
+2. Copy the `custom_components/fordpass_cn/` folder into `/config/custom_components/`
+3. Restart Home Assistant
+
+</details>
+
+### Requirements
+
+> [!IMPORTANT]
+> Requires **Home Assistant 2024.6 or newer** (HAOS / Supervised / Container / Core all supported).
 
 > Disclaimer: This is an independent, non-official project for research and personal use only. Use it at your own risk. No affiliation with Ford Motor Company.
 
@@ -31,7 +56,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 > ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
 
-## 功能特性
+## ✨ 功能特性
 
 **登录与品牌**
 - 双登录方式：手机号短信验证码（无需密码）或用户名密码（Azure B2C 官方流程），配置时可自由选择
@@ -66,13 +91,15 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 > 蓝牙域边界：汽车 BLE 车控指令（一键制冷/制热、熄火、门锁、后备箱、车窗、寻车、前备箱、举升顶、车窗通风）与 PAAK 数字钥匙为**纯 BLE 物理链路**（需手机在车旁 10 米内 + 安全会话），云端无 HTTP 通道，HA 云集成无法执行——支持 BLE 的车型请用手机在车旁操作福特派 App。本集成云端可用的蓝牙域能力（家充桩 BLE 自动认证）已接入（分车门锁定在 v5.2.4 因命令载荷未确认移除）。
 
-## 安装
+## 📦 安装方法
 
-### 方式一：HACS（推荐）
+### 方式一：通过 HACS 安装（推荐）
 
-1. 将 `https://github.com/RockJesus/ha-fordpass-cn` 添加为 HACS 自定义仓库（类别：Integration）
-2. 搜索并安装 `FordPass China 福特派互联`
-3. 重启 Home Assistant
+本集成已收录于 **HACS 官方默认仓库**，点击下方按钮即可在你的 Home Assistant 中直接打开 HACS 并一键安装：
+
+[![在 HACS 中打开](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RockJesus&repository=ha-fordpass-cn&category=integration)
+
+> 按钮无法使用？也可手动操作：HACS → 集成 → 搜索「**福特派互联**」→ 下载 → 重启 Home Assistant。
 
 ### 方式二：手动安装
 
@@ -80,7 +107,12 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 2. 解压后将 `custom_components/fordpass_cn/` 整个目录复制到 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
-## 配置
+### ⚙️ 环境要求
+
+> [!IMPORTANT]
+> 需要 **Home Assistant 2024.6 及以上版本**（HAOS / Supervised / Container / Core 均可）。
+
+## 🚀 配置
 
 1. 设置 → 设备与服务 → 添加集成 → 搜索「福特派互联」
 2. 选择登录方式：**手机号验证码登录**（输入手机号 → 获取短信验证码 → 输入完成）或 **用户名密码登录**（密码仅用于本次登录换令牌、不会保存）
@@ -91,7 +123,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 > 白盒加密内核为**纯 Python 查表实现**（v4.2.7 起 100% 破译，零外部依赖），无需安装任何额外 Python 包。
 
-## 支持的实体
+## 🔌 支持的实体
 
 > 车型 × 能力矩阵（v5.1.7）：✔=该车型支持；✘=不支持；「按车型」=实体按云端能力位图/命令白名单自动创建，非该能力车型不出现。燃料类型由车辆业务字段（fuelType）判断：纯油（G/D）、混动（PHEV/HEV/MHEV）、纯电（BEV）。
 
@@ -119,7 +151,7 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 
 > 实体创建全部数据驱动：登录后按本车云端能力与车辆数据判断（多 VIN 账号下每辆车独立创建自己支持的实体组），不支持的命令按下会返回网关明确报错，不制造静默无效实体；刷新失败保留最后已知状态，0 unavailable。
 
-## 常见问题
+## ❓ 常见问题
 
 | 问题 | 处理 |
 |---|---|
@@ -138,7 +170,7 @@ content: >-
 
 替换 `<你的视频说明书实体>` 为你的实体 ID：**设置 → 设备与服务 → 福特派 → 实体 → 找到「视频说明书」→ 复制实体 ID**。添加方式：仪表盘右上角编辑 → 添加卡片 → 点「手动」/「YAML 模式」→ 粘贴以上配置 → 保存。
 
-## 免责声明
+## ⚠️ 免责声明
 
 1. **非官方项目**：本项目为个人逆向研究作品，与福特汽车（中国）有限公司、长安福特汽车有限公司、林肯中国及任何官方主体**无任何关联、未经任何授权**；「福特派」「林肯之道」等商标归各自权利人所有，本文中引用仅用于识别所对接的服务。
 2. **仅供学习研究**：本项目包含逆向工程所得素材（白盒加密表、签名算法等），仅限**个人学习研究**与**自用**，请勿用于商业用途。
@@ -146,14 +178,14 @@ content: >-
 4. **数据本地**：车辆数据（VIN、位置、车况等）仅存储在您自己的 Home Assistant 中，集成除福特/林肯官方服务端外不向任何第三方传输、共享您的数据。
 5. **下架配合**：若相关权利方要求移除逆向素材或本仓库，作者将配合下架。
 
-## 支持作者
+## 💖 支持作者
 
 [![RJ](https://img.shields.io/badge/Rock-Jesus-purple.svg)](https://rockjesus.cn)
 
-## 版本历史
+## 📜 版本历史
 
 <details>
-<summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
+<summary>完整版本历史（点击展开）</summary>
 
 - **v5.2.7**（2026-10-21）：**修复 HACS 审核二轮 2 项（frenck 复审）**——① LBS 定位 token 响应日志收敛：`get_lbs_token` 的 debug 日志不再打印响应正文（原 `text[:300]` 含 `data.encryptedAccessToken`，其解密密钥随集成发布，值进日志即等于泄露 token），改为只记状态码与 data 字段名；相关错误信息（HTTP 错误/non-JSON/缺 token）同步收敛，不带响应正文；② 清理旧版（<v5.2.4）写入 `/config/www/fordpass_cn` 的遗留车辆图片/泊车/行驶监控帧——/www 下内容无需认证可经 `/local/` 下载，setup 时在 executor 中删除一次该目录（删后不存在，天然只执行一次），新版本私有缓存（`.storage/fordpass_cn`）不受影响
 - **v5.2.6**（2026-10-21）：**清理已移除按钮的残留实体**——v5.2.4/v5.2.5 移除的控件（分车门锁定×4、v5 主动刷新、v5 刷新轮询）"不再创建"≠"自动消失"，旧 registry 条目会一直 unavailable 占位；本次在 button 平台加入显式清理（限定本 entry、跳过用户禁用项，与 sensor 平台 v5.2.4 同款逻辑），重载后残留按钮自动移除
@@ -177,28 +209,20 @@ content: >-
 - **v5.0.8**（2026-10-17）：**设备页主显示按车型匹配**——汽油车显示燃油量、纯电车显示动力电池电量、混动车油量与电量并列（HA 设备页取第一个 sensor 实体，注册顺序按车型重排）；燃油量图标不再误用电池
 - **v5.0.7**（2026-10-17）：**传感器规范修复**——数值传感器补充 `state_class: measurement`（燃油量/续航/电压/里程/机油寿命/胎压等），启用长期统计与趋势图；修复燃油量 device_class（不再误显示电池图标）
 - **v5.0.6**（2026-10-17）：**修复分车门锁定按钮显示 unknown**——所有按钮实体增加初始状态「待命」（HA button 平台默认按下前无状态）；顺带修复 S110 裸异常
-- **v5.0.5**（2026-10-17）：**README 法律敏感叙述清理 + 视频说明书卡片模板完善**——
-  ① 删除 README 中私有二进制/密钥素材相关法律敏感叙述
-  ② 白盒加密技术说明精简为纯 Python 查表实现
-  ③ 视频说明书 FAQ 升级为完整可复制的 Markdown 卡片（含查找实体 ID 步骤 + YAML 模式添加方式），并注明 sensor 状态不可点击需用卡片
-- **v5.0.4**（2026-10-17）：**CI 修复**——manifest 键序修正（quality_scale 移入字母序位置，hassfest 校验通过）；
-  tests/test_wbsk.py 移除未用 import pytest 补入 main（ruff 全绿）；v5.0.3 的两个 CI 失败项在 v5.0.4 全绿
-- **v5.0.3**（2026-10-17）：**仓库合规整改（PR 审核准备）+ 9 个功能 bug 修复**——
-  ① 新增 GitHub Actions `hassfest` + `hacs` 两个官方校验工作流（持续全绿）
-  ② README 新增英文安装/功能说明（英文优先，符合 HACS 默认仓库审核要求）
-  ③ 修复 api.py 缺失的 9 个路径常量 import（IDUL 分车门锁定、v5 状态刷新、林肯会员/我的页面、lwosb 维保预约、家充桩蓝牙添加——此前点击按钮即 NameError）
-  ④ 清理测试未使用导入；ruff 全绿 + pytest 14 通过
-- **v5.0.2**（2026-10-17）：**视频说明书改为可点击链接**——状态显示「查看视频说明书」短文案（不再刷屏长 URL），完整链接在属性 `manual_url`；README 常见问题新增 Markdown 卡片配置模板，点击即跳浏览器打开。
-- **v5.0.1**（2026-10-17）：**所有实体按车型+按数据非空创建**——19 个探测实体（全车型 6 种 + 充电域 13 种）由无条件创建改为「探测数据非空才创建」，无数据不显示「暂无数据」占位噪音；旧实体由清理逻辑自动移除。
-- **v5.0.0**（2026-10-16）：**README 优化与免责声明**——重写精炼 README（功能分组、常见问题、精简实体表）；免责声明扩容为五项（非官方/仅供研究/风险自担/数据本地/下架配合）。
-- **v4.9.9**（2026-10-16）：**清理不必要代码**——移除 9 个文件中的未使用导入；无功能变更。
-- **v4.9.8**（2026-10-16）：**修复重新加载弹错**——setup 首次刷新加 20s 短超时，快速转 ConfigEntryNotReady 自动重试。
-- **v4.9.7**（2026-10-16）：**第二轮合规整改**——探测/诊断传感器补 `entity_category: diagnostic`；补全 pytest 单测 14 项全过。
-- **v4.9.6**（2026-10-16）：**HA 规范合规整改**——移除用户可配置刷新间隔（固定 30 分钟）；删除调试服务残留；README 大幅精简。
-- **v4.9.5**（2026-10-16）：新增 `diagnostics.py`；根 `CODEOWNERS`；`async_migrate_entry`。
-- **v4.9.4**（2026-10-16）：manifest 增加 `quality_scale: bronze`。
-- **v4.9.3**（2026-10-16）：所有实体按车型能力创建。
-- **v4.9.2**（2026-10-16）：清理 data/ 无用文件（零外部依赖）。
-- **v4.9.1**（2026-10-16）：定位传感器 lat/lon 属性数值化。
+- **v5.0.5**（2026-10-17）：**README 法律敏感叙述清理 + 视频说明书卡片模板完善**——① 删除 README 中私有二进制/密钥素材相关法律敏感叙述；② 白盒加密技术说明精简为纯 Python 查表实现；③ 视频说明书 FAQ 升级为完整可复制的 Markdown 卡片（含查找实体 ID 步骤 + YAML 模式添加方式），并注明 sensor 状态不可点击需用卡片
+- **v5.0.4**（2026-10-17）：**CI 修复**——manifest 键序修正（quality_scale 移入字母序位置，hassfest 校验通过）；tests/test_wbsk.py 移除未用 import pytest 补入 main（ruff 全绿）；v5.0.3 的两个 CI 失败项在 v5.0.4 全绿
+- **v5.0.3**（2026-10-17）：**仓库合规整改（PR 审核准备）+ 9 个功能 bug 修复**——① 新增 GitHub Actions `hassfest` + `hacs` 两个官方校验工作流（持续全绿）；② README 新增英文安装/功能说明（英文优先，符合 HACS 默认仓库审核要求）；③ 修复 api.py 缺失的 9 个路径常量 import（IDUL 分车门锁定、v5 状态刷新、林肯会员/我的页面、lwosb 维保预约、家充桩蓝牙添加——此前点击按钮即 NameError）；④ 清理测试未使用导入；ruff 全绿 + pytest 14 通过
+- **v5.0.2**（2026-10-17）：**视频说明书改为可点击链接**——状态显示「查看视频说明书」短文案（不再刷屏长 URL），完整链接在属性 `manual_url`；README 常见问题新增 Markdown 卡片配置模板，点击即跳浏览器打开
+- **v5.0.1**（2026-10-17）：**所有实体按车型+按数据非空创建**——19 个探测实体（全车型 6 种 + 充电域 13 种）由无条件创建改为「探测数据非空才创建」，无数据不显示「暂无数据」占位噪音；旧实体由清理逻辑自动移除
+- **v5.0.0**（2026-10-16）：**README 优化与免责声明**——重写精炼 README（功能分组、常见问题、精简实体表）；免责声明扩容为五项（非官方/仅供研究/风险自担/数据本地/下架配合）
+- **v4.9.9**（2026-10-16）：**清理不必要代码**——移除 9 个文件中的未使用导入；无功能变更
+- **v4.9.8**（2026-10-16）：**修复重新加载弹错**——setup 首次刷新加 20s 短超时，快速转 ConfigEntryNotReady 自动重试
+- **v4.9.7**（2026-10-16）：**第二轮合规整改**——探测/诊断传感器补 `entity_category: diagnostic`；补全 pytest 单测 14 项全过
+- **v4.9.6**（2026-10-16）：**HA 规范合规整改**——移除用户可配置刷新间隔（固定 30 分钟）；删除调试服务残留；README 大幅精简
+- **v4.9.5**（2026-10-16）：新增 `diagnostics.py`；根 `CODEOWNERS`；`async_migrate_entry`
+- **v4.9.4**（2026-10-16）：manifest 增加 `quality_scale: bronze`
+- **v4.9.3**（2026-10-16）：所有实体按车型能力创建
+- **v4.9.2**（2026-10-16）：清理 data/ 无用文件（零外部依赖）
+- **v4.9.1**（2026-10-16）：定位传感器 lat/lon 属性数值化
 
 </details>
