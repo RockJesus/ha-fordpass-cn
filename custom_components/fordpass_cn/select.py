@@ -30,7 +30,6 @@ from .const import (
     DEFAULT_CHIRP_TYPE,
     DEFAULT_HONK_DURATION,
     DEFAULT_REMOTE_TEMP,
-    DOMAIN,
     HONK_DURATION_OPTIONS,
     PREF_TARGET_TEMP,
     REMOTE_CLIMATE_TEMP_OPTIONS,
@@ -71,7 +70,7 @@ async def async_setup_entry(
 ) -> None:
     # v3.1.6: 多 VIN——每辆车独立创建设置实体；
     # 设置内容为账户级（云端 UserPreference），多车共享同一份 settings
-    payload = hass.data[DOMAIN][entry.entry_id]
+    payload = entry.runtime_data  # v5.3.0: runtime_data 替代 hass.data
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     settings = payload.setdefault(
         "honk_settings",
@@ -232,7 +231,7 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
             settings: dict[str, Any] = {}
             entry_id = getattr(self.coordinator, "entry_id", None)
             if entry_id:
-                payload = self.coordinator.hass.data.get(DOMAIN, {}).get(entry_id) or {}
+                payload = getattr(self.coordinator.config_entry, "runtime_data", None) or {}  # v5.3.0
                 settings = payload.get("honk_settings") or {}
             options: dict[str, Any] = {}
             if entry_id:

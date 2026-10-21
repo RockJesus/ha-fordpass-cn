@@ -12,7 +12,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
 from .coordinator import FordPassCoordinator
 from .sensor import FordPassRestoreMixin
 
@@ -25,7 +24,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     # v3.1.6: 多 VIN——每辆车独立创建定位实体
-    payload = hass.data[DOMAIN][entry.entry_id]
+    payload = entry.runtime_data  # v5.3.0: runtime_data 替代 hass.data
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     # Always create the tracker entities. The option toggle only controls
     # availability + whether the coordinator fetches LBS data, so flipping

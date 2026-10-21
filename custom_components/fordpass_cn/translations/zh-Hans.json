@@ -6,6 +6,9 @@
         "description": "选择要接入的品牌：{brands}。\n\n- 福特派 FordPass：完整支持（验证码/密码登录、全部功能）\n- 林肯之道 Lincoln Way：与福特派共用同一套云端加密体系，但登录链路（B2C 登录页/验证码端点/App 指纹）待抓包补齐，当前暂不可登录——选中后会提示",
         "data": {
           "brand": "品牌"
+        },
+        "data_description": {
+          "brand": "选择车辆品牌；林肯使用林肯之道登录。"
         }
       },
       "phone": {
@@ -13,6 +16,9 @@
         "description": "输入注册福特派的手机号，我们会发送短信验证码。",
         "data": {
           "phone": "手机号"
+        },
+        "data_description": {
+          "phone": "福特派 / 林肯之道 App 注册使用的大陆手机号。"
         }
       },
       "code": {
@@ -20,6 +26,9 @@
         "description": "验证码已发送至 {phone}，请输入 6 位短信验证码。",
         "data": {
           "passcode": "短信验证码"
+        },
+        "data_description": {
+          "passcode": "刚发送到该手机号的短信验证码。"
         }
       },
       "password": {
@@ -28,6 +37,10 @@
         "data": {
           "username": "用户名（手机号）",
           "password": "密码"
+        },
+        "data_description": {
+          "username": "B2C 账号用户名（邮箱或手机号）。",
+          "password": "B2C 账号密码。"
         }
       },
       "b2c": {
@@ -35,6 +48,9 @@
         "description": "请在浏览器中打开以下链接，用福特派账号登录（用户名：{username}）。登录成功后浏览器会跳转到 ford.com.cn，地址栏 URL 带 ?code=xxx——把 xxx 复制粘贴到这里。该授权码一次性有效，换取令牌后立即失效。\n\n登录链接：\n{login_url}",
         "data": {
           "code": "授权码"
+        },
+        "data_description": {
+          "code": "浏览器登录页返回的授权码（登录成功后自动带回到本页）。"
         }
       },
       "reauth_confirm": {
@@ -46,6 +62,9 @@
         "description": "选择登录方式：{login_modes}。如提示失败，请查看 Home Assistant 日志（设置 → 系统 → 日志）中的 fordpass_cn 记录。",
         "data": {
           "login_mode": "登录方式"
+        },
+        "data_description": {
+          "login_mode": "选择登录福特云端的方式。"
         }
       },
       "lincoln_pending": {

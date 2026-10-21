@@ -6,6 +6,9 @@
         "description": "Choose the brand to connect: {brands}.\n\n- FordPass China: fully supported (SMS/password login, all features)\n- Lincoln Way China: shares the same cloud crypto stack with FordPass (reverse-verified libwbsk_crypto_tool.so binds Lincoln package names), but its B2C login page / SMS endpoint / app fingerprint are not yet captured — login pending",
         "data": {
           "brand": "Brand"
+        },
+        "data_description": {
+          "brand": "Choose the brand of your vehicle. Lincoln uses Lincoln Way."
         }
       },
       "phone": {
@@ -13,6 +16,9 @@
         "description": "Enter the phone number registered with FordPass China and we will send a SMS verification code.",
         "data": {
           "phone": "Phone number"
+        },
+        "data_description": {
+          "phone": "Mainland China mobile number used by the FordPass / Lincoln Way app."
         }
       },
       "code": {
@@ -20,6 +26,9 @@
         "description": "The verification code has been sent to {phone}. Enter the 6-digit code.",
         "data": {
           "passcode": "SMS verification code"
+        },
+        "data_description": {
+          "passcode": "SMS verification code just sent to this phone number."
         }
       },
       "password": {
@@ -28,6 +37,10 @@
         "data": {
           "username": "Username (phone number)",
           "password": "Password"
+        },
+        "data_description": {
+          "username": "B2C account username (email or mobile number).",
+          "password": "B2C account password."
         }
       },
       "b2c": {
@@ -35,6 +48,9 @@
         "description": "Open the following link in your browser and sign in with your FordPass account (username: {username}). After login the browser redirects to ford.com.cn with ?code=... in the address bar. Copy that code and paste it here. The code is single-use and expires right after the token exchange.\n\nLogin link:\n{login_url}",
         "data": {
           "code": "Authorization code"
+        },
+        "data_description": {
+          "code": "Authorization code copied from the browser login page."
         }
       },
       "reauth_confirm": {
@@ -46,6 +62,9 @@
         "description": "Choose a login method: {login_modes}. If login fails, check the fordpass_cn entries in the Home Assistant log (Settings → System → Logs).",
         "data": {
           "login_mode": "Login method"
+        },
+        "data_description": {
+          "login_mode": "Choose how to sign in to the Ford cloud."
         }
       },
       "lincoln_pending": {

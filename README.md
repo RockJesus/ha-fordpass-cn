@@ -87,9 +87,64 @@ Home Assistant 自定义集成，接入福特中国（长安福特）福特派�
 3. 按所选方式完成登录
 4. 在集成选项（Options）中可开启「启用车辆定位追踪」、选择坐标体系（WGS-84 / GCJ-02）；状态刷新间隔为固定默认 30 分钟（v4.9.6 起不再用户可配置）
 
-**服务（v5.1.7）**：`fordpass_cn.refresh_status`（可选 `vin` 参数：缺省刷新全部车辆、指定 VIN 只刷新该车）、`fordpass_cn.clear_tokens`（清除令牌重置会话，重载集成后重新认证）——可在自动化/脚本中直接调用。
+**配置参数（集成选项 Options）**：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| 启用车辆定位追踪 | 开 | 关闭后不再创建/更新 `device_tracker` 车辆定位 |
+| 坐标体系 | WGS-84 | 车辆定位坐标输出：WGS-84（地图通用）或 GCJ-02（国内地图偏移系） |
+
+> 登录信息（手机号/品牌/登录方式）在集成「重新配置」入口维护；令牌过期时集成自动弹出重新认证。
+
+**服务（v5.1.7）**：`fordpass_cn.refresh_status`（可选 `vin` 参数：缺省刷新全部车辆、指定 VIN 只刷新该车；VIN 不在当前账号车辆中时返回错误）、`fordpass_cn.clear_tokens`（清除令牌重置会话，重载集成后重新认证）——可在自动化/脚本中直接调用。
 
 > 白盒加密内核为**纯 Python 查表实现**（v4.2.7 起 100% 破译，零外部依赖），无需安装任何额外 Python 包。
+
+## 自动化示例与用例
+
+**出门前检查车辆状态**（早晨 8 点自动刷新并提醒）：
+```yaml
+alias: 出门前检查车辆
+trigger:
+  - platform: time
+    at: "08:00:00"
+action:
+  - service: fordpass_cn.refresh_status
+  - delay: "00:00:30"
+  - service: notify.mobile_app
+    data:
+      title: 车辆状态
+      message: >
+        油量 {{ states('sensor.<vin>_fuel_level') }}%，续航
+        {{ states('sensor.<vin>_driving_range') }} 公里
+```
+
+**夜间忘锁车提醒**：
+```yaml
+alias: 夜间锁车提醒
+trigger:
+  - platform: time
+    at: "23:00:00"
+condition:
+  - condition: state
+    entity_id: lock.<vin>_door_lock
+    state: "unlocked"
+action:
+  - service: notify.mobile_app
+    data:
+      message: 车门未锁，请确认
+```
+
+> 实体 id 中的 `<vin>` 需替换为实际车辆识别码；全部实体名与服务名可在 HA 开发者工具中查询确认。
+
+## 移除集成
+
+1. 设置 → 设备与服务 → 找到「福特派互联」条目 → 删除该配置（其下设备/实体一并移除）
+2. 若要同时卸载代码：HACS → 已下载 → FordPass China → 卸载；或删除 `/config/custom_components/fordpass_cn/` 目录后重启
+3. 车辆图片等缓存存于 `.storage` 私有目录，随集成删除一并清理，不残留
+4. 云端账号不受影响——福特派 App 照常使用
+
+> 卸载不会删除车辆数据与配置备份；重新安装后重新登录即可恢复使用。
 
 ## 支持的实体
 
@@ -155,6 +210,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.3.0**（2026-10-21）：**quality_scale 达标整改**——① 运行时数据迁移到 `ConfigEntry.runtime_data`（替代 `hass.data` 手工管理，多账号/卸载生命周期交给 HA）；② 服务失败抛异常：`refresh_status` 指定 VIN 不在账号车辆中时返回明确错误，自动化可感知；③ 配置表单字段增加说明文案（手机号/验证码/账号密码/品牌/登录方式）；④ 新增 `quality_scale.yaml` 进度跟踪与豁免声明（多账号、保留最后已知状态、无触发器/发现机制）；⑤ 文档补齐：配置参数表、自动化示例与用例、移除集成说明；⑥ 新增配置流测试骨架（品牌选择/验证码步骤/SMS 全路径/选项流，mock 云端 API）
 - **v5.2.9**（2026-10-21）：**代码审查清理**——① ruff 全规则清零：7 个实体平台 6 处裸异常（`except: pass`）改为记录调试日志、lock/switch 4 处冗余异常包裹移除、import 排序整理；测试文件同步清理（编码声明/无用 noqa/import 排序）；② 代码与 README 注释去掉 HACS 审核历史引用，表述更直接；③ `.gitignore` 补 `.ruff_cache/`
 - **v5.2.8**（2026-10-21）：**按官方质量分级补齐两项**——① 7 个实体平台（button/device_tracker/image/lock/select/sensor/switch）各加 `PARALLEL_UPDATES = 1`（单实体并行更新上限）；② 云端刷新失败日志只警告一次：首次失败正常记录（error 级），后续失败降为调试级——默认 30 分钟一轮轮询不再刷屏，恢复成功时提示一次；活动日志不受影响，每轮各实体刷新状态照常显示
 - **v5.2.7**（2026-10-21）：**修复 HACS 审核二轮 2 项**——① LBS 定位 token 响应日志收敛：`get_lbs_token` 的 debug 日志不再打印响应正文（原 `text[:300]` 含 `data.encryptedAccessToken`，其解密密钥随集成发布，值进日志即等于泄露 token），改为只记状态码与 data 字段名；相关错误信息（HTTP 错误/non-JSON/缺 token）同步收敛，不带响应正文；② 清理旧版（<v5.2.4）写入 `/config/www/fordpass_cn` 的遗留车辆图片/泊车/行驶监控帧——/www 下内容无需认证可经 `/local/` 下载，setup 时在 executor 中删除一次该目录（删后不存在，天然只执行一次），新版本私有缓存（`.storage/fordpass_cn`）不受影响

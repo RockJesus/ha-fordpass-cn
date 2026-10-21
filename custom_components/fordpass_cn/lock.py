@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
-from .const import CMD_LOCK, CMD_TRUNK_UNLOCK, CMD_UNLOCK, DOMAIN
+from .const import CMD_LOCK, CMD_TRUNK_UNLOCK, CMD_UNLOCK
 from .coordinator import FordPassCoordinator
 from .sensor import FordPassRestoreMixin
 
@@ -30,7 +30,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     # v3.1.6: 多 VIN——每辆车独立创建锁实体（按各自车型能力过滤）
-    payload = hass.data[DOMAIN][entry.entry_id]
+    payload = entry.runtime_data  # v5.3.0: runtime_data 替代 hass.data
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     locks: list[LockEntity] = []
     for coordinator in coordinators:
