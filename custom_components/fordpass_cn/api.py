@@ -668,10 +668,14 @@ class FordPassApi:
             # Both mean the access token lapsed mid-flight; treat exactly like an
             # HTTP 401: refresh once and retry.
             status = data.get("status")
-            error = str(data.get("error") or "")
+            # v5.3.4: 业务 401/600 判定不再依赖错误文案——此前要求
+            # "token" in error.lower()，福特云若改文案（如 "Jwt expired"/
+            # "Session invalid" 不含 token 字样）则 token 失效不刷新不报错、
+            # 实体静止无 reauth。status 401/600 本身即强失效信号，直接刷新
+            # 一次（v5.3.3 _retried 防环保证最多一次，刷新失败自动
+            # refresh_failed 触发 reauth）。
             if (
                 status in (401, 600)
-                and "token" in error.lower()
                 and self._refresh_token
             ):
                 # v5.3.3: 与 HTTP 401 分支同款防递归——刷新后重试仍返回
@@ -887,7 +891,7 @@ class FordPassApi:
                     )
                     return result
                 return inner
-            except (TimeoutError, FordPassApiError, json.JSONDecodeError, UnicodeDecodeError) as exc:  # v4.0.17: 补超时——ForceRefresh 后偶发慢响应被截断正是超时场景
+            except Exception as exc:  # noqa: BLE001 - v5.3.4: 加宽捕获——解密（decrypt_field 抛 ValueError 等）与解析瞬时失败同样重试一次（CancelledError 为 BaseException 不受影响）；原元组只含 TimeoutError/FordPassApiError/JSONDecodeError/UnicodeDecodeError，解密失败不重试直接冒泡
                 if attempt == 1:
                     self._log.warning(
                         "FordPass vehicle-status 瞬时异常（第 1 次，2 秒后重试）: %s",

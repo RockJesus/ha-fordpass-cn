@@ -235,6 +235,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 创建后回填（hass.data[DOMAIN][entry_id]["account_cache"]），
         # 所有 coordinator 共享同一 dict。
         self.account_cache: dict[str, tuple[float, Any]] | None = None
+        # v5.3.4: 账号级共享缓存 per-key 锁——多车并发同时 miss（TTL 过期/
+        # force 手动刷新）时只允许一个协程真拉，其余等锁后命中新缓存，
+        # 消除 coordinator 层重复请求窗口（见 _cached_fetch）。
+        self._account_locks: dict[str, asyncio.Lock] = {}
         # v5.1.8: logbook 失败节流（问题 11 P2 修复）——logbook 服务连续
         # 失败时暂停活动写入 1 小时，防止"每轮失败重试 + 日志风暴"；
         # 正常时行为不变（用户诉求：每轮显示各实体刷新状态）。
@@ -304,50 +308,67 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             ent = (store or {}).get(key)
             old = ent[1] if ent else None
-        try:
-            val = await factory()
-        except FordPassProbeRejected as exc:
-            # v4.0.9: 确定性能力缺失（业务拒绝/404）——落盘 None 并返回：
-            # TTL 内不再重探（reload 不制造 6 次 404 噪音），与"瞬时故障"
-            # 严格区分。
-            self.logger.debug("FordPass %s probe rejected: %s", key, exc)
-            if store is not None:
-                store[key] = (time.monotonic() + ttl, None)
-            if not account and persist and self._probe_store is not None:
-                self._probe_cache[key] = {"expire": time.time() + ttl, "value": None}
-                try:
-                    await self._probe_store.async_save(self._probe_cache)
-                except Exception as save_exc:  # noqa: BLE001
-                    self.logger.debug("FordPass probe cache save failed: %s", save_exc)
-            return None
-        except Exception as exc:  # noqa: BLE001 - best effort，失败不阻塞刷新
-            # v4.0.9: 网络瞬时故障/空响应等异常**不落盘**——下次 reload 重探，
-            # 避免把瞬时故障错误钉死 7 天。
-            self.logger.debug("FordPass %s fetch failed: %s", key, exc)
-            if old is not None:
-                return old
-            if not account and persist and self._probe_cache:
-                ent = self._probe_cache.get(key)
-                if ent:
-                    return ent["value"]
-            return None
-        if val is not None:
-            if store is not None:
-                store[key] = (time.monotonic() + ttl, val)
-            # v4.0.9: 落盘只发生在"探测成功有数据"（本分支）或
-            # FordPassProbeRejected（确定性能力缺失，落盘 None）——
-            # val=None 的其它来源（空响应/网络瞬时失败）不再落盘，
-            # 下次 reload 重探，避免把瞬时故障钉死 7 天。
-            if not account and persist and self._probe_store is not None:
-                self._probe_cache[key] = {
-                    "expire": time.time() + ttl,
-                    "value": val,
-                }
-                try:
-                    await self._probe_store.async_save(self._probe_cache)
-                except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
-                    self.logger.debug("FordPass probe cache save failed: %s", exc)
-        return val
+
+        # v5.3.4: account 账号级共享缓存加 per-key 锁——多车并发同时 miss
+        # （TTL 过期/force 手动刷新）时只允许一个协程真拉，其余等锁后命中
+        # 新缓存（api 层 _account_cached 另有兜底，此锁消除 coordinator 层
+        # 重复请求窗口，减少风控请求量）。
+        async def _do_fetch() -> Any:
+            try:
+                val = await factory()
+            except FordPassProbeRejected as exc:
+                # v4.0.9: 确定性能力缺失（业务拒绝/404）——落盘 None 并返回：
+                # TTL 内不再重探（reload 不制造 6 次 404 噪音），与"瞬时故障"
+                # 严格区分。
+                self.logger.debug("FordPass %s probe rejected: %s", key, exc)
+                if store is not None:
+                    store[key] = (time.monotonic() + ttl, None)
+                if not account and persist and self._probe_store is not None:
+                    self._probe_cache[key] = {"expire": time.time() + ttl, "value": None}
+                    try:
+                        await self._probe_store.async_save(self._probe_cache)
+                    except Exception as save_exc:  # noqa: BLE001
+                        self.logger.debug("FordPass probe cache save failed: %s", save_exc)
+                return None
+            except Exception as exc:  # noqa: BLE001 - best effort，失败不阻塞刷新
+                # v4.0.9: 网络瞬时故障/空响应等异常**不落盘**——下次 reload 重探，
+                # 避免把瞬时故障错误钉死 7 天。
+                self.logger.debug("FordPass %s fetch failed: %s", key, exc)
+                if old is not None:
+                    return old
+                if not account and persist and self._probe_cache:
+                    ent = self._probe_cache.get(key)
+                    if ent:
+                        return ent["value"]
+                return None
+            if val is not None:
+                if store is not None:
+                    store[key] = (time.monotonic() + ttl, val)
+                # v4.0.9: 落盘只发生在"探测成功有数据"（本分支）或
+                # FordPassProbeRejected（确定性能力缺失，落盘 None）——
+                # val=None 的其它来源（空响应/网络瞬时失败）不再落盘，
+                # 下次 reload 重探，避免把瞬时故障钉死 7 天。
+                if not account and persist and self._probe_store is not None:
+                    self._probe_cache[key] = {
+                        "expire": time.time() + ttl,
+                        "value": val,
+                    }
+                    try:
+                        await self._probe_store.async_save(self._probe_cache)
+                    except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
+                        self.logger.debug("FordPass probe cache save failed: %s", exc)
+            return val
+
+        if account:
+            lock = self._account_locks.setdefault(key, asyncio.Lock())
+            async with lock:
+                # 双重检查：等待锁期间其他车辆协程可能已刷新缓存
+                if not force:
+                    hit, old2 = self._cache_hit(key, account=True)
+                    if hit:
+                        return old2
+                return await _do_fetch()
+        return await _do_fetch()
 
     async def _load_probe_cache(self) -> None:
         """v3.8.6: 从 HA Store 读取探测结果持久化缓存（setup 时调用一次）。"""
@@ -660,7 +681,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if done and isinstance(result, dict):
                 vs = result.get("vehiclestatus", result)
-                self.async_set_updated_data({"status": vs, "vehiclestatus": vs})
+                # v5.3.4: 合并推送而非整体替换——async_set_updated_data 会
+                # 覆盖整个 data，若只写 status/vehiclestatus 两键，location/
+                # active_alerts/ota_setting/air_filter/ccfeatures/prognostic/
+                # messages/保养/SIM/WiFi/chirp_cloud 等键全部丢失，服务信息
+                # 类实体立即变空值（None），最长 30 分钟轮询才恢复。
+                self.async_set_updated_data(
+                    {**(self.data or {}), "status": vs, "vehiclestatus": vs}
+                )
                 return
         # Fallback: command sent but no fresh snapshot yet — force-refresh once.
         try:

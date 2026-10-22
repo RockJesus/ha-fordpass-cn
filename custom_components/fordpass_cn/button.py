@@ -459,8 +459,10 @@ class FordPassButton(_FordPassButtonBase):
                 )
                 if done and isinstance(result, dict):
                     vs = result.get("vehiclestatus", result)
+                    # v5.3.4: 合并推送而非整体替换（与 coordinator.run_command
+                    # 同款修复）——覆盖 data 会清空服务信息类键，实体变空值。
                     self.coordinator.async_set_updated_data(
-                        {"status": vs, "vehiclestatus": vs}
+                        {**(self.coordinator.data or {}), "status": vs, "vehiclestatus": vs}
                     )
                 else:
                     # v4.0.3: 不再兜底 force_refresh()。上方的立即 force_refresh
