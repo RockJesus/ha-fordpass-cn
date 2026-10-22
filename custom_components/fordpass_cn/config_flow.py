@@ -18,7 +18,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import voluptuous as vol
+try:
+    import probatio as vol
+except ImportError:  # HA < 2026.10（data_entry_flow 未迁移到 probatio）
+    import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -507,7 +510,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        return FordPassOptionsFlow(config_entry)
+        # v5.4.1: OptionsFlow 无参构造（HA 2026.10 基类 __init__ 不接收参数，
+        # config_entry 为只读 property，async_step_* 内可用）
+        return FordPassOptionsFlow()
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
@@ -539,13 +544,14 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class FordPassOptionsFlow(config_entries.OptionsFlow):
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
+    # v5.4.1: 无参构造（HA 2026.10 OptionsFlow 基类 __init__ 不接收参数，
+    # config_entry 为只读 property：hass.config_entries.async_get_known_entry
+    # (self._config_entry_id)，__init__ 阶段不可用、async_step_* 内可用）
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
         return self.async_show_form(
             step_id="init",
-            data_schema=_preference_schema(self._config_entry.options),
+            data_schema=_preference_schema(self.config_entry.options),
         )
