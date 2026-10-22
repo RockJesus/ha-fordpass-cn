@@ -13,6 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import FordPassApi, FordPassApiError, FordPassProbeRejected
 from .const import (
@@ -401,7 +402,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         setup 调用（force=False）不受冷却影响。
         """
         if force:
-            now = datetime.now()
+            now = dt_util.now()
             if self._last_probe_force_at is not None and (
                 now - self._last_probe_force_at
             ).total_seconds() < PROBE_FORCE_COOLDOWN:
@@ -815,7 +816,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         # v2.7.8: record the successful poll time for the sensor last_poll
         # attribute (每轮自动刷新/手动刷新成功都会更新).
-        self.last_poll = datetime.now()
+        self.last_poll = dt_util.now()
         # v5.1.2: 每次轮询（自动/手动）都逐实体写各实体刷新状态活动——
         # 不再只写一条笼统摘要（摘要无实体关联时还会被设备页过滤不可见）。
         # 用户诉求 2026-10-17：每次轮询活动中要显示各实体的刷新状态。
@@ -1075,7 +1076,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         if self._logbook_throttled():
             return
-        now = datetime.now()
+        now = dt_util.now()
         last_at = self._last_logbook_at
         if dedup and not (
             last_at is None
