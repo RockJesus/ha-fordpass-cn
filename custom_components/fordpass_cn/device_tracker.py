@@ -60,7 +60,7 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-tracker"
         self._attr_name = "车辆定位"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
 
