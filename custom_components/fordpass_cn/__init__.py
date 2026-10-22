@@ -306,7 +306,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "cabin_temp": capability.usable(_vs, [["CabnAmbTeActl"]]),
                 "deep_sleep": capability.usable(_vs, [["deepSleepInProgress"]]),
             }
-            _LOGGER.info(
+            _LOGGER.debug(
                 "fordpass_cn 全车型能力检测: %s",
                 json.dumps(_caps, ensure_ascii=False),
             )
@@ -474,6 +474,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         for coord in coords:
             try:
+                # v5.3.6: async_shutdown 只停定时调度，不会取消 _persist_tasks
+                # 里正在运行的后台任务（命令状态轮询 ≤60s+ / 45s 延迟补写 /
+                # 自动复位 / 数据落盘）——不取消则卸载后仍短暂访问福特云、
+                # 写无意义 logbook 活动。先逐任务 cancel（done_callback 自动
+                # discard 清理集合），再 shutdown。落盘任务被取消丢一次
+                # 落盘，卸载场景可接受。
+                for t in list(coord._persist_tasks):
+                    t.cancel()
                 await coord.async_shutdown()
             except Exception as exc:  # noqa: BLE001 - 关闭失败不阻断卸载
                 _LOGGER.warning("fordpass_cn coordinator shutdown failed: %s", exc)
