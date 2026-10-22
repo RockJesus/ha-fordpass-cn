@@ -362,6 +362,15 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
             }
         self.coordinator.async_update_listeners()
 
+    def _track_task(self, coro: Any) -> asyncio.Task:
+        """v5.3.5: 后台任务引用跟踪——命令状态轮询/自动复位等 fire-and-forget
+        任务挂到 coordinator._persist_tasks，防卸载/重启竞态下被事件循环丢弃
+        （丢弃后果：开关状态不自动复位、命令状态传感器不更新）。"""
+        task = self.coordinator.hass.async_create_task(coro)
+        self.coordinator._persist_tasks.add(task)
+        task.add_done_callback(self.coordinator._persist_tasks.discard)
+        return task
+
     async def _auto_off(self, duration: int | None = None) -> None:
         """按本次触发时长自动复位；时长缺失/非法时回退 HONK_AUTO_OFF_SECONDS。"""
         await asyncio.sleep(duration if isinstance(duration, int) and duration > 0 else HONK_AUTO_OFF_SECONDS)
@@ -380,16 +389,12 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
         cid = self._command_id(resp)
         if cid:
             _LOGGER.info("FordPass 声光寻车已触发 commandId=%s（时长=%ss）", cid, duration)
-            self.coordinator.hass.async_create_task(
-                self._poll_cmd_status(CMD_VA_INIT, cid)
-            )
+            self._track_task(self._poll_cmd_status(CMD_VA_INIT, cid))
         self._state = True
         self.async_write_ha_state()
-        _task = self.coordinator.hass.async_create_task(self._auto_off(duration))
-        # v5.3.4: 任务引用跟踪（coordinator._persist_tasks）——多次快速触发
+        # v5.3.4/v5.3.5: 任务引用跟踪（coordinator._persist_tasks）——多次快速触发
         # 产生多个复位任务，跟踪可防卸载/重启竞态下任务被事件循环丢弃
-        self.coordinator._persist_tasks.add(_task)
-        _task.add_done_callback(self.coordinator._persist_tasks.discard)
+        self._track_task(self._auto_off(duration))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         try:
@@ -402,9 +407,7 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
         cid = self._command_id(resp)
         if cid:
             _LOGGER.info("FordPass 声光寻车已取消 commandId=%s", cid)
-            self.coordinator.hass.async_create_task(
-                self._poll_cmd_status(CMD_VA_CANCEL, cid)
-            )
+            self._track_task(self._poll_cmd_status(CMD_VA_CANCEL, cid))
         self._state = False
         self.async_write_ha_state()
 
@@ -594,9 +597,7 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
                         "FordPass 声光共舞已触发 commandId=%s（时长=%ss）",
                         cid, duration,
                     )
-                    self.coordinator.hass.async_create_task(
-                        self._poll_cmd_status(CMD_VA_INIT, cid)
-                    )
+                    self._track_task(self._poll_cmd_status(CMD_VA_INIT, cid))
             else:
                 resp = await self.coordinator.api.honk_command(
                     self.coordinator.vin,
@@ -617,17 +618,11 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
             # v3.1.13: 鸣笛后轮询 announcestatus/{commandId} 查询命令执行
             # 结果（App FordRemoteControlApiService v5 轮询组），写入
             # coordinator.announce_status 供「鸣笛命令状态」传感器读取。
-            self.coordinator.hass.async_create_task(
-                self._poll_announce(self.coordinator.vin, resp["commandId"])
-            )
+            self._track_task(self._poll_announce(self.coordinator.vin, resp["commandId"]))
         self._state = True
         self.async_write_ha_state()
         # 按本次触发时长自动结束，开关同步复位（v3.3.6: 跟随设置时长而非固定 30s）
-        _task = self.coordinator.hass.async_create_task(self._auto_off(duration))
-        # v5.3.4: 任务引用跟踪（coordinator._persist_tasks）——多次快速触发
-        # 产生多个复位任务，跟踪可防卸载/重启竞态下任务被事件循环丢弃
-        self.coordinator._persist_tasks.add(_task)
-        _task.add_done_callback(self.coordinator._persist_tasks.discard)
+        self._track_task(self._auto_off(duration))
 
     async def _poll_announce(self, vin: str, command_id: str) -> None:
         """轮询 v5 announcestatus/{commandId}（2s/5s/10s 三次，尽力而为）。
@@ -669,9 +664,7 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
                 cid = self._command_id(resp)
                 if cid:
                     _LOGGER.info("FordPass 声光共舞已取消 commandId=%s", cid)
-                    self.coordinator.hass.async_create_task(
-                        self._poll_cmd_status(CMD_VA_CANCEL, cid)
-                    )
+                    self._track_task(self._poll_cmd_status(CMD_VA_CANCEL, cid))
             else:
                 resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
         except Exception as exc:

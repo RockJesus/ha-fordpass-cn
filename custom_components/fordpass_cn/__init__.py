@@ -189,7 +189,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # v3.1.6: 多 VIN 支持——账号下每一辆车建立独立的 coordinator / 设备 /
     # 实体组。各平台按各自车型的 vehicle-status 数据创建实体（无效字段不建），
     # 因此其他用户用各自福特派账号登录时，只加载自己车型真正支持的设备与实体。
-    _LOGGER.info(
+    _LOGGER.debug(
         "fordpass_cn vehicles: %d 辆, fields[0]=%s",
         len(vehicles),
         json.dumps(vehicles[0], ensure_ascii=False, default=str)[:2500],
@@ -388,6 +388,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _service_clear_tokens,
         schema=vol.Schema({}),
     )
+    # v5.3.5: 服务随 entry 生命周期注销——否则卸载集成后服务仍注册，
+    # 调用时 coordinator 已卸载（报错/无效果），且重载会残留服务。
+    entry.async_on_unload(hass.services.async_remove(DOMAIN, SERVICE_REFRESH_STATUS))
+    entry.async_on_unload(hass.services.async_remove(DOMAIN, SERVICE_CLEAR_TOKENS))
 
     # v4.9.6: 移除 cevs 变体手动探测调试服务（probe_cevs_variant）——
     # 合规审查项：逆向调试服务残留，自动化探测（probe_cevs_auto）已覆盖
@@ -457,5 +461,21 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    # v5.3.5: 显式关闭 coordinator 定时刷新——DataUpdateCoordinator 的
+    # 30 分钟轮询循环不随 unload_platforms 自动停止，且 entry.runtime_data
+    # 卸载后仍保留引用（coordinator 不释放）；不 shutdown 会残留轮询任务：
+    # 每次重载积累多份并发云请求（多车多倍请求量、风控风险）+ 继续写
+    # logbook 活动；用户卸载集成后仍持续访问福特云。async_shutdown 自
+    # HA 2022.10 提供，2026.10 确认可用。
+    payload = getattr(entry, "runtime_data", None)
+    if isinstance(payload, dict):
+        coords = payload.get("coordinators") or (
+            [payload["coordinator"]] if payload.get("coordinator") else []
+        )
+        for coord in coords:
+            try:
+                await coord.async_shutdown()
+            except Exception as exc:  # noqa: BLE001 - 关闭失败不阻断卸载
+                _LOGGER.warning("fordpass_cn coordinator shutdown failed: %s", exc)
     # v5.3.0: runtime_data 由 HA 生命周期管理，无需手动 pop hass.data
     return unload_ok
