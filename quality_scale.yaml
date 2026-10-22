@@ -37,9 +37,9 @@ rules:
   entity-unique-id:
     status: done
   has-entity-name:
-    status: pending
-    comment: 全部实体目前 has_entity_name=False（中文名硬编码）；改 True 需整套
-      实体命名/翻译键重构并会改变默认显示名，规划后续版本单独完成
+    status: done
+    comment: v5.4.2 已全量迁移（41 处实体 has_entity_name=True）；实体名保持纯名，
+      显示自动带设备名（车型）前缀，unique_id/entity_id 不变
   runtime-data:
     status: done
   test-before-configure:
@@ -74,8 +74,9 @@ rules:
     status: done
   test-coverage:
     status: pending
-    comment: 当前仅 capability/wbsk 纯函数测试 + config flow 骨架；全模块 95%
-      覆盖率需要完整 HA 测试套件，规划中
+    comment: v5.4.3 新增 api 纯函数（签名/坐标/响应判断/摘要）与 const/能力映射
+      完整性测试，本地 32 例全绿；CI 新增 pytest job（完整 HA 环境，含
+      config_flow 用例）；全模块 95% 覆盖率持续推进
 
   # ── Gold ────────────────────────────────────────────────
   devices:
