@@ -382,10 +382,18 @@ def extract_remote_image_url(payload: Any) -> str | None:
 class FordPassApiError(Exception):
     """Raised when the FordPass API returns an error."""
 
-    def __init__(self, code: Any = None, message: str | None = None) -> None:
+    def __init__(
+        self,
+        code: Any = None,
+        message: str | None = None,
+        refresh_failed: bool = False,
+    ) -> None:
         super().__init__(message or f"FordPass error ({code})")
         self.code = code
         self.message = message
+        # v5.3.2: 显式标志——access token 续期失败（区别于普通业务拒绝）；
+        # coordinator 据此触发 reauth，不再靠字符串匹配异常文案
+        self.refresh_failed = refresh_failed
 
 
 class FordPassProbeRejected(FordPassApiError):
@@ -602,20 +610,25 @@ class FordPassApi:
                     "FordPass %s -> HTTP %s 网关层故障（熔断/5xx，退避后自愈）: %s",
                     path, resp.status, _log_summary(text),
                 )
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    self._log.debug("FordPass access token expired, refreshing once")
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    return await self._request(method, path, body, query, base, raw, headers)
-                except Exception as exc:
-                    self._log.error("FordPass token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        self._log.debug("FordPass access token expired, refreshing once")
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        return await self._request(method, path, body, query, base, raw, headers)
+                    except Exception as exc:
+                        self._log.error("FordPass token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                return await self._request(method, path, body, query, base, raw, headers)
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -649,23 +662,27 @@ class FordPassApi:
                 status in (401, 600)
                 and "token" in error.lower()
                 and self._refresh_token
-                and not self._retrying
             ):
-                self._retrying = True
-                try:
-                    self._log.debug(
-                        "FordPass business-layer token expired (status=%s), refreshing once", status
-                    )
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    return await self._request(method, path, body, query, base, raw, headers)
-                except Exception as exc:
-                    self._log.error("FordPass token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        self._log.debug(
+                            "FordPass business-layer token expired (status=%s), refreshing once", status
+                        )
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        return await self._request(method, path, body, query, base, raw, headers)
+                    except Exception as exc:
+                        self._log.error("FordPass token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                return await self._request(method, path, body, query, base, raw, headers)
             code = data.get("code")
             if code not in (None, 0, "0", 200, "200", "0000"):
                 raise FordPassApiError(
@@ -933,30 +950,46 @@ class FordPassApi:
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
             self._log.debug("FordPass v5 honk POST -> %s %s", resp.status, text[:500])
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request(
-                        "POST", url, headers=self._headers(), json=body
-                    ) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error("FordPass v5 honk token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request(
+                            "POST", url, headers=self._headers(), json=body
+                        ) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error("FordPass v5 honk token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request(
+                    "POST", url, headers=self._headers(), json=body
+                ) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -1028,30 +1061,46 @@ class FordPassApi:
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
             self._log.debug("FordPass v5 %s %s -> %s %s", what, method, resp.status, text[:300])
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request(
-                        method, url, headers=self._headers()
-                    ) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error("FordPass v5 %s token refresh failed: %s", what, exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request(
+                            method, url, headers=self._headers()
+                        ) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error("FordPass v5 %s token refresh failed: %s", what, exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request(
+                    method, url, headers=self._headers()
+                ) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -1085,28 +1134,42 @@ class FordPassApi:
                     resp.status, "网关返回非文本响应（瞬时异常）"
                 ) from None
             self._log.debug("FordPass v5 IDUL %s DELETE -> %s %s", doortype, resp.status, text[:400])
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request("DELETE", url, headers=self._headers()) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error("FordPass v5 IDUL token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request("DELETE", url, headers=self._headers()) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error("FordPass v5 IDUL token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request("DELETE", url, headers=self._headers()) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -1130,28 +1193,42 @@ class FordPassApi:
                 )
                 raise FordPassApiError(resp.status, "网关返回非文本响应（瞬时异常）") from None
             self._log.debug("FordPass v5 IDUL status -> %s %s", resp.status, text[:400])
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request("GET", url, headers=self._headers()) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error("FordPass v5 IDUL status token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request("GET", url, headers=self._headers()) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error("FordPass v5 IDUL status token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request("GET", url, headers=self._headers()) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -1182,28 +1259,42 @@ class FordPassApi:
                 )
                 raise FordPassApiError(resp.status, "网关返回非文本响应（瞬时异常）") from None
             self._log.debug("FordPass v5 status PUT -> %s %s", resp.status, text[:400])
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request("PUT", url, headers=self._headers()) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error("FordPass v5 status token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request("PUT", url, headers=self._headers()) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error("FordPass v5 status token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request("PUT", url, headers=self._headers()) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -1227,28 +1318,42 @@ class FordPassApi:
                 )
                 raise FordPassApiError(resp.status, "网关返回非文本响应（瞬时异常）") from None
             self._log.debug("FordPass v5 statusrefresh -> %s %s", resp.status, text[:400])
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request("GET", url, headers=self._headers()) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error("FordPass v5 statusrefresh token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request("GET", url, headers=self._headers()) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error("FordPass v5 statusrefresh token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request("GET", url, headers=self._headers()) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -1284,30 +1389,46 @@ class FordPassApi:
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
             self._log.debug("FordPass v5 honk DELETE -> %s %s", resp.status, text[:500])
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request(
-                        "DELETE", url, headers=self._headers()
-                    ) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error("FordPass v5 honk token refresh failed: %s", exc)
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request(
+                            "DELETE", url, headers=self._headers()
+                        ) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error("FordPass v5 honk token refresh failed: %s", exc)
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request(
+                    "DELETE", url, headers=self._headers()
+                ) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -1344,32 +1465,48 @@ class FordPassApi:
             self._log.debug(
                 "FordPass v5 announcestatus -> %s %s", resp.status, text[:500]
             )
-            if resp.status == 401 and self._refresh_token and not self._retrying:
-                self._retrying = True
-                try:
-                    new = await self.refresh_token(self._refresh_token)
-                    self._access_token = new["access_token"]
-                    if self.on_token_refresh is not None:
-                        self.on_token_refresh(new["access_token"])
-                    async with self._session.request(
-                        "GET", url, headers=self._headers()
-                    ) as resp2:
-                        text2 = await resp2.text()
-                        if resp2.status >= 400:
-                            raise FordPassApiError(resp2.status, text2[:300])
-                        if not text2:
-                            return {}
-                        try:
-                            return json.loads(text2)
-                        except json.JSONDecodeError:
-                            return {"raw": text2}
-                except Exception as exc:
-                    self._log.error(
-                        "FordPass v5 announcestatus token refresh failed: %s", exc
-                    )
-                    raise FordPassApiError(401, f"token refresh failed: {exc}") from exc
-                finally:
-                    self._retrying = False
+            if resp.status == 401 and self._refresh_token:
+                if not self._retrying:
+                    self._retrying = True
+                    try:
+                        new = await self.refresh_token(self._refresh_token)
+                        self._access_token = new["access_token"]
+                        if self.on_token_refresh is not None:
+                            self.on_token_refresh(new["access_token"])
+                        async with self._session.request(
+                            "GET", url, headers=self._headers()
+                        ) as resp2:
+                            text2 = await resp2.text()
+                            if resp2.status >= 400:
+                                raise FordPassApiError(resp2.status, text2[:300])
+                            if not text2:
+                                return {}
+                            try:
+                                return json.loads(text2)
+                            except json.JSONDecodeError:
+                                return {"raw": text2}
+                    except Exception as exc:
+                        self._log.error(
+                            "FordPass v5 announcestatus token refresh failed: %s", exc
+                        )
+                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                    finally:
+                        self._retrying = False
+                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
+                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
+                await asyncio.sleep(0.5)
+                async with self._session.request(
+                    "GET", url, headers=self._headers()
+                ) as resp2:
+                    text2 = await resp2.text()
+                    if resp2.status >= 400:
+                        raise FordPassApiError(resp2.status, text2[:300])
+                    if not text2:
+                        return {}
+                    try:
+                        return json.loads(text2)
+                    except json.JSONDecodeError:
+                        return {"raw": text2}
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:

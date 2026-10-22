@@ -183,6 +183,10 @@ class FordPassRemoteImageEntity(ImageEntity):
         self._persist_path = _local_path(hass, coordinator.vin, f"_{kind}")
         self._image_bytes: bytes | None = None
         self._last_url: str | None = None
+        # v5.3.2: 记录 _image_bytes/本地文件对应的 URL——新抓拍 URL 变化时
+        # 缓存必须失效重拉（此前首次缓存后永不更新，用户点查询按钮后
+        # state 显示"最新影像"但前端仍展示第一张图）
+        self._cached_url: str | None = None
 
     @property
     def available(self) -> bool:
@@ -227,16 +231,29 @@ class FordPassRemoteImageEntity(ImageEntity):
         return attrs
 
     async def async_image(self) -> bytes | None:
-        """Return the picture: local file first, then remote URL once."""
-        if self._image_bytes:
+        """Return the picture: cache first; re-fetch when the URL changes.
+
+        v5.3.2: 修复"远程影像永不更新"——此前 _image_bytes / 本地文件首次
+        命中后永不失效，用户再点「停车影像/行车监控」查询按钮后 state 显示
+        "最新影像"但前端仍展示第一张图。现按 URL 变化失效缓存：新抓拍 URL
+        变了 → 重拉新图并覆盖本地文件；新 URL 拉取失败 → 回退旧图（保留
+        最后已知图片，实体不 unavailable）。
+        """
+        url = self._image_url()  # 同步更新 self._last_url
+        if self._image_bytes is not None and self._last_url == self._cached_url:
             return self._image_bytes
         local = await self.hass.async_add_executor_job(_read_local, self._persist_path)
-        if local:
+        if local and self._last_url == self._cached_url:
+            # URL 未变：本地缓存直接用（重启后首读）
             self._image_bytes = local
             return local
-        url = self._image_url()
         if not url:
-            return None
+            # 无 URL：回退旧图（内存或本地文件）
+            if self._image_bytes is not None:
+                return self._image_bytes
+            if local:
+                self._image_bytes = local
+            return local
         session = async_get_clientsession(self.hass)
         try:
             async with session.get(
@@ -246,17 +263,18 @@ class FordPassRemoteImageEntity(ImageEntity):
             ) as resp:
                 if resp.status != 200:
                     _LOGGER.warning("remote image fetch failed: HTTP %s", resp.status)
-                    return None
+                    return self._image_bytes or local
                 data = await resp.read()
                 if data:
                     self._image_bytes = data
+                    self._cached_url = url
                     await self.hass.async_add_executor_job(
                         _persist_sync, self._persist_path, data
                     )
-                return data or None
+                return data or self._image_bytes or local
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("remote image fetch error: %s", exc)
-            return None
+            return self._image_bytes or local
 
 class FordPass3dModelImage(ImageEntity):
     """3D 车型图（v3.5.0）：GET vds/v1/vehicle/search-3d-vehicle-model-url。

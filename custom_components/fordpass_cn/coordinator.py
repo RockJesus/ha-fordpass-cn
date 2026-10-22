@@ -670,7 +670,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "vehiclestatus": status.get("vehiclestatus", status),
             }
         except FordPassApiError as err:
-            if err.code in (401, 403) and "token refresh failed" in str(err):
+            if err.code in (401, 403) and getattr(err, "refresh_failed", False):
                 # v4.5.0: 仅 refresh 也失败（api 内部已自动 refresh 一次且
                 # refresh_token 本身失效）才是凭据永久失效 → 抛
                 # ConfigEntryAuthFailed 停止轮询（避免每轮打云请求制造
