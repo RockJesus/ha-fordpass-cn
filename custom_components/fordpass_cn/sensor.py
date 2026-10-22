@@ -1184,7 +1184,12 @@ class FordPassAutoOffSensor(SensorEntity):
         if not running or not dur or not t0:
             return 0
         try:
-            remaining = float(dur) * 60 - (time.time() - float(t0))
+            # v5.3.9: remoteStartTime 毫秒/秒自适应（与 _remote_start_time
+            # transform 同款）——毫秒（13 位）不除 1000 时 time.time()-t0
+            # ≈ -1.7e12，剩余时间算出数十亿分钟的巨额错误值。
+            t0f = float(t0)
+            t0s = t0f / 1000 if t0f > 1e12 else t0f
+            remaining = float(dur) * 60 - (time.time() - t0s)
         except (TypeError, ValueError):
             return 0
         if remaining <= 0:
