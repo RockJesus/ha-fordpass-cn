@@ -24,7 +24,10 @@ def leaf(status: dict | None, *keys: str, default: Any = None) -> Any:
         cur = cur.get(k)
     if isinstance(cur, dict):
         return cur.get("value", default)
-    return cur
+    # v5.4.3: 末端键缺失（cur 变 None）时与中途路径断裂一致返回 default——
+    # 此前返回 None，显式传 default 时不生效（不符文档「缺路径返回默认值」）；
+    # 末端非 dict 的标量/列表原样返回（保留既有行为）
+    return default if cur is None else cur
 
 
 def leaf_node(status: dict | None, *keys: str) -> dict | None:
