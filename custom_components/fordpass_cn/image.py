@@ -263,6 +263,10 @@ class FordPassRemoteImageEntity(ImageEntity):
             ) as resp:
                 if resp.status != 200:
                     _LOGGER.warning("remote image fetch failed: HTTP %s", resp.status)
+                    # v5.3.3: 失败也记忆 URL——此前失败不更新 _cached_url，
+                    # 前端每次拉图都重试失败的 URL（重复请求）。URL 未变则
+                    # 保持旧图；新抓拍 URL 变化才重新拉取。
+                    self._cached_url = url
                     return self._image_bytes or local
                 data = await resp.read()
                 if data:
@@ -274,6 +278,7 @@ class FordPassRemoteImageEntity(ImageEntity):
                 return data or self._image_bytes or local
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("remote image fetch error: %s", exc)
+            self._cached_url = url
             return self._image_bytes or local
 
 class FordPass3dModelImage(ImageEntity):

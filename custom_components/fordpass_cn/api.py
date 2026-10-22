@@ -529,6 +529,7 @@ class FordPassApi:
         raw: bool = False,
         headers: dict[str, str] | None = None,
         raw_body: bool = False,
+        _retried: bool = False,
     ) -> Any:
         url = base + path
         if body is not None:
@@ -611,6 +612,16 @@ class FordPassApi:
                     path, resp.status, _log_summary(text),
                 )
             if resp.status == 401 and self._refresh_token:
+                # v5.3.3: 已重试过一次仍 401（刷新后新 token 仍被拒，或
+                # refresh 端点自身 401）——直接抛 refresh_failed 触发 reauth，
+                # 禁止继续递归（旧代码无条件 return await self._request(...)
+                # 无限递归直至 RecursionError：刷新成功路径中 finally 在
+                # return await 求值之后才执行，_retrying 恒为 True 会反复
+                # 走 sleep+递归分支）。
+                if _retried:
+                    raise FordPassApiError(
+                        401, "token refresh failed (401 after retry)", refresh_failed=True
+                    )
                 if not self._retrying:
                     self._retrying = True
                     try:
@@ -619,7 +630,7 @@ class FordPassApi:
                         self._access_token = new["access_token"]
                         if self.on_token_refresh is not None:
                             self.on_token_refresh(new["access_token"])
-                        return await self._request(method, path, body, query, base, raw, headers)
+                        return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
                     except Exception as exc:
                         self._log.error("FordPass token refresh failed: %s", exc)
                         raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
@@ -628,7 +639,7 @@ class FordPassApi:
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
                 await asyncio.sleep(0.5)
-                return await self._request(method, path, body, query, base, raw, headers)
+                return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -663,6 +674,14 @@ class FordPassApi:
                 and "token" in error.lower()
                 and self._refresh_token
             ):
+                # v5.3.3: 与 HTTP 401 分支同款防递归——刷新后重试仍返回
+                # 401/600 业务 token 错误时直接 refresh_failed 触发 reauth，
+                # 不再无条件递归（旧代码 finally 滞后导致 _retrying 恒 True，
+                # 无限递归至 RecursionError）。
+                if _retried:
+                    raise FordPassApiError(
+                        401, "token refresh failed (401/600 after retry)", refresh_failed=True
+                    )
                 if not self._retrying:
                     self._retrying = True
                     try:
@@ -673,7 +692,7 @@ class FordPassApi:
                         self._access_token = new["access_token"]
                         if self.on_token_refresh is not None:
                             self.on_token_refresh(new["access_token"])
-                        return await self._request(method, path, body, query, base, raw, headers)
+                        return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
                     except Exception as exc:
                         self._log.error("FordPass token refresh failed: %s", exc)
                         raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
@@ -682,7 +701,7 @@ class FordPassApi:
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
                 await asyncio.sleep(0.5)
-                return await self._request(method, path, body, query, base, raw, headers)
+                return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
             code = data.get("code")
             if code not in (None, 0, "0", 200, "200", "0000"):
                 raise FordPassApiError(
@@ -963,7 +982,7 @@ class FordPassApi:
                         ) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -983,7 +1002,7 @@ class FordPassApi:
                 ) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:
@@ -1074,7 +1093,7 @@ class FordPassApi:
                         ) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -1094,7 +1113,7 @@ class FordPassApi:
                 ) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:
@@ -1145,7 +1164,7 @@ class FordPassApi:
                         async with self._session.request("DELETE", url, headers=self._headers()) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -1163,7 +1182,7 @@ class FordPassApi:
                 async with self._session.request("DELETE", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:
@@ -1204,7 +1223,7 @@ class FordPassApi:
                         async with self._session.request("GET", url, headers=self._headers()) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -1222,7 +1241,7 @@ class FordPassApi:
                 async with self._session.request("GET", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:
@@ -1270,7 +1289,7 @@ class FordPassApi:
                         async with self._session.request("PUT", url, headers=self._headers()) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -1288,7 +1307,7 @@ class FordPassApi:
                 async with self._session.request("PUT", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:
@@ -1329,7 +1348,7 @@ class FordPassApi:
                         async with self._session.request("GET", url, headers=self._headers()) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -1347,7 +1366,7 @@ class FordPassApi:
                 async with self._session.request("GET", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:
@@ -1402,7 +1421,7 @@ class FordPassApi:
                         ) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -1422,7 +1441,7 @@ class FordPassApi:
                 ) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:
@@ -1478,7 +1497,7 @@ class FordPassApi:
                         ) as resp2:
                             text2 = await resp2.text()
                             if resp2.status >= 400:
-                                raise FordPassApiError(resp2.status, text2[:300])
+                                raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                             if not text2:
                                 return {}
                             try:
@@ -1500,7 +1519,7 @@ class FordPassApi:
                 ) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
-                        raise FordPassApiError(resp2.status, text2[:300])
+                        raise FordPassApiError(resp2.status, text2[:300], refresh_failed=(resp2.status == 401))
                     if not text2:
                         return {}
                     try:

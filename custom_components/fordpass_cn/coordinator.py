@@ -195,6 +195,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._last_store = Store(
                 hass, 1, f"{DOMAIN}.{entry_id}.{vin[-6:]}.last_data"
             )
+        # v5.3.3: 最后已知数据落盘任务引用跟踪——之前 async_create_task 无
+        # 引用（fire-and-forget），卸载/重启竞态下任务可能被事件循环丢弃；
+        # 现保存到集合 + done 回调清理，保证写盘任务存活到完成。
+        self._persist_tasks: set[asyncio.Task] = set()
         # v3.8.6: 探测结果持久化（HA Store）——探测类请求（命令白名单/
         # 额外端点/cevs/家充桩）只在登录 setup 时执行，结果落盘；重启或
         # 重新加载后 setup 直接复用（TTL 内不重探），避免每次 reload 白打
@@ -581,7 +585,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Persist the fresh snapshot, then push to entities (v3.3.3)."""
         super().async_set_updated_data(data)
         if self._last_store is not None:
-            self.hass.async_create_task(self._async_persist_last_data(data))
+            # v5.3.3: 任务引用跟踪（见 __init__._persist_tasks）——防止
+            # fire-and-forget 任务在卸载/重启竞态被丢弃；done 后自动清出集合。
+            task = self.hass.async_create_task(self._async_persist_last_data(data))
+            self._persist_tasks.add(task)
+            task.add_done_callback(self._persist_tasks.discard)
 
     async def _async_persist_last_data(self, data: dict[str, Any]) -> None:
         try:
