@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -38,6 +39,34 @@ from .coordinator import FordPassCoordinator
 from .wbsk import FordPassCrypto
 
 _LOGGER = logging.getLogger(__name__)
+
+# v5.3.8: 车辆对象日志安全转储——车辆 dict 含手机号/用户 ID 等个人标识
+# 字段（sensor.py 的 _PHONE_KEYS/_IDENTITY_KEYS 掩码逻辑证明），直接
+# dump 进日志（尤其 warning 级）会泄露。过滤敏感键后再截断。
+_PHONE_KEYS = ("phone", "phonenumber", "mobile", "mobileno", "mobilephone")
+_IDENTITY_KEYS = ("userid", "user_id", "uid", "account", "accountid",
+                  "loginname", "username", "idcard", "idno", "passport",
+                  "openid", "unionid", "email", "identityno")
+
+
+def _safe_vehicle_dump(vehicle: dict, limit: int = 500) -> str:
+    """车辆对象日志安全转储：剔除/掩码手机号与身份标识键后截断。"""
+    out: dict[str, object] = {}
+    for k, v in vehicle.items():
+        kl = str(k).lower()
+        if kl in _PHONE_KEYS or kl in _IDENTITY_KEYS:
+            continue
+        if any(ident in kl for ident in ("userid", "user_id", "phonenumber",
+                                         "mobile", "idcard", "loginname", "accountid")):
+            continue
+        if kl.endswith(("phone", "mobile", "phonenumber")):
+            s = str(v)
+            digits = "".join(ch for ch in s if ch.isdigit())
+            out[str(k)] = f"****{digits[-4:]}" if len(digits) >= 4 else "****"
+            continue
+        out[str(k)] = v
+    return json.dumps(out, ensure_ascii=False, default=str)[:limit]
+
 
 PLATFORMS = [
     Platform.LOCK,
@@ -192,7 +221,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug(
         "fordpass_cn vehicles: %d 辆, fields[0]=%s",
         len(vehicles),
-        json.dumps(vehicles[0], ensure_ascii=False, default=str)[:2500],
+        _safe_vehicle_dump(vehicles[0], 2500),
     )
 
     # v4.9.6: 轮询间隔不再用户可配置（HA 官方规则），固定默认 30 分钟。
@@ -225,7 +254,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         vin = vehicle.get("encryptedVin") or vehicle.get("vin")
         if not vin:
             _LOGGER.warning("fordpass_cn skip vehicle without VIN: %s",
-                            json.dumps(vehicle, ensure_ascii=False, default=str)[:500])
+                            _safe_vehicle_dump(vehicle))
             continue
         license_plate = (
             vehicle.get("encryptedLicenseplate") or vehicle.get("licenseplate") or None
@@ -390,8 +419,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     # v5.3.5: 服务随 entry 生命周期注销——否则卸载集成后服务仍注册，
     # 调用时 coordinator 已卸载（报错/无效果），且重载会残留服务。
-    entry.async_on_unload(hass.services.async_remove(DOMAIN, SERVICE_REFRESH_STATUS))
-    entry.async_on_unload(hass.services.async_remove(DOMAIN, SERVICE_CLEAR_TOKENS))
+    # v5.3.8 修复：必须传回调（functools.partial），此前误写
+    # async_on_unload(async_remove(...)) 把 None 存进卸载栈——setup 后
+    # 服务被立即删除（功能不存在），卸载/重载时 pop 到 None 报
+    # "TypeError: 'NoneType' object is not callable"。
+    entry.async_on_unload(
+        functools.partial(hass.services.async_remove, DOMAIN, SERVICE_REFRESH_STATUS)
+    )
+    entry.async_on_unload(
+        functools.partial(hass.services.async_remove, DOMAIN, SERVICE_CLEAR_TOKENS)
+    )
 
     # v4.9.6: 移除 cevs 变体手动探测调试服务（probe_cevs_variant）——
     # 合规审查项：逆向调试服务残留，自动化探测（probe_cevs_auto）已覆盖
