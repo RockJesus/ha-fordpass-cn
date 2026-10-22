@@ -90,7 +90,7 @@ class FordPassVehicleImage(ImageEntity):
             self._attr_name = "侧视车型图"
             self._url_key = "vehicle_image_url"
             self._persist_suffix = ""
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:car"
         self._attr_content_type = "image/png"
@@ -176,7 +176,7 @@ class FordPassRemoteImageEntity(ImageEntity):
         self._kind = kind
         self._attr_unique_id = f"{coordinator.vin}-{kind}_remote_image"
         self._attr_name = "停车影像图" if kind == "parking" else "行车监控图"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:car-multiple" if kind == "parking" else "mdi:cctv"
         self._attr_content_type = "image/png"
@@ -294,7 +294,7 @@ class FordPass3dModelImage(ImageEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-vehicle_3d_image"
         self._attr_name = "3D 车型图"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:car"
         self._attr_content_type = "image/png"
