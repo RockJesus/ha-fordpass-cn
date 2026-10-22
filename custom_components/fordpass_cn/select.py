@@ -136,7 +136,7 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
     entry.options 上传旧值）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_assumed_state = True
 
     def __init__(
