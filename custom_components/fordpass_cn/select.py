@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -153,11 +153,12 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         # v3.9.0: 上传进行中标志 + 上传串行锁（防回弹/防并发竞态）
         self._syncing = False
         self._save_lock = asyncio.Lock()
-        # v3.3.3: 云端同步监听（coordinator 每次数据更新后回调）
-        self._cloud_unsub = self.coordinator.async_add_listener(self._on_cloud_update)
+        # v3.3.3: 云端同步监听——v5.3.4 起改在 async_added_to_hass 注册
+        # （实体成功入 hass 才注册，未入 hass 不残留回调）
+        self._cloud_unsub: Callable[[], None] | None = None
 
     async def async_added_to_hass(self) -> None:
-        """HA 实体注册后：恢复最后已知状态 + 立即同步一次当前云端值。
+        """HA 实体注册后：注册云端监听 + 恢复最后已知状态 + 立即同步一次当前云端值。
 
         v3.9.5: coordinator 的初始化与首次刷新（async_probe_capabilities /
         async_config_entry_first_refresh）在平台 setup 之前完成，listener
@@ -165,8 +166,13 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
         下一个状态刷新间隔（默认 30 分钟）才与云端同步。注册时立即
         读一次当前 chirp_cloud/remote_climate_cloud 同步本地（幂等：
         与当前值相同则不更新）。
+        v5.3.4: listener 注册从 __init__ 移入此处——此前在 __init__ 注册，
+        实体若未成功入 hass（async_add_entities 失败）永不注销（边缘内存
+        泄漏）；入 hass 后注册，卸载时 async_will_remove_from_hass 必然注销。
         """
         await super().async_added_to_hass()
+        if self._cloud_unsub is None:
+            self._cloud_unsub = self.coordinator.async_add_listener(self._on_cloud_update)
         self._on_cloud_update()
 
     async def async_will_remove_from_hass(self) -> None:

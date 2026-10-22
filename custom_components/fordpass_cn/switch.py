@@ -385,7 +385,11 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
             )
         self._state = True
         self.async_write_ha_state()
-        self.coordinator.hass.async_create_task(self._auto_off(duration))
+        _task = self.coordinator.hass.async_create_task(self._auto_off(duration))
+        # v5.3.4: 任务引用跟踪（coordinator._persist_tasks）——多次快速触发
+        # 产生多个复位任务，跟踪可防卸载/重启竞态下任务被事件循环丢弃
+        self.coordinator._persist_tasks.add(_task)
+        _task.add_done_callback(self.coordinator._persist_tasks.discard)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         try:
@@ -619,7 +623,11 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
         self._state = True
         self.async_write_ha_state()
         # 按本次触发时长自动结束，开关同步复位（v3.3.6: 跟随设置时长而非固定 30s）
-        self.coordinator.hass.async_create_task(self._auto_off(duration))
+        _task = self.coordinator.hass.async_create_task(self._auto_off(duration))
+        # v5.3.4: 任务引用跟踪（coordinator._persist_tasks）——多次快速触发
+        # 产生多个复位任务，跟踪可防卸载/重启竞态下任务被事件循环丢弃
+        self.coordinator._persist_tasks.add(_task)
+        _task.add_done_callback(self.coordinator._persist_tasks.discard)
 
     async def _poll_announce(self, vin: str, command_id: str) -> None:
         """轮询 v5 announcestatus/{commandId}（2s/5s/10s 三次，尽力而为）。
