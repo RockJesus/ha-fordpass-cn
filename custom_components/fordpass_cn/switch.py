@@ -125,7 +125,7 @@ class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-wallbox_charge"
         self._attr_name = "家充桩充电"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state = False
 
@@ -198,7 +198,7 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-departure_toggle"
         self._attr_name = "预约充电"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_icon = "mdi:calendar-clock"
         self._attr_device_info = coordinator.device_info
         self._state: bool | None = None
@@ -255,7 +255,7 @@ class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-engine"
         self._attr_name = "远程启动"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:engine"
 
@@ -296,7 +296,7 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-va_switch"
         self._attr_name = "声光寻车"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool = False
 
@@ -430,7 +430,7 @@ class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-light_find"
         self._attr_name = "灯光寻车"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool = False
 
@@ -475,7 +475,7 @@ class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-honk"
         self._attr_name = "鸣笛寻车"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool = False
 
