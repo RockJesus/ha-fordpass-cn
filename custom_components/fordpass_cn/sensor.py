@@ -628,7 +628,7 @@ class FordPassVehicleAttrSensor(SensorEntity):
         self._attr_key = attr
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = label
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         if icon:
             self._attr_icon = icon
@@ -660,7 +660,7 @@ class FordPassLocationSensor(SensorEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-location"
         self._attr_name = "车辆定位"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
         self._last_known: str | None = None  # v3.4.3: 最后已知地址，LBS 失败时兜底
@@ -805,7 +805,7 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         self._skip_if_zero = skip_if_zero
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = label
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
         if unit:
@@ -897,7 +897,7 @@ class FordPassAlertSensor(SensorEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-vehicle_alerts"
         self._attr_name = "车辆异常警示"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:alert"
 
@@ -993,7 +993,7 @@ class FordPassActiveAlertListSensor(SensorEntity):
     （vha/activealert）为两个独立端点，本实体展示结构化告警列表。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:alert-circle-outline"
 
     def __init__(self, coordinator) -> None:
@@ -1143,7 +1143,7 @@ class FordPassAutoOffSensor(SensorEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-auto_off_remaining"
         self._attr_name = "距离自动熄火时间"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:timer-sand"
         self._attr_native_unit_of_measurement = "分钟"
@@ -1210,7 +1210,7 @@ class FordPassOtaSettingSensor(SensorEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-ota_setting"
         self._attr_name = "OTA 设置状态"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:update"
 
@@ -1254,7 +1254,7 @@ class _ServiceInfoSensor(SensorEntity):
     端点 2026-10-02 实测 200（R3 compute_sign + 修正 headers + 无 appKey）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator, key: str, label: str, icon: str, uid: str | None = None) -> None:
         self.coordinator = coordinator
@@ -1353,7 +1353,7 @@ class FordPassCloudProbeSensor(SensorEntity):
     私充服务/我的订阅/我的试驾 + 未定义特性 0x23。无位图数据的车型不创建。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:cloud-search"
     # v4.9.7: 云端能力探测属集成诊断数据（排查车型功能支持），按 HA 官方
     # 规范归入诊断类目（前端自动进诊断区，不参与常规视图统计）。
@@ -1489,7 +1489,7 @@ class FordPassServiceFieldSensor(SensorEntity):
     specifiedFeatures 编码含义逐车型确认前保留原文。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -1958,7 +1958,7 @@ class FordPassChirpCloudSensor(SensorEntity):
     「类型 + 时长」；与本地 select 不同步时提示（App/其他设备改过）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:cloud-check"
 
     def __init__(self, coordinator) -> None:
@@ -2031,7 +2031,7 @@ class FordPassAnnounceStatusSensor(SensorEntity):
     永远可用（v3.1.2 规则，不显示 unavailable）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:bullhorn-outline"
 
     def __init__(self, coordinator) -> None:
@@ -2119,7 +2119,7 @@ class FordPassSmartWallboxSensor(SensorEntity):
     缺失显示友好中文；永远可用（v3.1.2 规则，不显示 unavailable）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:ev-station"
 
     def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
@@ -2217,7 +2217,7 @@ class FordPassFposbSensor(SensorEntity):
     宽松字段提取，缺失显示友好中文；永远可用（v3.1.2 规则）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:garage"
 
     def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
@@ -2292,7 +2292,7 @@ class FordPassEvssSensor(SensorEntity):
     永远可用（v3.1.2 规则）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:ev-station"
 
     def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
@@ -2376,7 +2376,7 @@ class FordPassCevsDepartureSensor(SensorEntity):
     计划）+ syncStatus（同步状态）。非 cevs 车型/端点失败不创建。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:calendar-clock"
 
     def __init__(self, coordinator) -> None:
@@ -2416,7 +2416,7 @@ class FordPassCevsChargelogSensor(SensorEntity):
     充电时间 nextChrgTimestamp。非 cevs 车型/端点失败不创建。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:battery-charging"
 
     def __init__(self, coordinator) -> None:
@@ -2458,7 +2458,7 @@ class FordPassProbeSensor(SensorEntity):
     永远可用（v3.1.2 规则，不显示 unavailable）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_icon = "mdi:update"
 
     def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
