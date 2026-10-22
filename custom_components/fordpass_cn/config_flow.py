@@ -166,6 +166,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # v3.9.8: reauth（token 过期重新认证）标记——登录流程最终动作
         # 由"创建 entry"改为"更新已有 entry 的 token + abort"。
         self._reauth: bool = False
+        self._reconfigure: bool = False  # v5.4.0: reconfigure 标志（重配核心配置，区别于 reauth）
         # v4.7.5: 品牌（福特派/林肯之道）——登录第一步选择，默认福特派；
         # reauth/_finish_login 均读取该值，必须在此初始化
         self._brand: str = DEFAULT_BRAND
@@ -265,6 +266,24 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         v4.4.6: extra_data 合并进 entry.data（如 B2C 密码登录的密码，
         按用户要求持久化到本地配置，供浏览器辅助重登录使用）。
         """
+        if self._reconfigure:
+            # v5.4.0: reconfigure = 重配核心配置（换手机号/登录方式/账号），
+            # 更新 entry.data，**不校验手机号一致**（换账号是合法场景，
+            # 区别于 reauth 的"必须同手机号"）；options 偏好原样保留。
+            entry = self._reconfigure_entry
+            self.hass.config_entries.async_update_entry(
+                entry,
+                data={
+                    **entry.data,
+                    **(extra_data or {}),
+                    CONF_LOGIN_MODE: mode,
+                    CONF_PHONE: self._phone,
+                    CONF_USERNAME: self._username,
+                    "access_token": tokens["access_token"],
+                    "refresh_token": tokens["refresh_token"],
+                },
+            )
+            return self.async_abort(reason="reconfigure_successful")
         if self._reauth:
             entry = self._get_reauth_entry()
             old_phone = entry.data.get(CONF_PHONE)
@@ -324,6 +343,22 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             raise ValueError(f"reauth: entry {entry_id} not found")
         return entry
 
+    def _get_reconfigure_entry(self):
+        """v5.4.0: 解析 reconfigure 对应的原 config entry。
+
+        HA 2026.x 基类已提供同名官方方法，此处显式实现以兼容低版本
+        HA（基类无该方法时 AttributeError，用户点"重新配置"直接 500）；
+        entry_id 经 flow context 读取（reconfigure 由 HA 核心以
+        entry_id 启动），兜底 init_data。
+        """
+        entry_id = self.context.get("entry_id") or (self.init_data or {}).get("entry_id")
+        if not entry_id:
+            raise ValueError("reconfigure: missing entry_id in flow context")
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            raise ValueError(f"reconfigure: entry {entry_id} not found")
+        return entry
+
     async def async_step_phone(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -331,7 +366,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._phone.isdigit() or len(self._phone) != 11:
                 errors["base"] = "bad_phone"
             else:
-                if not self._reauth:
+                if not (self._reauth or self._reconfigure):
                     await self.async_set_unique_id(self._phone)
                     self._abort_if_unique_id_configured()
                 session = async_get_clientsession(self.hass)
@@ -405,7 +440,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._username.isdigit() or len(self._username) != 11:
                 errors["base"] = "bad_username"
             else:
-                if not self._reauth:
+                if not (self._reauth or self._reconfigure):
                     await self.async_set_unique_id(self._username)
                     self._abort_if_unique_id_configured()
                 self._password = user_input[CONF_PASSWORD]
@@ -477,37 +512,30 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """处理 HA 前端"重新配置"入口（v3.9.7 修复）。
+        """处理 HA 前端"重新配置"入口（v3.9.7 修复，v5.4.0 语义整改）。
 
-        根因：HA 2026.x 前端在集成卡片点"配置/选项"默认启动
-        reconfigure flow，而本 flow 此前只实现了 OptionsFlow，未实现
-        async_step_reconfigure → 保存返回 400 "Handler FordPassConfigFlow
-        doesn't support step reconfigure" → 用户设置的任何选项（如状态
-        刷新间隔）都无法写入 entry.options（实测 entry.options 恒为空）。
+        HA 官方语义：reconfigure 重配 entry 的**核心配置**（手机号/登录
+        方式/凭据，写入 entry.data），options flow 才负责偏好（扫描间隔等
+        entry.options）。此前 reconfigure 复用偏好表单写 entry.options，
+        与"集成选项"完全同构——用户无法在此改手机号（换账号只能删了
+        重加），语义错位（quality_scale/审核视角不合格）。
 
-        这里复用偏好表单，提交后写入 entry.options（与 async_setup_entry /
-        async_update_options 读取的字段一致），并触发 update_listener
-        （async_update_options）即时应用，无需重启。
+        v5.4.0：reconfigure 复用登录链路（品牌→登录方式→验证码/密码→
+        _finish_login），登录成功后更新 entry.data（**允许更换手机号**，
+        区别于 reauth 的"必须同手机号"）；entry.options 偏好原样保留；
+        setup 重载后按新账号车辆重建实体（旧 VIN 实体由 setup 清理）。
         """
         entry = self._get_reconfigure_entry()
         # v4.5.0: entry.unique_id 为 None（历史 entry）时跳过 unique_id
         # 校验——async_set_unique_id(None or "") 会设空字符串，
-        # _abort_if_unique_id_mismatch 立即 abort，用户 UI 保存选项永远
-        # 失败（options 恒空、刷新间隔设置丢失回 30 分钟默认，表现为
-        # "实体不刷新"）。有 unique_id 才按官方规范校验对应原账号。
+        # _abort_if_unique_id_mismatch 立即 abort，用户 UI 保存永远失败。
+        # 有 unique_id 才按官方规范校验对应原账号。
         if entry.unique_id:
             await self.async_set_unique_id(entry.unique_id)
             self._abort_if_unique_id_mismatch()
-        if user_input is not None:
-            self.hass.config_entries.async_update_entry(
-                entry,
-                options=dict(user_input),
-            )
-            return self.async_abort(reason="reconfigure_successful")
-        return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=_preference_schema(entry.options),
-        )
+        self._reconfigure = True
+        self._reconfigure_entry = entry
+        return await self.async_step_login_mode(user_input)
 
 
 class FordPassOptionsFlow(config_entries.OptionsFlow):
