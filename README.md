@@ -4,11 +4,11 @@
 
 ![FordPass China 福特派互联](custom_components/fordpass_cn/brand/logo.png)
 
-[![HACS 官方收录](https://img.shields.io/badge/HACS-官方收录-41BDF5.svg)](https://github.com/hacs/default)
-[![最新版本](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn)](https://github.com/RockJesus/ha-fordpass-cn/releases/latest)
-[![GitHub 下载量](https://img.shields.io/github/downloads/RockJesus/ha-fordpass-cn/total)](https://github.com/RockJesus/ha-fordpass-cn/releases)
-[![HA 版本](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue)](https://www.home-assistant.io/)
-[![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn)](LICENSE)
+[![HACS 默认仓库](https://img.shields.io/badge/HACS-%E9%BB%98%E8%AE%A4%E4%BB%93%E5%BA%93-41BDF5.svg?style=flat-square)](https://github.com/hacs/default)
+[![最新版本](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn?style=flat-square)](https://github.com/RockJesus/ha-fordpass-cn/releases/latest)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue?style=flat-square)](https://www.home-assistant.io/)
+[![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn?style=flat-square)](LICENSE)
+[![Blog](https://img.shields.io/badge/Blog-RockJesus-purple?style=flat-square)](https://rockjesus.cn)
 
 </div>
 
@@ -36,7 +36,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford) / Lincoln 
 
 ---
 
-Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务：支持**手机号验证码 / 用户名密码**两种登录方式，覆盖远程控车、车辆状态监控、定位追踪、预约出发/充电、家充桩管理、远程影像等全功能。
+Home Assistant 自定义集成，接入福特中国（长安福特）福特派互联服务：支持**手机号验证码 / 用户名密码**两种登录方式，覆盖远程控车、车辆状态监控、定位追踪、预约出发/充电、家充桩管理、远程影像等全功能。兼容 Home Assistant 2024.6 及以上版本（已实测至 2026.10.2）。
 
 > ⚠️ 本项目为个人逆向研究作品，与福特官方无任何关联。使用本集成即表示同意自行承担相关风险与责任。
 
