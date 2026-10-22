@@ -233,7 +233,7 @@ class FordPassWallboxUnbindButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-wallbox_unbind"
         self._attr_name = "解绑家充桩"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -283,7 +283,7 @@ class FordPassWallboxBleAddButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-wallbox_ble_add"
         self._attr_name = "家充桩 BLE 自动认证"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -331,7 +331,7 @@ class FordPassMarkReadButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-messages_read"
         self._attr_name = "标记消息已读"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:email-check-outline"
 
@@ -366,7 +366,7 @@ class FordPassVideoStartButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-video_start"
         self._attr_name = "开始行车记录"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:record-rec"
 
@@ -385,7 +385,7 @@ class FordPassVideoStopButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-video_stop"
         self._attr_name = "停止行车记录"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:stop"
 
@@ -404,7 +404,7 @@ class FordPassButton(_FordPassButtonBase):
         self._cmd_spec = cmd_spec
         self._attr_unique_id = f"{coordinator.vin}-{key}"
         self._attr_name = label
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
 
@@ -515,7 +515,7 @@ class FordPassManualRefreshButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-manual_refresh"
         self._attr_name = "手动刷新车辆状态"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -600,7 +600,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-reset_air_filter"
         self._attr_name = "重置空调滤芯"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -640,7 +640,7 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.vin}-cevs_deleteall"
         self._attr_name = "清空预约出发/充电"
-        self._attr_has_entity_name = False
+        self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -675,7 +675,7 @@ class FordPassImageButton(_FordPassButtonBase):
     车型实测为准（云端可能返回记录列表或图片 URL）。
     """
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: FordPassCoordinator, label: str, icon: str, kind: str) -> None:
         self.coordinator = coordinator
