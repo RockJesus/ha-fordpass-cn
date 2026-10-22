@@ -833,7 +833,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 仅写本地 logbook、不额外拉福特云）。
         if _n == 0 and not self._initial_states_pending:
             self._initial_states_pending = True
-            self.hass.async_create_task(self._delayed_initial_states())
+            # v5.3.5: 任务引用跟踪（_persist_tasks）——与 v5.3.3 落盘任务同款，
+            # 防卸载/重启竞态下 45s 补写任务被事件循环丢弃
+            _task = self.hass.async_create_task(self._delayed_initial_states())
+            self._persist_tasks.add(_task)
+            _task.add_done_callback(self._persist_tasks.discard)
         # v4.3.8: 无条件创建的探测端点实体中"暂无数据"（探测无数据/拒绝）的
         # 也写活动（用户要求"包括不可用活动"）——纯油车充电域/无绑定桩等
         # 实体常驻显示「暂无数据」，活动日志同步可见（数量稳定，15s 去重
