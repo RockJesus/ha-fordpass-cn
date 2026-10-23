@@ -393,6 +393,8 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # v3.9.2: 无条件创建（不再要求查询成功且有值）——probe 一次性初始化
     # 若云端暂不可达/无数据，sensor 显示「未获取」并保留最后已知状态，
     # 避免实体缺失（v3.9.1 曾因探测空值导致此传感器不创建）。
+    # v5.4.7: 云端同步健康（后端变更监控）——诊断实体无条件创建
+    sensors.append(FordPassSyncHealthSensor(coordinator))
     sensors.append(FordPassChirpCloudSensor(coordinator))
     # v3.4.5: 家充桩管理（smartwallbox 探测数据驱动——非家充桩车型不创建）。
     # 数据源 coordinator.smartwallbox = api.probe_smartwallbox()（登录后一次
@@ -403,6 +405,8 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_binding", "默认充电桩", "default"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "最近充电记录", "record"))
         sensors.append(FordPassSmartWallboxSensor(coordinator, "wallbox_records", "家充桩充电状态", "status"))
+        # v5.4.7: 上次充电电量（充电记录含真实电量字段才创建）
+        sensors.append(FordPassLastChargeSensor(coordinator))
     # v4.3.3: fposb 4S 维保预约传感器——探测到数据才创建（无维保服务
     # 车型探测空 → 0 实体）；全部只读查询，不触发下单/取消动作。
     if isinstance(coordinator.fposb, dict) and coordinator.fposb:
@@ -2123,6 +2127,84 @@ def _swb_list(node):
             if r is not None:
                 return r
     return None
+
+
+class FordPassLastChargeSensor(SensorEntity):
+    """上次充电电量（v5.4.7，充电统计——smartwallbox 充电记录含真实电量
+    字段 batteryLevel/soc/chargePercent；福特中国 API 无行程(trip)数据源，
+    行程统计暂不做）。BATTERY + measurement，可进长期趋势图。"""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:battery-charging"
+    _attr_native_unit_of_measurement = "%"
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-last_charge_soc"
+        self._attr_name = "上次充电电量"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)  # 保留最后已知状态
+
+    @property
+    def native_value(self) -> int | None:
+        swb = self.coordinator.smartwallbox
+        if not isinstance(swb, dict):
+            return None
+        pct = (_swb_find(swb, "batteryLevel") or _swb_find(swb, "soc")
+               or _swb_find(swb, "chargePercent"))
+        if pct is None:
+            return None
+        try:
+            return round(float(pct))
+        except (TypeError, ValueError):
+            return None
+
+
+class FordPassSyncHealthSensor(SensorEntity):
+    """云端同步状态（v5.4.7，后端变更监控）——复用每轮轮询结果，零额外
+    请求：coordinator 成功/失败打点，连续失败转「异常」，属性带失败摘要
+    与分类信息，用户可接自动化告警（限流/WAF/网关/业务分类已在 api 日志）。
+    诊断实体恒可用。"""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:cloud-sync"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.vin}-sync_health"
+        self._attr_name = "云端同步状态"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return True  # v5.4.7: 诊断实体恒可用
+
+    @property
+    def native_value(self) -> str:
+        if getattr(self.coordinator, "_consecutive_failures", 0) == 0:
+            return "正常"
+        return "异常"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        c = self.coordinator
+        attrs: dict = {}
+        st = getattr(c, "_last_success_time", None)
+        et = getattr(c, "_last_error_time", None)
+        if st is not None:
+            attrs["last_success"] = st.isoformat()
+        if et is not None:
+            attrs["last_error"] = et.isoformat()
+        attrs["consecutive_failures"] = getattr(c, "_consecutive_failures", 0)
+        det = getattr(c, "_last_error_detail", None)
+        if det:
+            attrs["last_error_detail"] = det
+        return attrs
 
 
 class FordPassSmartWallboxSensor(SensorEntity):
