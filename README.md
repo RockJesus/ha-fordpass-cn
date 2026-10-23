@@ -235,6 +235,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.4.4**（2026-10-23）：**CI 修复 + README 清理**——pytest 流水线适配 Home Assistant 2026.10（Python 3.14、官方测试框架 pytest-homeassistant-custom-component、asyncio 运行模式配置），36 例测试全绿；测试用例对齐 HA 2026.10 新 API（MockConfigEntry 来源、配置流上下文可写化、选项流属性注入、登录返回结构）；README 徽标区去掉重复的 Blog 徽标（保留欢迎语里的链接）；移除仓库根空的 tests/__init__.py（避免遮蔽测试工具包）
 - **v5.4.3**（2026-10-22）：**测试覆盖补强 + 状态声明修正**——新增 api 纯函数测试（请求签名、坐标转换、业务错误判断、远程影像提取、日志摘要）与常量/能力映射完整性测试，本地 32 例测试全绿；CI 新增 pytest 流水线（完整 Home Assistant 环境，覆盖配置流程用例）；修正 quality_scale.yaml 中 has-entity-name 状态与 v5.4.2 实际迁移一致（已 done）；顺带修复 capability.leaf 末端键缺失时不返回默认值的问题
 - **v5.4.2**（2026-10-22）：**实体名称改为 Home Assistant 官方「设备名 + 实体名」规范显示**——此前全部实体关闭官方实体命名（），实体名单独显示（如「燃油量」）；本版按官方规范开启（41 处实体全部迁移），实体名保持原值、显示时自动带上车型前缀（如「锐际 Escape 燃油量」），多车/多设备同时接入时一眼能分清归属；实体 ID、自动化引用、传感器数值均不受影响，只是显示名称变化
 - **v5.4.1**（2026-10-22）：**配置与选项流程迁移到 Home Assistant 2026.10 新版写法**——HA 2026.10 起配置流程底层从 voluptuous 迁到 probatio，且选项流基类不再接收构造参数；本版把集成选项流程改为无参构造、表单校验按新版写法（低版本 HA 自动回退旧实现，2024.6 及以上均可正常使用），在 HA 2026.10 上打开「选项」不再有兼容隐患，功能与之前完全一致
