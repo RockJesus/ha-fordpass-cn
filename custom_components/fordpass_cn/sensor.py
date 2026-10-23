@@ -211,10 +211,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     if _not_ev:
         sensors += [
             FordPassSensor(coordinator, "fuel_level", "燃油量", "%", SensorDeviceClass.BATTERY, "mdi:fuel", ["fuel", "fuelLevel"], round_value=True),  # v5.0.9: 燃油量用 battery device_class——HA 设备页右上角主显示只认 battery 类传感器（前端 findBatteryEntity 硬规则），改 None 会导致右上角不显示油量；图标由 HA 固定渲染电池样式（官方机制限制，无法自定义）
-            FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, None, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
+            FordPassSensor(coordinator, "distance_to_empty", "续航里程", UnitOfLength.KILOMETERS, SensorDeviceClass.DISTANCE, "mdi:road-variant", ["fuel", "distanceToEmpty"]),
         ]
     sensors += [
-        FordPassSensor(coordinator, "odometer", "总里程", UnitOfLength.KILOMETERS, None, "mdi:counter", ["odometer"]),
+        FordPassSensor(coordinator, "odometer", "总里程", UnitOfLength.KILOMETERS, SensorDeviceClass.DISTANCE, "mdi:counter", ["odometer"]),
         # v3.3.9: 机油寿命仅保留 prognostic 版（FordPassOilLifeSensor，含归零月份/
         # 剩余公里属性）；原 oil_life（oil.oilLifeActual）重复实体已删除。
         FordPassSensor(coordinator, "battery_voltage", "蓄电池电压", "V", SensorDeviceClass.VOLTAGE, "mdi:car-battery", ["battery", "batteryStatusActual"]),
@@ -325,8 +325,8 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors += [
         # 纯电 / 插混（电马 Mustang Mach-E、锐界 L 混动等）
         FordPassSensor(coordinator, "battery_fill_level", "动力电池电量", "%", SensorDeviceClass.BATTERY, "mdi:battery-high", ["batteryFillLevel"], round_value=True, skip_if_missing=True),
-        FordPassSensor(coordinator, "ev_dte", "纯电续航", UnitOfLength.KILOMETERS, None, "mdi:lightning-bolt", ["elVehDTE"], skip_if_missing=True),
-        FordPassSensor(coordinator, "charging_status", "充电状态", None, None, "mdi:power-plug", ["chargingStatus"], enum_map=_charge_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "ev_dte", "纯电续航", UnitOfLength.KILOMETERS, SensorDeviceClass.DISTANCE, "mdi:lightning-bolt", ["elVehDTE"], skip_if_missing=True),
+        FordPassSensor(coordinator, "charging_status", "充电状态", None, None, "mdi:power-plug", ["chargingStatus"], enum_map=_charge_map, skip_if_missing=True, evcc_state={"已充满": 3, "充电中": 2, "未充电": 1}),
         FordPassSensor(coordinator, "plug_status", "充电插枪状态", None, None, "mdi:power-plug", ["plugStatus"], enum_map=_plug_map, skip_if_missing=True),
         FordPassSensor(coordinator, "charge_start_time", "充电开始时间", None, None, "mdi:clock-start", ["chargeStartTime"], transform=_ts_or_str, skip_if_missing=True),
         FordPassSensor(coordinator, "charge_end_time", "充电结束时间", None, None, "mdi:clock-end", ["chargeEndTime"], transform=_ts_or_str, skip_if_missing=True),
@@ -785,7 +785,11 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
                  round_value: bool = False, enum_map: dict | None = None,
                  multiplier: float | None = None, transform=None,
                  skip_if_missing: bool = False,
-                 skip_if_zero: bool = False) -> None:
+                 skip_if_zero: bool = False,
+                 evcc_state: dict | None = None) -> None:
+        # v5.4.6: EVCC 对接——充电状态等 enum 实体附带数值型 evcc_charge_state
+        # 属性（0 未知/1 未充电/2 充电中/3 已充满，EVCC chargeState 语义）
+        self._evcc_state = evcc_state
         self.coordinator = coordinator
         self._key = key
         # Normalise `path`: a single path (["a","b"]) or a list of candidate
@@ -850,6 +854,10 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
             if self.coordinator.last_poll
             else None
         )
+        # v5.4.6: EVCC 对接——charging_status 中文 enum -> 数值 chargeState
+        # （0 未知/1 未充电/2 充电中/3 已充满，EVCC chargeState 语义）
+        if self._evcc_state and self.native_value is not None:
+            attrs["evcc_charge_state"] = self._evcc_state.get(self.native_value, 0)
         # v4.9.0: 过滤空值属性（source_status: null 等噪音键）
         return {k: v for k, v in attrs.items() if k == "last_poll" or v not in (None, "")}
 
@@ -1558,6 +1566,8 @@ class FordPassOilLifeSensor(_ServiceInfoSensor):
         super().__init__(coordinator, "prognostic", "机油寿命", "mdi:oil")
         # v4.9.0: 百分比数值单位（此前拼在 state 字符串里无法图表化）
         self._attr_native_unit_of_measurement = "%"
+        # v5.4.6: 标记 measurement 启用长期统计（30 天机油寿命趋势）
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _format(self, data: dict) -> str | None:
         payload = data.get("data") if isinstance(data, dict) else None
@@ -1593,13 +1603,18 @@ class FordPassRangeSensor(_ServiceInfoSensor):
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "prognostic", "剩余可行驶里程", "mdi:road-variant", uid="prognostic_range")
+        # v5.4.6: 数值化（此前 state 为「123 km」文本无法统计/EVCC 读取）——
+        # 纯数值 + km 单位 + measurement + distance，支持长期趋势图与 EVCC 消费
+        self._attr_native_unit_of_measurement = "km"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_device_class = SensorDeviceClass.DISTANCE
 
     def _format(self, data: dict) -> str | None:
         payload = data.get("data") if isinstance(data, dict) else None
         km = payload.get("remainingKMs") if isinstance(payload, dict) else None
         if km is None:
             return None
-        return f"{int(km)} km"
+        return str(int(km))
 
     def _summary(self, data: dict) -> dict:
         payload = data.get("data") if isinstance(data, dict) else None
