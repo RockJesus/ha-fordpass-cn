@@ -248,6 +248,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v5.2.8: 网络/云端不可用一次性警告标志（quality_scale silver 要求：
         # 不可用只警告一次、恢复时提示一次；重复失败降 debug 避免刷屏）
         self._update_failure_warned = False
+        # v5.4.7: 云端同步健康状态（后端变更监控——复用轮询结果零额外请求）
+        self._last_success_time = None
+        self._last_error_time = None
+        self._consecutive_failures = 0
+        self._last_error_detail = None
 
     def _log_exception(self, err: Exception, message: str) -> None:
         """覆盖 DataUpdateCoordinator 失败日志：网络/云端不可用只警告一次。
@@ -699,6 +704,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "FordPass refresh after %s failed: %s", command_type, exc
             )
 
+    def _mark_sync_failure(self, exc: Exception) -> None:
+        """v5.4.7: 云端同步健康打点——连续失败计数 + 最后失败时间/摘要。
+        后端变更监控的廉价方案：失败时诊断实体「云端同步状态」转异常并
+        带失败摘要，用户可接自动化告警；无额外请求。"""
+        self._last_error_time = dt_util.now()
+        self._consecutive_failures = getattr(self, "_consecutive_failures", 0) + 1
+        detail = str(exc)
+        self._last_error_detail = detail[:400] if detail else "未知错误"
+
     async def _async_update_data(self, force_all: bool = False) -> dict[str, Any]:
         try:
             status = await self.api.get_vehicle_status(self.vin)
@@ -725,11 +739,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._log_activity(
                 f"车辆状态刷新失败（保留最后已知状态）：{err}"
             )
+            self._mark_sync_failure(err)
             raise UpdateFailed(f"FordPass update failed: {err}") from err
         except TimeoutError as err:
             await self._log_activity(
                 "车辆状态刷新失败（保留最后已知状态）：请求超时"
             )
+            self._mark_sync_failure(err)
             raise UpdateFailed("FordPass update timed out") from err
 
         # ---- v3.4.1 防限流优化：以下均走 TTL 缓存，慢变数据命中即复用，
@@ -900,6 +916,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._update_failure_warned:
             self._update_failure_warned = False
             self.logger.info("FordPass 云端恢复：车辆状态刷新成功")
+        # v5.4.7: 云端同步健康打点（后端变更监控——复用轮询结果零额外请求）
+        self._last_success_time = dt_util.now()
+        self._consecutive_failures = 0
         return data
 
 
