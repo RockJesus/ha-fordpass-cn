@@ -608,7 +608,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     async def async_press(self) -> None:
-        _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.vin)
+        _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.vin[-6:])
         try:
             resp = await self.coordinator.api.reset_air_filter(self.coordinator.vin)
             _LOGGER.info("FordPass 空调滤芯重置成功: %s", str(resp)[:200])
@@ -648,7 +648,7 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     async def async_press(self) -> None:
-        _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.vin)
+        _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.vin[-6:])
         try:
             resp = await self.coordinator.api.cevs_delete_all_departures(
                 self.coordinator.vin

@@ -368,6 +368,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.6.5**（2026-10-24）：**运行时 VIN 暴露收口 + 审计工具补 dangling 扫描**——① 日志隐私：按钮操作 info 日志 VIN 掩码只留后 6 位（此前 `重置空调滤芯/清空预约出发` 打完整 VIN）；② 车辆图片缓存文件名不再含 VIN（一律 sha1 摘要，杜绝 VIN 落盘）；③ `docs/privacy_audit.py` 新增 **dangling commit 扫描**：filter-repo 重写后不可达旧 commit（如 `155c2ee`/`3d99f0d` 等）仍可按 SHA 从 GitHub 读取，审计工具内置已知旧 commit 黑名单逐一点查（git/trees + contents 全文件），发现真实 VIN/手机号即 **FAIL** 并提示提交 GitHub Support 清除——不再误报 PASS；④ unique_id/设备标识符保留 VIN（HA 官方要求稳定唯一标识，仅存本地注册表，不对外暴露）。
 - **v5.6.4**（2026-10-24）：**移除测试套件与历史残留，隐私最小化**——① 删除仓库全部测试相关文件与代码（`tests/` 目录、`pytest.ini`、`.github/workflows/pytest.yml`），并同步从 **git 全历史**移除（filter-repo 重写，1235→1214 commits，历史中 tests 路径零残留），杜绝测试数据被误读为个人信息的可能；② CONTRIBUTING 同步移除测试流程指引；③ 隐私审计工具 `docs/privacy_audit.py` 继续作为发布前唯一质量门。
 - **v5.6.3**（2026-10-24）：**全局个人信息脱敏加固**——① 新增 `docs/privacy_audit.py` 隐私审计工具（真实 VIN/手机号/密码/身份证/邮箱五类扫描，覆盖全 git 历史 + release 元数据 + codeload 归档，设置 `GITHUB_TOKEN` 环境变量即可运行），发布前后一键自查；② 全量重建 297 个 GitHub release，清除 release 元数据中残留的历史 commit 引用；③ 旧历史 commit 对象（含脱敏前内容）已提交 GitHub Support 清除不可达对象。仓库已确认无任何个人信息残留（真实 VIN/手机号/密码零命中），测试数据一律使用假 VIN `LVSHFAKE000000001` 与示例号码。
 - **v5.6.2**（2026-10-24）：**云端 500 熔断不再误触重新认证**——福特网关 `whitebox decrypt` 500 故障（10-24 实测：token refresh 端点熔断）旧代码把所有刷新异常包装成 401 → entry 每轮 setup_error + 用户被要求重新认证（token 实际未失效）。本次把刷新失败按性质分类：**业务性认证失败（401/403/600，token 真失效）仍触发重新认证；网关 5xx / 网络异常保留原码走 HA 自动重试（ConfigEntryNotReady），用户无感知**。新增分类单元测试 3 例，全量 436 项通过。
