@@ -1050,16 +1050,17 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # v5.1.6: 验证完成，特征日志降级 debug——重启后不再产生
         # system_log warning 噪音（调试时开 debug 日志仍可查）。
-        self.logger.debug("fordpass_cn v5.1.6 首轮补写开始（45s 延迟）")
+        # v5.5.1: 日志去掉硬编码版本号（v5.1.6 起多轮未更新失真，误导排查）
+        self.logger.debug("fordpass_cn 首轮补写开始（45s 延迟）")
         try:
             await asyncio.sleep(45)
         finally:
             self._initial_states_pending = False
         if self.data is not None:
             n = await self._log_refresh_states()
-            self.logger.debug("fordpass_cn v5.1.6 首轮补写完成，写入 %d 条", n)
+            self.logger.debug("fordpass_cn 首轮补写完成，写入 %d 条", n)
         else:
-            self.logger.debug("fordpass_cn v5.1.6 首轮补写跳过（data 为空）")
+            self.logger.debug("fordpass_cn 首轮补写跳过（data 为空）")
 
     def all_entity_ids(self) -> list[str]:
         """v4.5.10: 集成全部实体 entity_id 列表（活动事件关联用）。
