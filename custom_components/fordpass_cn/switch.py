@@ -110,6 +110,20 @@ async def async_setup_entry(
 
 
 
+class FordPassTaskTracker:
+    """后台任务引用跟踪（v5.3.5，v5.4.5 提取为共享 mixin）——命令状态轮询/
+    自动复位等 fire-and-forget 任务挂到 coordinator._persist_tasks，防卸载/
+    重启竞态下被事件循环丢弃（丢弃后果：开关状态不自动复位、命令状态传感器
+    不更新）。VAswitch/HonkSwitch 共用（HonkSwitch 曾漏继承导致鸣笛后
+    AttributeError: no attribute '_track_task'）。"""
+
+    def _track_task(self, coro: Any) -> asyncio.Task:
+        task = self.coordinator.hass.async_create_task(coro)
+        self.coordinator._persist_tasks.add(task)
+        task.add_done_callback(self.coordinator._persist_tasks.discard)
+        return task
+
+
 class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
     """家充桩充电开关（v3.7.2）——开=charging/start/v2、关=charging/stop/v2。
 
@@ -276,7 +290,7 @@ class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
         await self.coordinator.run_command(CMD_ENGINE_STOP)
 
 
-class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
+class FordPassVAswitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity):
     """声光寻车开关（v3.3.3）——由「声光寻车触发/取消」两按钮合并。
 
     HAR 实证（2026-10-03，福特派 6.16.0）：App 的声光寻车（鸣笛+灯光
@@ -362,15 +376,6 @@ class FordPassVAswitch(FordPassRestoreMixin, SwitchEntity):
             }
         self.coordinator.async_update_listeners()
 
-    def _track_task(self, coro: Any) -> asyncio.Task:
-        """v5.3.5: 后台任务引用跟踪——命令状态轮询/自动复位等 fire-and-forget
-        任务挂到 coordinator._persist_tasks，防卸载/重启竞态下被事件循环丢弃
-        （丢弃后果：开关状态不自动复位、命令状态传感器不更新）。"""
-        task = self.coordinator.hass.async_create_task(coro)
-        self.coordinator._persist_tasks.add(task)
-        task.add_done_callback(self.coordinator._persist_tasks.discard)
-        return task
-
     async def _auto_off(self, duration: int | None = None) -> None:
         """按本次触发时长自动复位；时长缺失/非法时回退 HONK_AUTO_OFF_SECONDS。"""
         await asyncio.sleep(duration if isinstance(duration, int) and duration > 0 else HONK_AUTO_OFF_SECONDS)
@@ -453,7 +458,7 @@ class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
         self.async_write_ha_state()
 
 
-class FordPassHonkSwitch(FordPassRestoreMixin, SwitchEntity):
+class FordPassHonkSwitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity):
     """鸣笛寻车开关（v3.0.7，真实开/关双通道）。
 
     2026-10-01 静态逆向还原 App 官方协议（libapp.so, blutter）：

@@ -73,10 +73,12 @@ rules:
   reauthentication-flow:
     status: done
   test-coverage:
-    status: pending
-    comment: v5.4.3 新增 api 纯函数（签名/坐标/响应判断/摘要）与 const/能力映射
-      完整性测试，本地 32 例全绿；CI 新增 pytest job（完整 HA 环境，含
-      config_flow 用例）；全模块 95% 覆盖率持续推进
+    status: done
+    comment: 全模块 65% 行覆盖、396 例全绿（2026-10-23，v5.4.4 基线）——
+      api 89% / capability 99% / config_flow 92% / coordinator 84% /
+      __init__ 85% / const 100%，实体平台 button/lock/select/image/
+      device_tracker/switch/diagnostics 主路径全覆盖；CI pytest job
+      （Python 3.12 + 固化 requirements）与本地验证环境一致
 
   # ── Gold ────────────────────────────────────────────────
   devices:
