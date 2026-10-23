@@ -385,6 +385,28 @@ class FordPassApiError(Exception):
         self.refresh_failed = refresh_failed
 
 
+def _as_refresh_failed(exc: Exception) -> FordPassApiError:
+    """刷新失败分类（v5.6.2）：业务性认证失败（401/403/600）转
+    refresh_failed=True 触发 reauth；网关 5xx / 网络异常保留原状（非
+    refresh_failed）——__init__ 据此走 ConfigEntryNotReady 自动重试，不再
+    误弹 reauth。2026-10-24 实测：福特网关 whitebox decrypt 500 熔断期间，
+    旧代码把所有刷新异常包成 401 → entry 每轮 setup_error + 用户被要求
+    重新认证（token 实际未失效）。
+    """
+    if isinstance(exc, FordPassApiError) and exc.code in (401, 403, 600):
+        # 业务性认证失败：token 真失效 / 被拒——refresh_failed=True 触发 reauth
+        return FordPassApiError(
+            401, f"token refresh failed: {exc}", refresh_failed=True
+        )
+    # 网关 5xx / 网络异常：保留原码、refresh_failed=False——__init__ 走
+    # ConfigEntryNotReady 自动重试，用户无感知、不弹重新认证
+    return FordPassApiError(
+        exc.code if isinstance(exc, FordPassApiError) else 500,
+        f"token refresh failed: {exc}",
+        refresh_failed=False,
+    )
+
+
 class FordPassProbeRejected(FordPassApiError):
     """探测端点返回业务拒绝（errorCode/error 或 status≠0/200）——车型无能力。
 
@@ -637,7 +659,7 @@ class FordPassApi:
                         return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
                     except Exception as exc:
                         self._log.error("FordPass token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -716,7 +738,7 @@ class FordPassApi:
                         return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
                     except Exception as exc:
                         self._log.error("FordPass token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1032,7 +1054,7 @@ class FordPassApi:
                                 return {"raw": text2}
                     except Exception as exc:
                         self._log.error("FordPass v5 honk token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1143,7 +1165,7 @@ class FordPassApi:
                                 return {"raw": text2}
                     except Exception as exc:
                         self._log.error("FordPass v5 %s token refresh failed: %s", what, exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1214,7 +1236,7 @@ class FordPassApi:
                                 return {"raw": text2}
                     except Exception as exc:
                         self._log.error("FordPass v5 IDUL token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1273,7 +1295,7 @@ class FordPassApi:
                                 return {"raw": text2}
                     except Exception as exc:
                         self._log.error("FordPass v5 IDUL status token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1339,7 +1361,7 @@ class FordPassApi:
                                 return {"raw": text2}
                     except Exception as exc:
                         self._log.error("FordPass v5 status token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1398,7 +1420,7 @@ class FordPassApi:
                                 return {"raw": text2}
                     except Exception as exc:
                         self._log.error("FordPass v5 statusrefresh token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1471,7 +1493,7 @@ class FordPassApi:
                                 return {"raw": text2}
                     except Exception as exc:
                         self._log.error("FordPass v5 honk token refresh failed: %s", exc)
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
@@ -1549,7 +1571,7 @@ class FordPassApi:
                         self._log.error(
                             "FordPass v5 announcestatus token refresh failed: %s", exc
                         )
-                        raise FordPassApiError(401, f"token refresh failed: {exc}", refresh_failed=True) from exc
+                        raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，

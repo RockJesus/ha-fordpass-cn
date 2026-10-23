@@ -363,6 +363,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.6.2**（2026-10-24）：**云端 500 熔断不再误触重新认证**——福特网关 `whitebox decrypt` 500 故障（10-24 实测：token refresh 端点熔断）旧代码把所有刷新异常包装成 401 → entry 每轮 setup_error + 用户被要求重新认证（token 实际未失效）。本次把刷新失败按性质分类：**业务性认证失败（401/403/600，token 真失效）仍触发重新认证；网关 5xx / 网络异常保留原码走 HA 自动重试（ConfigEntryNotReady），用户无感知**。新增分类单元测试 3 例，全量 436 项通过。
 - **v5.6.1**（2026-10-24）：**仓库脱敏 + 免责声明修正**——① 移除测试中误入的真实格式 VIN（`tests/test_wbsk.py`、`tests/test_init.py`，统一替换为测试专用假 VIN `LVSHFAKE000000001`），避免作者个人信息进入公开仓库；② 免责声明措辞中性化（删除素材来源自认表述，改为「个人开发作品 / 相关素材」），降低法律风险；③ 发布前隐私断言新增真实格式 VIN 检查（17 位车架号禁止入库，测试仅允许 `LVSHFAKE` 假 VIN）。
 - **v5.6.0**（2026-10-24）：**代码审查 P0/P1/P2 修复（认证生命周期 + 多账号 + 健壮性）**——依据《FordPass-CN 代码审查报告》（v5.5.9）逐项验证属实后修复并发布：
   - **认证生命周期**：① reauth/reconfigure 完成后由 HA 重载 entry（token 立即生效，不再持续报 401 直到手动重载；HA 2025.1+ 走 async_update_reload_and_abort，旧版本自动回退）；② reauth/reconfigure 从原 entry 恢复品牌——林肯 entry 重新认证不再被当成福特登录（轻则 passcode_failed，重则拿错租户 token）；③ 并发 401 刷新竞态修复——等待方直接复用正在进行的刷新结果（单飞锁+5 秒缓存），不再 sleep 后拿旧 token 重试误触发 reauth；④ 首次刷新失败不再导致平台 setup 崩溃（全部平台用空 dict 兜底，云端瞬断也能保留最后已知状态）。
