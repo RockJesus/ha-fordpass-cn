@@ -25,10 +25,12 @@ from . import capability
 from .api import FordPassApi, FordPassApiError
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_BRAND,
     CONF_CHIRP_TYPE,
     CONF_COORDINATE_SYSTEM,
     CONF_HONK_DURATION,
     CONF_REFRESH_TOKEN,
+    DEFAULT_BRAND,
     DEFAULT_CHIRP_TYPE,
     DEFAULT_COORDINATE_SYSTEM,
     DEFAULT_HONK_DURATION,
@@ -107,7 +109,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
-    api = FordPassApi(session, _LOGGER)
+    api = FordPassApi(session, _LOGGER, brand=entry.data.get(CONF_BRAND, DEFAULT_BRAND))
     api.set_token(
         entry.data.get(CONF_ACCESS_TOKEN),
         entry.data.get(CONF_REFRESH_TOKEN),

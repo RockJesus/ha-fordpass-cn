@@ -495,6 +495,10 @@ BRAND_PROFILE = {
     BRAND_FORD: {
         "base_url": BASE_URL,
         "touch_point": TOUCH_POINT,
+        "brand_code": "FORD",
+        "app_key": "fordpass",
+        "client_type": CLIENT_TYPE,
+        "app_version": APP_VERSION,
         "passcode_login": PATH_PASSCODE_LOGIN,
         "b2c_authority": B2C_AUTHORITY,
         "b2c_policy": B2C_POLICY,
@@ -503,16 +507,23 @@ BRAND_PROFILE = {
         "ready": True,
     },
     BRAND_LINCOLN: {
-        "base_url": None,
-        "touch_point": None,
-        "passcode_login": None,
+        # v5.5.3: 林肯登录链路参数（2026-10-23 林肯 App v6.7.0 HAR 实证）——
+        # touchPoint=LINCOLN_APP_LOGIN / brand=LINCOLN / vehicles/list
+        # appKey=lincoln&clientType=LW；网关与验证码/换 token 路径与福特共用
+        "base_url": BASE_URL,
+        "touch_point": "LINCOLN_APP_LOGIN",
+        "brand_code": "LINCOLN",
+        "app_key": "lincoln",
+        "client_type": "LW",
+        "app_version": "6.7.0",
+        "passcode_login": PATH_PASSCODE_LOGIN,
         "b2c_authority": None,
         "b2c_policy": None,
         "b2c_client_id": None,
         "b2c_redirect": None,
         # v4.8.1: 林肯之道 5.8.0 逆向确认包名（X-Requested-With 客户端指纹）
         "app_package": "com.lincoln.lincolnwaycn",
-        "ready": False,
+        "ready": True,
     },
 }
 

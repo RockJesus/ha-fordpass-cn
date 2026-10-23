@@ -378,7 +378,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await self.async_set_unique_id(self._phone)
                     self._abort_if_unique_id_configured()
                 session = async_get_clientsession(self.hass)
-                api = FordPassApi(session, _LOGGER)
+                api = FordPassApi(session, _LOGGER, brand=self._brand)
                 try:
                     self._xjw = await api.generate_passcode(self._phone)
                 except ImportError:
@@ -409,12 +409,15 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             session = async_get_clientsession(self.hass)
-            api = FordPassApi(session, _LOGGER)
+            api = FordPassApi(session, _LOGGER, brand=self._brand)
             try:
                 tokens = await api.passcode_login(
                     self._phone or "",
                     user_input["passcode"].strip(),
-                    self._xjw,
+                    # v5.5.3: 林肯 App 在 login 请求重新生成新 IV（HAR 实证
+                    # generate/login 的 xjw 不同仍 200）；福特实测复用同一会话
+                    # IV。按品牌区分：林肯不沿用 generate IV，登录自生成。
+                    None if self._brand == BRAND_LINCOLN else self._xjw,
                 )
             except ImportError:
                 errors["base"] = "missing_deps"
@@ -476,7 +479,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "bad_code"
             else:
                 session = async_get_clientsession(self.hass)
-                api = FordPassApi(session, _LOGGER)
+                api = FordPassApi(session, _LOGGER, brand=self._brand)
                 try:
                     tokens = await api.password_login(
                         self._username or "", code=code

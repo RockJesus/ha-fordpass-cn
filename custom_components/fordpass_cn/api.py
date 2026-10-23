@@ -27,7 +27,6 @@ from typing import Any
 import aiohttp
 
 from .const import (
-    APP_VERSION,
     APPLICATION_ID,
     B2C_AUTHORITY,
     B2C_CLIENT_ID,
@@ -36,10 +35,11 @@ from .const import (
     B2C_PATH_SELF_ASSERTED,
     B2C_POLICY,
     B2C_REDIRECT_URI,
+    BRAND_FORD,
+    BRAND_PROFILE,
     BASE_URL,
     CHIRP_TO_ANNOUNCE,
     CHIRP_TYPE_OPTIONS,
-    CLIENT_TYPE,
     DEFAULT_CHIRP_TYPE,
     DEFAULT_HONK_DURATION,
     GROUP_REMOTE_CLIMATE,
@@ -444,9 +444,24 @@ def _token_resp_summary(text: str) -> str:
 class FordPassApi:
     _last_wifi_reject_log: float = 0.0  # v4.3.0: wifi/status 业务拒绝降噪限频
 
-    def __init__(self, session: aiohttp.ClientSession, logger) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        logger,
+        brand: str = BRAND_FORD,
+    ) -> None:
         self._session = session
         self._log = logger
+        # v5.5.3: 品牌参数化（林肯登录修复）——默认福特行为不变；林肯
+        # HAR(2026-10-23 v6.7.0) 实证：touchPoint=LINCOLN_APP_LOGIN、
+        # brand=LINCOLN、vehicles/list appKey=lincoln&clientType=LW
+        _profile = BRAND_PROFILE.get(brand) or BRAND_PROFILE[BRAND_FORD]
+        self._brand = brand
+        self._brand_code = _profile["brand_code"]
+        self._app_key = _profile["app_key"]
+        self._client_type = _profile["client_type"]
+        self._app_version = _profile["app_version"]
+        self._touch_point = _profile["touch_point"]
         self._access_token: str | None = None
         self._refresh_token: str | None = None
         self._lbs_token: str | None = None
@@ -503,10 +518,10 @@ class FordPassApi:
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
             "user-agent": "Dart (dart:io)",
-            "appversion": APP_VERSION,
+            "appversion": self._app_version,
             "ostype": OS_TYPE,
             "osversion": OS_VERSION,
-            "clienttype": CLIENT_TYPE,
+            "clienttype": self._client_type,
             "application-id": APPLICATION_ID,
             "content-type": "application/json; charset=utf-8",
             "accept-encoding": "gzip",
@@ -728,7 +743,7 @@ class FordPassApi:
         await self._request(
             "POST",
             PATH_GENERATE_PASSCODE,
-            {"encryptedPhoneNumber": enc, "touchPoint": TOUCH_POINT, "xjw": xjw},
+            {"encryptedPhoneNumber": enc, "touchPoint": self._touch_point, "xjw": xjw},
         )
         return xjw
 
@@ -755,8 +770,8 @@ class FordPassApi:
                 "encryptedPasscode": enc_code,
                 "tncAccepted": 1,
                 "tncOutBoundAccepted": 1,
-                "touchPoint": TOUCH_POINT,
-                "brand": "FORD",
+                "touchPoint": self._touch_point,
+                "brand": self._brand_code,
                 "osType": "ANDROID",
                 "xjw": xjw,
             },
@@ -787,7 +802,7 @@ class FordPassApi:
             data = await self._request(
                 "POST",
                 PATH_REFRESH_TOKEN,
-                {"encryptedRefreshToken": enc, "brand": "FORD", "xjw": xjw},
+                {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
             )
             inner = data.get("data", {})
             xjw2 = inner.get("xjw", xjw)
@@ -824,7 +839,7 @@ class FordPassApi:
         await self._request(
             "POST",
             PATH_REVOKE_TOKEN,
-            {"encryptedRefreshToken": enc, "brand": "FORD", "xjw": xjw},
+            {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
         )
 
     # -------------------------------------------------------------- vehicles
@@ -833,7 +848,7 @@ class FordPassApi:
         data = await self._request(
             "GET",
             PATH_VEHICLES_LIST,
-            query={"appKey": "fordpass", "appVersion": APP_VERSION, "clientType": CLIENT_TYPE},
+            query={"appKey": self._app_key, "appVersion": self._app_version, "clientType": self._client_type},
         )
         inner = data.get("data", {})
         xjw = inner.get("xjw")
@@ -2358,8 +2373,8 @@ class FordPassApi:
         # clientType/appVersion/encryptedVin/xjw（uservehicles 错误消息
         # 明确给出）。GET 保持无参（同 messages/summary），POST 带参。
         account_probes = {
-            "uservehicles": (PATH_USER_VEHICLES, {"clientType": CLIENT_TYPE,
-                                                  "appVersion": APP_VERSION}, True),
+            "uservehicles": (PATH_USER_VEHICLES, {"clientType": self._client_type,
+                                                  "appVersion": self._app_version}, True),
             "messages_v2": (PATH_MESSAGES_V2_PAGE, None, False),
             "share_list": (PATH_SHARE_LIST, None, True),
             # v3.6.2: 待开发清单补全——消息中心 v3（mcm 域，GET 无参同 summary）、
@@ -2937,7 +2952,7 @@ class FordPassApi:
             {
                 "encryptedAuthCode": enc_code,
                 "xjw": xjw,
-                "brand": "FORD",
+                "brand": self._brand_code,
                 "osType": "ANDROID",
                 "policyType": "SIGNINSIGNUP",
             },
@@ -3150,7 +3165,7 @@ class FordPassApi:
         params = {
             "timestamp": ts,
             "tokenType": "LBS",
-            "brand": "FORD",
+            "brand": self._brand_code,
             "encryptedVin": enc_vin,
             "xjw": xjw,
         }
