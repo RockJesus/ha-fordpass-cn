@@ -200,6 +200,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 引用（fire-and-forget），卸载/重启竞态下任务可能被事件循环丢弃；
         # 现保存到集合 + done 回调清理，保证写盘任务存活到完成。
         self._persist_tasks: set[asyncio.Task] = set()
+        # v5.5.0: 手动全量刷新冷却（防连点叠加风控请求量）
+        self._last_force_all: float = 0.0
         # v3.8.6: 探测结果持久化（HA Store）——探测类请求（命令白名单/
         # 额外端点/cevs/家充桩）只在登录 setup 时执行，结果落盘；重启或
         # 重新加载后 setup 直接复用（TTL 内不重探），避免每次 reload 白打
@@ -644,19 +646,25 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sw_version="6.14.0",
         )
 
+    FORCE_ALL_COOLDOWN = 30.0  # 手动全量刷新冷却秒数（v5.5.0，防连点）
+
     async def force_refresh(self, force_all: bool = False) -> None:
         """Fetch data immediately and push it to entities (v2.7.0).
 
-        HA's ``async_request_refresh`` only executes right away when the last
-        poll is older than ``update_interval``; otherwise it re-schedules the
-        refresh to the next interval tick, which makes a manual "刷新车辆状态"
-        button appear dead.  This method bypasses that throttle: it fetches
-        now and pushes the result with ``async_set_updated_data``.
+        v5.5.0: force_all=True（手动刷新按钮）加 30s 冷却——force_all 绕过
+        所有 TTL 强制真拉，连点会成倍放大云端请求量触发风控；冷却期内
+        重复点击静默跳过（debug 日志）。车控命令后的 force_refresh()
+        （force_all=False）不受冷却限制，保证命令后即时状态更新。"""
+        if force_all:
+            now = time.monotonic()
+            if now - self._last_force_all < self.FORCE_ALL_COOLDOWN:
+                self.logger.debug(
+                    "FordPass manual force-refresh skipped (cooldown %.0fs)",
+                    self.FORCE_ALL_COOLDOWN - (now - self._last_force_all),
+                )
+                return
+            self._last_force_all = now
 
-        v4.4.3: ``force_all=True`` 复刻 App 下拉刷新——绕过所有慢变端点的
-        TTL 缓存强制真拉（保养/召回/SIM/OTA/滤芯/ccfeatures/prognostic/
-        告警/消息全量更新），与 App 下拉刷新拿全车最新状态一致。
-        """
         try:
             data = await self._async_update_data(force_all=force_all)
         except Exception as exc:
