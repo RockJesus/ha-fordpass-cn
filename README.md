@@ -363,6 +363,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.5.7**（2026-10-23）：**登录失败真实原因透出（修复 unexpected error）**——`passcode_login` 响应若不含 token 字段（HTTP 200 业务失败：验证码错误/过期、风控拒绝，或响应结构差异）此前直接 KeyError 被当作「unexpected error」，用户看不到原因；现改为携带服务端 status/error/errorCode 抛出登录失败错误，配置流程直接显示服务端返回的具体原因，并输出告警日志便于排查
 - **v5.5.6**（2026-10-23）：**林肯登录 whitebox decrypt error 修复 + 配置文案再精简**——① 修复林肯验证码登录报「whitebox decrypt error / errorCode 100500」：`passcode_login` 在 iv=None（林肯分支）时手机号与验证码两次加密各生成不同随机 IV，请求只携带手机号的 xjw，服务端解验证码字段失败——改为自生成一次会话 IV 并复用，两字段同 IV（与官方 App 会话内同 IV 行为一致）；② 配置流程文案再精简：删除全部字段灰色说明（data_description）、登录方式页去掉「失败时查看日志」冗余提示
 - **v5.5.5**（2026-10-23）：**同手机号双品牌并存 + 配置流程文案精简**——① 同一手机号可同时配置福特派与林肯之道两个品牌账号（此前 unique_id 按手机号查重，已配福特后登录林肯会提示「该手机号已配置」）；现改为「手机号+品牌」双重判定，仅同品牌重复配置才拦截，升版前的旧条目（无品牌字段）按福特处理不受影响；② 配置流程各步骤文字精简：品牌选择页去掉「林肯暂不可登录」过时说明（v5.5.3 起林肯已可登录）、密码登录页删除 WAF 长段说明、重新认证页缩短提示；③ 配置条目标题带品牌标签（手机号 + 福特派/林肯之道），多账号并存时更易区分
 - **v5.5.4**（2026-10-23）：**CI 修复（林肯登录 NameError + 测试对齐）**——① 修复 config_flow 漏导入 BRAND_LINCOLN 导致林肯验证码登录直接崩溃（提交验证码即 NameError，福特登录不受影响）；② 清理 api.py 未使用导入 TOUCH_POINT（Ruff F401）；③ 双品牌参数化测试改按 test_api_core 同构方式 mock 加密（crypto 为只读属性，赋值写法会 AttributeError），补齐有效密钥样例；④ 品牌链路测试对齐新行为：林肯 profile 就绪后选中直接进入登录方式选择（原断言停留在未就绪时代的 lincoln_pending 提示页），v5 直控 401 测试改引用 const.TOUCH_POINT。修复后本地 pytest 409 全绿 + Ruff 零告警
