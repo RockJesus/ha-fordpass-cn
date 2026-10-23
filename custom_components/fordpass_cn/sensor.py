@@ -1159,6 +1159,8 @@ class FordPassAutoOffSensor(SensorEntity):
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:timer-sand"
         self._attr_native_unit_of_measurement = "分钟"
+        # v5.4.8: 数值传感器补 measurement——可进长期统计趋势图
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def available(self) -> bool:
@@ -2540,8 +2542,40 @@ class FordPassCevsChargelogSensor(SensorEntity):
             "记录条数": len(logs),
             "下次充电时间": data.get("nextChrgTimestamp"),
         }
+        # v5.4.8: 充电日志明细——最近 3 条逐条结构化（时间/电量/时长宽松
+        # 提取，字段名各车型有差异；提取不到保留原始记录，不丢数据）。
+        # 配合 v5.4.7「上次充电电量」形成充电统计闭环，HA 里直接可读，
+        # 不必再看 JSON。
         if logs:
-            attr["最近记录"] = json.dumps(logs[-1] if logs else {}, ensure_ascii=False)
+            detail = []
+            for rec in reversed(logs[-3:]):
+                if not isinstance(rec, dict):
+                    detail.append({"raw": rec})
+                    continue
+                t = (_swb_find(rec, "startTime") or _swb_find(rec, "endTime")
+                     or _swb_find(rec, "chargingStartTime")
+                     or _swb_find(rec, "chargingEndTime")
+                     or _swb_find(rec, "date") or _swb_find(rec, "time")
+                     or _swb_find(rec, "chargingDate"))
+                soc = (_swb_find(rec, "batteryLevel") or _swb_find(rec, "soc")
+                       or _swb_find(rec, "chargePercent")
+                       or _swb_find(rec, "endSoc"))
+                dur = (_swb_find(rec, "chargeDuration") or _swb_find(rec, "duration")
+                       or _swb_find(rec, "chargingTime") or _swb_find(rec, "chargeTime"))
+                entry: dict = {}
+                if t is not None:
+                    entry["time"] = t
+                if soc is not None:
+                    entry["soc"] = soc
+                if dur is not None:
+                    entry["duration"] = dur
+                # raw 兜底：宽松提取未命中关键字段时保留原始记录防丢数据
+                if not entry:
+                    entry = {"raw": json.dumps(rec, ensure_ascii=False)}
+                detail.append(entry)
+            attr["最近记录"] = detail
+            # 兼容旧格式：最近 1 条原始 JSON（原属性名保留，避免破坏现有自动化）
+            attr["最近记录原始"] = json.dumps(logs[-1], ensure_ascii=False)
         return attr
 
 
