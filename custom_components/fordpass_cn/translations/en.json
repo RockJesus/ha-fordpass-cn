@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Choose Brand",
-        "description": "Choose the brand to connect: {brands}.",
+        "description": "Choose the brand to connect: {brands}.\n\n- FordPass: fully supported (SMS code / password login, all features)\n- Lincoln Way: fully supported (SMS code login, shares the same cloud encryption system as FordPass)",
         "data": {
           "brand": "Brand"
         },
@@ -59,9 +59,8 @@
       "bad_phone": "Please enter a valid 11-digit phone number",
       "bad_username": "Please enter a valid 11-digit phone number (username)",
       "passcode_failed": "Failed to send the verification code. Check that the phone number is registered with FordPass China, or retry later (see log)",
-      "missing_deps": "Missing dependencies (unicorn or pyelftools). Confirm they were installed automatically, or run pip install unicorn pyelftools on the HA host and restart",
+      "missing_deps": "Missing dependency packages. Confirm they were installed automatically when the integration installed, or retry later (see log)",
       "login_failed": "Login failed. Check that the verification code is correct (see log)",
-      "password_login_failed": "Login failed: the Ford login page is protected by Tencent EdgeOne which currently blocks plain HTTP clients. Use SMS code login or retry later (see log)",
       "unknown": "Unknown error. Check the fordpass_cn entries in the Home Assistant log",
       "bad_code": "Invalid or expired authorization code. Please log in again in the browser and copy a fresh code."
     },

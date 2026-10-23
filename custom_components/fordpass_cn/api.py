@@ -212,16 +212,6 @@ def wgs84_to_gcj02(lat: float, lng: float) -> tuple[float, float]:
     return lat + d_lat, lng + d_lng
 
 
-def normalize_gcj02(lat, lng):
-    """Apply WGS84->GCJ02 and preserve the original value type (str/float)."""
-    lat_f = float(lat)
-    lng_f = float(lng)
-    lat_g, lng_g = wgs84_to_gcj02(lat_f, lng_f)
-    if isinstance(lat, str):
-        return f"{lat_g:.6f}", f"{lng_g:.6f}"
-    return lat_g, lng_g
-
-
 def gcj02_to_wgs84(lng: float, lat: float) -> tuple[float, float]:
     """Convert GCJ-02 (国测局加密坐标) back to WGS-84 (GPS raw).
 
@@ -652,7 +642,20 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                # P0-5（v5.6.0）：不能 sleep(0.5) 后拿**旧 token** 重试——刷新通常
+                # >0.5s，重试必再 401 且 _retried=True 直接 refresh_failed 误触
+                # reauth。等待方改为直接 await refresh_token（内部单飞锁 + 5 秒
+                # 结果缓存，等待时不会再发起第二次刷新），拿到新 token 后重试。
+                try:
+                    new = await self.refresh_token(self._refresh_token)
+                    self._access_token = new["access_token"]
+                    if self.on_token_refresh is not None:
+                        self.on_token_refresh(new["access_token"])
+                except Exception as exc:  # noqa: BLE001 - 刷新失败才置 refresh_failed
+                    self._log.error("FordPass concurrent token refresh failed: %s", exc)
+                    raise FordPassApiError(
+                        401, f"token refresh failed: {exc}", refresh_failed=True
+                    ) from exc
                 return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
@@ -1959,6 +1962,9 @@ class FordPassApi:
             try:
                 result = await self.command_status(vin, command_id, command_type)
                 if not isinstance(result, dict):
+                    # P2-1（v5.6.0）：非 dict 响应同样等待 poll 再继续——
+                    # 直接 continue 会跳过循环末尾 sleep，60 秒满速打接口。
+                    await asyncio.sleep(poll)
                     continue
                 last = result
                 vs = result.get("vehiclestatus", result)
@@ -3190,7 +3196,8 @@ class FordPassApi:
         }
         params["sign"] = compute_sign(params)
         async with self._session.get(
-            BASE_URL + PATH_THIRD_PARTY_TOKEN, headers=self._headers(), params=params
+            BASE_URL + PATH_THIRD_PARTY_TOKEN, headers=self._headers(), params=params,
+            timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
             try:
                 text = await resp.text()
@@ -3284,7 +3291,8 @@ class FordPassApi:
                         ",".join(sorted(headers.keys())),
                         ",".join(sorted(body.keys())) if isinstance(body, dict) else "")
         async with self._session.post(
-            LBS_BASE_URL + PATH_QUERY_LOCATION, headers=headers, json=body
+            LBS_BASE_URL + PATH_QUERY_LOCATION, headers=headers, json=body,
+            timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
             try:
                 text = await resp.text()

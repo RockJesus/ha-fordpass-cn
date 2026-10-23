@@ -36,7 +36,7 @@ async def async_setup_entry(
     for coordinator in coordinators:
         locks.append(FordPassLock(coordinator))
         # 后备箱锁：有尾门 / 内尾门字段（支持后备箱解锁的车型）才创建
-        status = coordinator.data.get("vehiclestatus", {}) or {}
+        status = (coordinator.data or {}).get("vehiclestatus", {}) or {}
         if capability.usable(
             status, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
         ):
@@ -85,7 +85,7 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
 
     @property
     def is_locked(self) -> bool:
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         value = status.get("lockStatus", {}).get("value")
         return self._restore_bool(value == "LOCKED" if value else None)
 

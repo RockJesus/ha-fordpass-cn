@@ -548,4 +548,5 @@ DEFAULT_CONF_FLOW_TITLE = "福特派互联"
 PROBE_PERSIST_TTL = 604800.0
 
 # Platforms
-PLATFORMS = ["lock", "switch", "button", "sensor", "device_tracker", "select"]
+# P2-8（v5.6.0）：删除——真正的平台列表在 __init__.py PLATFORMS（含 image），
+# 此副本缺 image 且从未被引用，保留只会误导。

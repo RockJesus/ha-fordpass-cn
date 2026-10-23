@@ -638,12 +638,20 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def device_info(self) -> dict[str, Any]:
         """One shared device for every entity of this vehicle."""
+        # P2-6（v5.6.0）：按品牌填 manufacturer/sw_version——此前对所有
+        # 品牌硬编码 Ford/6.14.0，林肯车辆设备信息显示福特品牌。
+        if self.brand == BRAND_LINCOLN:
+            manufacturer = "Lincoln"
+            sw_version = "6.7.0"
+        else:
+            manufacturer = "Ford"
+            sw_version = "6.14.0"
         return dr.DeviceInfo(
             identifiers={(DOMAIN, self.vin)},
             name=self._vehicle_name,
-            manufacturer="Ford",
+            manufacturer=manufacturer,
             model=self._vehicle_name,
-            sw_version="6.14.0",
+            sw_version=sw_version,
         )
 
     FORCE_ALL_COOLDOWN = 30.0  # 手动全量刷新冷却秒数（v5.5.0，防连点）
@@ -1076,10 +1084,17 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # v4.7.6: HA 2026.10 已移除 async_entries_for_domain（v3.6.5
             # sensor.py 同款修复）——改用 reg.entities.values() 过滤
             # platform==DOMAIN；跳过用户禁用实体（disabled_by）。
+            # P1-7（v5.6.0）：按本 entry 限定——此前只按 platform==DOMAIN
+            # 过滤（v4.7.6 迁移笔误：platform 是 sensor/switch 等平台名而非
+            # 集成 domain，恒为空；应过滤 e.domain==DOMAIN），且多 entry 时
+            # 会给对方全部实体写 logbook 活动、事件量成倍放大。改为
+            # domain==DOMAIN + config_entry_id==本 entry + 未禁用。
             return [
                 e.entity_id
                 for e in reg.entities.values()
-                if e.platform == DOMAIN and e.disabled_by is None
+                if e.domain == DOMAIN
+                and e.disabled_by is None
+                and e.config_entry_id == self.entry_id
             ]
         except Exception:  # noqa: BLE001
             return []

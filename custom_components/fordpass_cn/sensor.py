@@ -372,7 +372,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors = [s for s in sensors if getattr(s, "data_usable", True)]
     # v3.1.3: OTA 设置状态（GET /api/alert/v1/ota/setting-info，实测 200；
     # 端点失败或车辆无 OTA 能力时不创建）
-    if coordinator.data.get("ota_setting"):
+    if (coordinator.data or {}).get("ota_setting"):
         sensors.append(FordPassOtaSettingSensor(coordinator))
     # v3.1.4: 服务信息（保养计划/召回/SIM/WiFi）——拉取成功才创建
     for key, cls, _label in (
@@ -380,7 +380,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         ("recall", FordPassRecallSensor, "召回信息"),
         ("wifi_status", FordPassWifiSensor, "WiFi 热点"),
     ):
-        payload = coordinator.data.get(key)
+        payload = (coordinator.data or {}).get(key)
         if payload:
             sensors.append(cls(coordinator))
     # v4.3.2: SIM 卡无条件创建——v4.3.0 起 sim_info 对未开通车型（纯油）
@@ -553,7 +553,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                 sensors.append(FordPassProbeSensor(coordinator, _k, _lbl, _kind))
     # v3.1.7: 空调滤芯状态（AAR 能力车型；无 airFilter 字段的车型不创建，
     # 保证其他用户登录各自车型时不出现不支持的实体）
-    air_filter = coordinator.data.get("air_filter")
+    air_filter = (coordinator.data or {}).get("air_filter")
     if isinstance(air_filter, dict):
         af_payload = air_filter.get("data") if isinstance(air_filter.get("data"), dict) else None
         if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
@@ -561,7 +561,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # v3.1.9: 云端能力探测（ccfeatures 能力位图；位图有已开通能力才创建——
     # 全车型自动适配：各自位图 → 各自能力集 → 实体自动创建）。
     # v3.2.4: 不再创建「车辆服务信息」传感器（ccfeatures 明细，用户要求删除）。
-    ccf = coordinator.data.get("ccfeatures")
+    ccf = (coordinator.data or {}).get("ccfeatures")
     if isinstance(ccf, dict) and capability.parse_cloud_features(ccf):
         sensors.append(FordPassCloudProbeSensor(coordinator))
     # v4.6.4: ccfeatures 服务信息 7 字段 → 7 个独立实体（用户要求分实体显示）。
@@ -582,7 +582,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # 显示「未触发」，永远可用——v3.1.2 规则）
     sensors.append(FordPassAnnounceStatusSensor(coordinator))
     # v3.1.9: 预测性诊断（prognostic，200 实测）——有业务数据才创建
-    prog = coordinator.data.get("prognostic")
+    prog = (coordinator.data or {}).get("prognostic")
     if isinstance(prog, dict):
         prog_payload = prog.get("data") if isinstance(prog.get("data"), dict) else None
         if isinstance(prog_payload, dict):
@@ -598,7 +598,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # v3.1.17: 未读消息（GET /api/cnxapi-message/app/messages/summary，
     # HAR 实测 200）——有 data.summary 才创建（无数据车型不创建，
     # 不显示不可用）
-    msg = coordinator.data.get("messages")
+    msg = (coordinator.data or {}).get("messages")
     if isinstance(msg, dict):
         msg_payload = msg.get("data") if isinstance(msg.get("data"), dict) else None
         if isinstance(msg_payload, dict) and isinstance(msg_payload.get("summary"), dict):
@@ -785,6 +785,11 @@ class FordPassRestoreMixin(RestoreEntity):
 
 
 class FordPassSensor(FordPassRestoreMixin, SensorEntity):
+    # P2-7（v5.6.0）：纯推送实体（coordinator listener 驱动），关闭 HA
+    # 每 30 秒的轮询——此前 100+ 个传感器被平台默认轮询，负载与云请求
+    # 白增（本地无更新接口，轮询只会反复读旧快照）。
+    _attr_should_poll = False
+
     def __init__(self, coordinator, key, label, unit, device_class, icon, path,
                  round_value: bool = False, enum_map: dict | None = None,
                  multiplier: float | None = None, transform=None,
@@ -828,11 +833,11 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         """创建期过滤：skip_if_missing 的实体仅当字段当前有有效值时创建；
         skip_if_zero 的实体值为 0/停用 时（非该能力车型）不创建。"""
         if self._skip_if_missing:
-            status = self.coordinator.data.get("vehiclestatus", {})
+            status = (self.coordinator.data or {}).get("vehiclestatus", {})
             if not _is_usable(status, self._paths):
                 return False
         if self._skip_if_zero:
-            val = _first_leaf(self.coordinator.data.get("vehiclestatus", {}), self._paths)
+            val = _first_leaf((self.coordinator.data or {}).get("vehiclestatus", {}), self._paths)
             if val in (0, "0", False, "false", "False", "停用", None):
                 return False
         return True
@@ -844,7 +849,7 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         """Expose Ford's own data timestamp/status for this reading (v2.7.2)."""
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         attrs: dict = {}
         node = _first_leaf_node(status, self._paths)
         if isinstance(node, dict):
@@ -867,7 +872,7 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
 
     @property
     def native_value(self):
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         value = _first_leaf(status, self._paths)
         if value is None:
             # v3.8.9: 重启/重载后数据未就绪时恢复最后已知状态，消除 unavailable
@@ -944,7 +949,7 @@ class FordPassAlertSensor(SensorEntity):
         elif isinstance(alerts, str):
             attrs["source"] = "vha"
         else:
-            status = self.coordinator.data.get("vehiclestatus", {})
+            status = (self.coordinator.data or {}).get("vehiclestatus", {})
             node = _leaf_node(status, "PrmtAlarmEvent")
             if isinstance(node, dict):
                 attrs["source"] = "vehicle_status"
@@ -971,7 +976,7 @@ class FordPassAlertSensor(SensorEntity):
         return None
 
     def _fallback_value(self):
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         for path in self._FALLBACK_PATHS:
             value = _leaf(status, *path)
             if value is not None:
@@ -1168,7 +1173,7 @@ class FordPassAutoOffSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         rs = status.get("remoteStart") or {}
         rss = status.get("remoteStartStatus") or {}
         t0 = rs.get("remoteStartTime")
@@ -1189,7 +1194,7 @@ class FordPassAutoOffSensor(SensorEntity):
 
     @property
     def native_value(self):
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         rs = status.get("remoteStart") or {}
         rss = status.get("remoteStartStatus") or {}
         running = rss.get("value")

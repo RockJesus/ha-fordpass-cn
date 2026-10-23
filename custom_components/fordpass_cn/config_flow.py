@@ -195,19 +195,35 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             mode = user_input[CONF_LOGIN_MODE]
             if mode == LOGIN_MODE_PASSWORD:
-                return self.async_show_form(
-                    step_id="password",
-                    data_schema=STEP_PASSWORD_SCHEMA,
-                    description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_PASSWORD]},
-                )
+                if self._brand == BRAND_LINCOLN:
+                    # P0-4（v5.6.0）：林肯无 B2C 租户配置，密码登录会落到
+                    # 福特登录页——防御性转短信验证码。
+                    mode = LOGIN_MODE_SMS
+                else:
+                    return self.async_show_form(
+                        step_id="password",
+                        data_schema=STEP_PASSWORD_SCHEMA,
+                        description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_PASSWORD]},
+                    )
             return self.async_show_form(
                 step_id="phone",
                 data_schema=STEP_PHONE_SCHEMA,
                 description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_SMS]},
             )
+        schema = STEP_LOGIN_MODE_SCHEMA
+        if self._brand == BRAND_LINCOLN:
+            # P0-4（v5.6.0）：林肯品牌仅提供短信验证码登录（密码登录无
+            # 对应 B2C 租户，选择后必失败——隐藏该方式避免死胡同）。
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_LOGIN_MODE, default=LOGIN_MODE_SMS): vol.In(
+                        {LOGIN_MODE_SMS: LOGIN_MODE_LABELS[LOGIN_MODE_SMS]}
+                    ),
+                }
+            )
         return self.async_show_form(
             step_id="login_mode",
-            data_schema=STEP_LOGIN_MODE_SCHEMA,
+            data_schema=schema,
             errors=errors,
             description_placeholders={"login_modes": "、".join(LOGIN_MODE_LABELS.values())},
         )
@@ -222,8 +238,12 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         手机验证码/密码登录，成功后更新已有 entry 的 token 并 abort
         （不重建 entry，实体保留）。
         """
+        # P2-12（v5.6.0）：HA 以 entry.data 调用 async_step_reauth——若把该
+        # 参数当 user_input 传入 reauth_confirm 会直接跳过确认对话框进入
+        # 登录方式选择（官方 reauth 指南要求先显示确认页）。丢弃参数固定
+        # 走确认对话框；提交的空表单（{}）由 reauth_confirm 处理进登录。
         self._reauth = True
-        return await self.async_step_reauth_confirm(user_input)
+        return await self.async_step_reauth_confirm(None)
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
@@ -236,6 +256,10 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         if user_input is not None:
             return await self.async_step_login_mode()
+        # P0-2（v5.6.0）：reauth 复用登录链路但 _brand 默认福特——林肯 entry
+        # 重新认证会走福特参数（触达点/品牌/b2c）；进入时从原 entry 恢复。
+        entry = self._get_reauth_entry()
+        self._brand = entry.data.get(CONF_BRAND, DEFAULT_BRAND)
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema({}),
@@ -258,18 +282,44 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # 更新 entry.data，**不校验手机号一致**（换账号是合法场景，
             # 区别于 reauth 的"必须同手机号"）；options 偏好原样保留。
             entry = self._reconfigure_entry
-            self.hass.config_entries.async_update_entry(
-                entry,
-                data={
-                    **entry.data,
-                    **(extra_data or {}),
-                    CONF_LOGIN_MODE: mode,
-                    CONF_PHONE: self._phone,
-                    CONF_USERNAME: self._username,
-                    "access_token": tokens["access_token"],
-                    "refresh_token": tokens["refresh_token"],
-                },
+            data = {
+                **entry.data,
+                **(extra_data or {}),
+                # P0-2（v5.6.0）：reauth/reconfigure 写回品牌，重载后按正确
+                # 品牌重建 api/coordinator。
+                CONF_BRAND: self._brand,
+                CONF_LOGIN_MODE: mode,
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+            }
+            # P1-9（v5.6.0）：只写当前登录方式对应字段，不把另一方式的
+            # 标识字段覆盖为 None。
+            if mode == LOGIN_MODE_PASSWORD:
+                data[CONF_USERNAME] = self._username
+                if self._phone:
+                    data[CONF_PHONE] = self._phone
+            else:
+                data[CONF_PHONE] = self._phone
+                if self._username:
+                    data[CONF_USERNAME] = self._username
+            # P0-1/P2-13（v5.6.0）：由 HA 更新并重载 entry（token 立即生效，
+            # 无需手动重载）；标题同步换手机号/品牌。async_update_reload_and_abort
+            # 为 HA 2025.1+ API，旧版本回退 update_entry+abort（hacs.json 最低
+            # 版本已同步提升到 2025.1.0）。
+            reload_abort = getattr(
+                self.hass.config_entries, "async_update_reload_and_abort", None
             )
+            if reload_abort is not None:
+                return reload_abort(
+                    entry,
+                    title=(
+                        f"{self._phone or self._username or DOMAIN}"
+                        f"（{BRAND_LABELS.get(self._brand, self._brand)}）"
+                    ),
+                    data=data,
+                    reason="reconfigure_successful",
+                )
+            self.hass.config_entries.async_update_entry(entry, data=data)
             return self.async_abort(reason="reconfigure_successful")
         if self._reauth:
             entry = self._get_reauth_entry()
@@ -285,18 +335,32 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         self._phone, old_phone,
                     )
                     return self.async_abort(reason="reauth_phone_mismatch")
-            self.hass.config_entries.async_update_entry(
-                entry,
-                data={
-                    **entry.data,
-                    **(extra_data or {}),
-                    CONF_LOGIN_MODE: mode,
-                    CONF_PHONE: self._phone,
-                    CONF_USERNAME: self._username,
-                    "access_token": tokens["access_token"],
-                    "refresh_token": tokens["refresh_token"],
-                },
+            data = {
+                **entry.data,
+                **(extra_data or {}),
+                CONF_BRAND: self._brand,
+                CONF_LOGIN_MODE: mode,
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+            }
+            # P1-9（v5.6.0）：只写当前登录方式字段（同上）。
+            if mode == LOGIN_MODE_PASSWORD:
+                data[CONF_USERNAME] = self._username
+                if self._phone:
+                    data[CONF_PHONE] = self._phone
+            else:
+                data[CONF_PHONE] = self._phone
+                if self._username:
+                    data[CONF_USERNAME] = self._username
+            # P0-1（v5.6.0）：async_update_reload_and_abort——token 更新后
+            # 立即重载 entry，新令牌即时生效（旧行为不重载，刷新失败期间
+            # 集成持续报 401 直到手动重载）。旧版本回退 update_entry+abort。
+            reload_abort = getattr(
+                self.hass.config_entries, "async_update_reload_and_abort", None
             )
+            if reload_abort is not None:
+                return reload_abort(entry, data=data, reason="reauth_successful")
+            self.hass.config_entries.async_update_entry(entry, data=data)
             return self.async_abort(reason="reauth_successful")
         return self.async_create_entry(
             title=f"{self._phone or self._username or DOMAIN}（{BRAND_LABELS.get(self._brand, self._brand)}）",
@@ -325,7 +389,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         phone = _normalize_phone(self._phone or "")
         for entry in self._async_current_entries():
-            e_phone = entry.data.get(CONF_PHONE)
+            # P1-9（v5.6.0）：密码登录 entry 的 CONF_PHONE 为 None、手机号在
+            # CONF_USERNAME——查重取 phone or username，避免同账号重复添加。
+            e_phone = entry.data.get(CONF_PHONE) or entry.data.get(CONF_USERNAME)
             if not e_phone:
                 continue
             try:
@@ -550,6 +616,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_mismatch()
         self._reconfigure = True
         self._reconfigure_entry = entry
+        # P0-2（v5.6.0）：reconfigure 同样恢复品牌，避免林肯 entry 重配时
+        # 按福特品牌走登录链路。
+        self._brand = entry.data.get(CONF_BRAND, DEFAULT_BRAND)
         return await self.async_step_login_mode(user_input)
 
 

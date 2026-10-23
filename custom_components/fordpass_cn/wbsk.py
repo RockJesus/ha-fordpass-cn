@@ -24,8 +24,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import random
-import string
 import struct
 import threading
 from typing import ClassVar
@@ -223,7 +221,9 @@ class FordPassCrypto:
 
     @staticmethod
     def _new_iv() -> bytes:
-        return "".join(random.choice(string.ascii_lowercase) for _ in range(16)).encode()
+        # P2-4（v5.6.0）：改用 CSPRNG（os.urandom）——random 的梅森旋转
+        # 可预测，用作 CBC IV 属安全缺陷。
+        return os.urandom(16)
 
     @staticmethod
     def _pkcs7(data: bytes) -> bytes:
@@ -253,7 +253,14 @@ class FordPassCrypto:
 
     def decrypt_field(self, ciphertext_b64: str, xjw: str) -> str:
         with self._lock:
-            ct = base64.b64decode(ciphertext_b64)
+            # P1-11（v5.6.0）：base64 非法字符不再静默丢弃（validate=True）；
+            # 密文长度与 PKCS#7 填充严格校验——末字节 0/超 16 曾静默返回
+            # 空串/截错，VIN/地址/token 莫名变空被掩盖到下游。
+            ct = base64.b64decode(ciphertext_b64, validate=True)
+            if not ct or len(ct) % 16:
+                raise ValueError(
+                    f"ciphertext length not multiple of 16: {len(ct)}"
+                )
             prev = bytes.fromhex(xjw)
             out = b""
             for i in range(0, len(ct), 16):
@@ -261,4 +268,6 @@ class FordPassCrypto:
                 out += bytes(a ^ b for a, b in zip(mid, prev, strict=False))
                 prev = ct[i:i + 16]
             pad = out[-1]
+            if not 1 <= pad <= 16 or out[-pad:] != bytes([pad]) * pad:
+                raise ValueError(f"bad PKCS#7 padding: pad={pad}")
             return out[:-pad].decode("utf-8")
