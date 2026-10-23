@@ -7,9 +7,7 @@
         "data": {
           "brand": "品牌"
         },
-        "data_description": {
-          "brand": "选择车辆品牌；林肯使用林肯之道登录。"
-        }
+        "data_description": {}
       },
       "phone": {
         "title": "手机号验证码登录",
@@ -17,9 +15,7 @@
         "data": {
           "phone": "手机号"
         },
-        "data_description": {
-          "phone": "福特派 / 林肯之道 App 注册使用的大陆手机号。"
-        }
+        "data_description": {}
       },
       "code": {
         "title": "输入验证码",
@@ -27,9 +23,7 @@
         "data": {
           "passcode": "短信验证码"
         },
-        "data_description": {
-          "passcode": "刚发送到该手机号的短信验证码。"
-        }
+        "data_description": {}
       },
       "password": {
         "title": "用户名密码登录",
@@ -38,10 +32,7 @@
           "username": "用户名（手机号）",
           "password": "密码"
         },
-        "data_description": {
-          "username": "B2C 账号用户名（邮箱或手机号）。",
-          "password": "B2C 账号密码。"
-        }
+        "data_description": {}
       },
       "b2c": {
         "title": "粘贴授权码",
@@ -49,9 +40,7 @@
         "data": {
           "code": "授权码"
         },
-        "data_description": {
-          "code": "浏览器登录页返回的授权码（登录成功后自动带回到本页）。"
-        }
+        "data_description": {}
       },
       "reauth_confirm": {
         "title": "重新认证",
@@ -59,13 +48,11 @@
       },
       "login_mode": {
         "title": "选择登录方式",
-        "description": "选择登录方式：{login_modes}。失败时查看 Home Assistant 日志中 fordpass_cn 记录。",
+        "description": "选择登录方式：{login_modes}。",
         "data": {
           "login_mode": "登录方式"
         },
-        "data_description": {
-          "login_mode": "选择登录福特云端的方式。"
-        }
+        "data_description": {}
       },
       "lincoln_pending": {
         "title": "林肯之道登录链路待支持",

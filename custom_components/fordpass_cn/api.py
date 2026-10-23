@@ -758,7 +758,14 @@ class FordPassApi:
         field per request, as the official app does); otherwise the server
         fails with ``whitebox decrypt error``.
         """
-        iv = bytes.fromhex(iv_hex) if iv_hex else None
+        if iv_hex:
+            iv = bytes.fromhex(iv_hex)
+        else:
+            # v5.5.6: iv=None（林肯分支）——自生成一次会话 IV 并复用。
+            # 若两次 encrypt_field 各传 None 会生成两个不同随机 IV，请求只
+            # 携带 phone 的 xjw，服务端解 encryptedPasscode 报 whitebox
+            # decrypt error（errorCode 100500）。
+            iv = FordPassCrypto._new_iv()
         enc_phone, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(phone, iv))
         enc_code, _ = await asyncio.to_thread(lambda: self.crypto.encrypt_field(passcode, iv))
         data = await self._request(
