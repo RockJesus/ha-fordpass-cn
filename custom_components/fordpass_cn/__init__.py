@@ -50,10 +50,21 @@ _IDENTITY_KEYS = ("userid", "user_id", "uid", "account", "accountid",
 
 
 def _safe_vehicle_dump(vehicle: dict, limit: int = 500) -> str:
-    """车辆对象日志安全转储：剔除/掩码手机号与身份标识键后截断。"""
+    """车辆对象日志安全转储：剔除/掩码手机号与身份标识键后截断。
+
+    v5.5.2: 解密后字段仍沿用加密键名（encryptedVin/encryptedLicenseplate），
+    不会被 _PHONE_KEYS/_IDENTITY_KEYS 命中——车牌直接剔除（本地诊断用不到）、
+    VIN 仅保留后 6 位（车架号全文不必入日志）。
+    """
     out: dict[str, object] = {}
     for k, v in vehicle.items():
         kl = str(k).lower()
+        if kl in ("encryptedlicenseplate", "licenseplate", "plate"):
+            continue  # 车牌本地诊断不需要
+        if kl == "encryptedvin" or kl == "vin":
+            s = str(v)
+            out[str(k)] = f"****{s[-6:]}" if len(s) > 6 else "****"
+            continue
         if kl in _PHONE_KEYS or kl in _IDENTITY_KEYS:
             continue
         if any(ident in kl for ident in ("userid", "user_id", "phonenumber",
