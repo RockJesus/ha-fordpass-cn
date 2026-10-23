@@ -8,7 +8,6 @@
 [![最新版本](https://img.shields.io/github/v/release/RockJesus/ha-fordpass-cn?style=flat-square)](https://github.com/RockJesus/ha-fordpass-cn/releases/latest)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue?style=flat-square)](https://www.home-assistant.io/)
 [![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn?style=flat-square)](LICENSE)
-[![Blog](https://img.shields.io/badge/Blog-RockJesus-purple?style=flat-square)](https://rockjesus.cn)
 
 </div>
 
