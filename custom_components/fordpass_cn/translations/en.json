@@ -7,9 +7,7 @@
         "data": {
           "brand": "Brand"
         },
-        "data_description": {
-          "brand": "Choose the brand of your vehicle. Lincoln uses Lincoln Way."
-        }
+        "data_description": {}
       },
       "phone": {
         "title": "Phone Number Login",
@@ -17,9 +15,7 @@
         "data": {
           "phone": "Phone number"
         },
-        "data_description": {
-          "phone": "Mainland China mobile number used by the FordPass / Lincoln Way app."
-        }
+        "data_description": {}
       },
       "code": {
         "title": "Enter Verification Code",
@@ -27,9 +23,7 @@
         "data": {
           "passcode": "SMS verification code"
         },
-        "data_description": {
-          "passcode": "SMS verification code just sent to this phone number."
-        }
+        "data_description": {}
       },
       "password": {
         "title": "Username & Password Login",
@@ -38,10 +32,7 @@
           "username": "Username (phone number)",
           "password": "Password"
         },
-        "data_description": {
-          "username": "B2C account username (email or mobile number).",
-          "password": "B2C account password."
-        }
+        "data_description": {}
       },
       "b2c": {
         "title": "Paste Authorization Code",
@@ -49,9 +40,7 @@
         "data": {
           "code": "Authorization code"
         },
-        "data_description": {
-          "code": "Authorization code copied from the browser login page."
-        }
+        "data_description": {}
       },
       "reauth_confirm": {
         "title": "Re-authenticate",
@@ -59,13 +48,11 @@
       },
       "login_mode": {
         "title": "Choose Login Method",
-        "description": "Choose a login method: {login_modes}. On failure, check the fordpass_cn entries in the Home Assistant log.",
+        "description": "Choose a login method: {login_modes}.",
         "data": {
           "login_mode": "Login method"
         },
-        "data_description": {
-          "login_mode": "Choose how to sign in to the Ford cloud."
-        }
+        "data_description": {}
       },
       "lincoln_pending": {
         "title": "Lincoln Way Login Pending",
