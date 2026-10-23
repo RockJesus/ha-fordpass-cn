@@ -363,6 +363,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.5.4**（2026-10-23）：**CI 修复（林肯登录 NameError + 测试对齐）**——① 修复 config_flow 漏导入 BRAND_LINCOLN 导致林肯验证码登录直接崩溃（提交验证码即 NameError，福特登录不受影响）；② 清理 api.py 未使用导入 TOUCH_POINT（Ruff F401）；③ 双品牌参数化测试改按 test_api_core 同构方式 mock 加密（crypto 为只读属性，赋值写法会 AttributeError），补齐有效密钥样例；④ 品牌链路测试对齐新行为：林肯 profile 就绪后选中直接进入登录方式选择（原断言停留在未就绪时代的 lincoln_pending 提示页），v5 直控 401 测试改引用 const.TOUCH_POINT。修复后本地 pytest 409 全绿 + Ruff 零告警
 - **v5.5.3**（2026-10-23）：**林肯之道登录修复（品牌参数化）**——林肯登录全链路参数按模拟器抓包对齐：验证码登录触达点用 LINCOLN_APP_LOGIN、请求体品牌 LINCOLN、公共请求头 appversion/clienttype 用 6.7.0/LW、车辆列表查询参数 appKey=lincoln；登录请求不再沿用验证码阶段的会话密钥（林肯 App 每次请求独立生成，抓包实证 generate/login 密钥不同仍成功），福特派验证码登录行为不变；新增双品牌参数化测试 7 例
 - **v5.5.2**（2026-10-23）：**隐私加固 + 文档增强**——① 日志隐私：`vehicles` 调试日志剔除解密后车牌、VIN 掩码只留后 6 位（解密字段沿用加密键名会绕过旧掩码逻辑，现已显式处理）；② 文档新增：云端同步异常监控、胎压告警、保养到期提醒三个现成自动化模板，Vehicle Status Card 车况面板配置示例（门锁/油量/续航/里程/胎压/车控按钮/定位映射）
 - **v5.5.1**（2026-10-23）：**日志修复**——首轮补写日志去掉硬编码版本号（v5.1.6 起多轮未更新，日志显示失真版本误导排查）

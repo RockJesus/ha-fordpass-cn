@@ -169,7 +169,6 @@ from .const import (
     PREF_SOUND_TYPE,
     PREF_TARGET_TEMP,
     SECRET_KEY,
-    TOUCH_POINT,
     V5_BASE_URL,
 )
 from .wbsk import FordPassCrypto
