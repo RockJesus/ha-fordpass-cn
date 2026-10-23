@@ -159,6 +159,44 @@ action:
 
 > 实体 id 中的 `<vin>` 需替换为实际车辆识别码；全部实体名与服务名可在 HA 开发者工具中查询确认。
 
+## 🔌 与 EVCC 联动（v5.4.6）
+
+纯电 / 插混车型的充电相关实体已按 EVCC（开源充电调度器）可直接消费的格式标准化，配合 EVCC 的 Home Assistant 数据源即可实现自动充电调度。可直接读取的实体：
+
+| 实体 | 类型 | 说明 |
+|---|---|---|
+| `sensor.<vin>_battery_fill_level` | 数值 % | 动力电池电量（SOC），device_class=battery，自动进长期统计 |
+| `sensor.<vin>_prognostic_range` | 数值 km | 剩余可行驶里程，device_class=distance、state_class=measurement（v5.4.6 起数值化，此前为「123 km」文本） |
+| `sensor.<vin>_ev_dte` | 数值 km | 纯电续航 |
+| `sensor.<vin>_distance_to_empty` | 数值 km | 续航里程 |
+| `sensor.<vin>_odometer` | 数值 km | 总里程，device_class=distance |
+| `sensor.<vin>_charging_status` | 文本 + 数值属性 | 充电状态（充电中/未充电/已充满），属性 `evcc_charge_state` 为数值（0 未知 / 1 未充电 / 2 充电中 / 3 已充满） |
+| `switch.<vin>_wallbox_charge` | 开关 | 家充桩充电控制（smartwallbox 绑定桩车型） |
+
+EVCC 侧示例配置（`evcc.yaml`，按你的 EVCC 版本模板字段微调）：
+
+```yaml
+vehicles:
+  - name: mach_e
+    type: template
+    template: mach-e
+    source: homeassistant
+    title: 电马
+    soc:
+      source: homeassistant
+      entity: sensor.<vin>_battery_fill_level
+    range:
+      source: homeassistant
+      entity: sensor.<vin>_prognostic_range
+    chargeState:
+      source: homeassistant
+      entity: sensor.<vin>_charging_status
+      attribute: evcc_charge_state
+    enable: switch.<vin>_wallbox_charge
+```
+
+> `evcc_charge_state` 数值语义与 EVCC 一致：0=未知、1=未充电、2=充电中、3=已充满。家充桩充电开关仅在 smartwallbox 探测到绑定桩的车型出现（纯电/插混家充桩车型）。
+
 ## 🗑 移除集成
 
 1. 设置 → 设备与服务 → 找到「福特派互联」条目 → 删除该配置（其下设备/实体一并移除）
@@ -235,6 +273,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.4.6**（2026-10-23）：**EVCC 对接 + 长期统计**——① 剩余可行驶里程数值化（此前状态为「123 km」文本，无法进趋势图也不能被 EVCC 读取，现改为纯数值 + km 单位 + 距离分类 + 测量级统计）；② 总里程 / 续航里程 / 纯电续航补距离分类，机油寿命补测量级统计——里程、油量、机油、电量全部可看 30 天趋势图；③ 充电状态实体新增 `evcc_charge_state` 数值属性（0 未知 / 1 未充电 / 2 充电中 / 3 已充满，语义与 EVCC 一致），配合动力电池电量、剩余里程、家充桩充电开关可直接被 EVCC 消费，实现自动充电调度；④ README 新增「与 EVCC 联动」章节（实体清单 + 配置示例）
 - **v5.4.5**（2026-10-23）：**补测收尾 + CI 全绿 + 两处修复**——① 鸣笛寻车开关修复：后台任务跟踪此前只接在声光寻车开关上，鸣笛开关触发后的状态轮询与自动复位会直接报错（找不到方法），现已提取为两个开关共用的实现，鸣笛触发后能正常复位、命令状态传感器正常更新；② 重新认证流程修复：确认页空表单提交不再报错（此前会因缺少登录方式键值直接 500）；③ 测试补强：全量 396 例测试通过、整体行覆盖 65%（API 层 89%、能力判定 99%、配置流程 92%、数据协调 84%），质量评分 silver 档测试覆盖项标记完成；④ CI 统一到 Python 3.12 并固化测试依赖（此前 3.14 环境与本地不一致），pytest / Hassfest / HACS 校验 / ruff 四条流水线全部通过
 - **v5.4.4**（2026-10-23）：**CI 修复 + README 清理**——pytest 流水线适配 Home Assistant 2026.10（Python 3.14、官方测试框架 pytest-homeassistant-custom-component、asyncio 运行模式配置），36 例测试全绿；测试用例对齐 HA 2026.10 新 API（MockConfigEntry 来源、配置流上下文可写化、选项流属性注入、登录返回结构）；README 徽标区去掉重复的 Blog 徽标（保留欢迎语里的链接）；移除仓库根空的 tests/__init__.py（避免遮蔽测试工具包）
 - **v5.4.3**（2026-10-22）：**测试覆盖补强 + 状态声明修正**——新增 api 纯函数测试（请求签名、坐标转换、业务错误判断、远程影像提取、日志摘要）与常量/能力映射完整性测试，本地 32 例测试全绿；CI 新增 pytest 流水线（完整 Home Assistant 环境，覆盖配置流程用例）；修正 quality_scale.yaml 中 has-entity-name 状态与 v5.4.2 实际迁移一致（已 done）；顺带修复 capability.leaf 末端键缺失时不返回默认值的问题
