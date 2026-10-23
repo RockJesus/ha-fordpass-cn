@@ -53,11 +53,6 @@
           "login_mode": "Login method"
         },
         "data_description": {}
-      },
-      "lincoln_pending": {
-        "title": "Lincoln Way Login Pending",
-        "description": "Selected: {brand}. Lincoln Way shares the same cloud crypto stack as FordPass (reverse-verified libwbsk_crypto_tool.so binds Lincoln package names), but its B2C login page, SMS endpoint and app fingerprint are not yet captured — login is not available yet.\n\nTo enable: capture the Lincoln Way app login flow (HAR) in an emulator, then the B2C tenant / SMS endpoint / application-id can be added in a future release. Click submit to re-choose a brand.",
-        "data": {}
       }
     },
     "error": {

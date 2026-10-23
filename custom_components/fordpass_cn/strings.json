@@ -47,11 +47,6 @@
         "data": {
           "login_mode": "登录方式"
         }
-      },
-      "lincoln_pending": {
-        "title": "林肯之道登录链路待支持",
-        "description": "已选择「{brand}」。林肯之道 5.8.0 已逆向（2026-10-15）：与福特派同厂同架构、共用 CNESL/CNXAPI 网关与白盒加密库，121 个业务端点已 100% 静态提取（含林肯专属的 cnesl-lincoln-club 会员与 cnxapi-lwosb 取送车服务），会员/预约只读数据已随本版接入（登录后自动创建实体）。\n\n剩余阻塞：登录链路（B2C tenant/client_id、短信验证码端点 body）动态配对为 0%——逆向未提供，无法编造。用模拟器安装林肯之道 App 抓包登录流程（HAR）后即可开放登录。点击提交返回重选品牌。",
-        "data": {}
       }
     },
     "error": {

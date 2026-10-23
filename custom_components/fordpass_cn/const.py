@@ -510,6 +510,13 @@ BRAND_PROFILE = {
         # v5.5.3: 林肯登录链路参数（2026-10-23 林肯 App v6.7.0 HAR 实证）——
         # touchPoint=LINCOLN_APP_LOGIN / brand=LINCOLN / vehicles/list
         # appKey=lincoln&clientType=LW；网关与验证码/换 token 路径与福特共用
+        # v5.5.8: 林肯 App 5.8.0 逆向实证——cnxapi-vds/cvinfo/cds/token-exchange、
+        # v5 控制、cevs/smartwallbox/evss/vpoi/lwosb v2/message/OTA 全系列与福特
+        # 共用同一网关与命令集（FORD_ENGINE_START/LOCK/HONK/TRAILERLIGHT 等）；
+        # 车型字段（fuelType/modelName/ccfeatures/cvfeatures/vehicleStatus）与
+        # 状态字段（gpsState/fuelLevel/odometer/tirePressure/oilLife）一致，
+        # 实体创建与解析逻辑直接复用；白盒加密 libwbsk_crypto_tool.so 与福特
+        # 共用。林肯专属 cnesl-user 车辆共享/俱乐部、sensor-shadow 为附加功能
         "base_url": BASE_URL,
         "touch_point": "LINCOLN_APP_LOGIN",
         "brand_code": "LINCOLN",
