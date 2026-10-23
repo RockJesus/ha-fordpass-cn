@@ -782,8 +782,21 @@ class FordPassApi:
                 "xjw": xjw,
             },
         )
-        inner = data.get("data", {})
+        inner = data.get("data", {}) if isinstance(data, dict) else {}
         xjw2 = inner.get("xjw", xjw)
+        if not isinstance(inner, dict) or "encryptedAccessToken" not in inner:
+            # v5.5.7: HTTP 200 但无 token 字段——业务层失败（验证码错误/过期、
+            # 风控拒绝）或响应结构变更。此前直接 KeyError 被 config flow 当
+            # "unexpected error"，用户看不到真实原因。带服务端 status/error/
+            # errorCode 抛 FordPassApiError，config flow 显示 login_failed。
+            status = data.get("status") if isinstance(data, dict) else None
+            err_text = (
+                "passcode login returned no token fields"
+                f"(status={status}, error={data.get('error') if isinstance(data, dict) else '?'}, "
+                f"errorCode={data.get('errorCode') if isinstance(data, dict) else '?'})"
+            )
+            self._log.warning("FordPass %s -> %s", PATH_PASSCODE_LOGIN, err_text)
+            raise FordPassApiError(status if isinstance(status, int) else 200, err_text)
         return {
             "access_token": await asyncio.to_thread(lambda: self.crypto.decrypt_field(
                 inner["encryptedAccessToken"], xjw2
