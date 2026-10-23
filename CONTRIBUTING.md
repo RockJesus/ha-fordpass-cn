@@ -18,7 +18,7 @@
 - 代码基线：`custom_components/fordpass_cn/`（多平台 + 加密库）
 - 依赖：`requests` / `aiohttp`（运行时依赖为空——**集成零依赖**，白盒 AES 为纯 Python 实现）
 - 编译校验：`python3 -X utf8 -m py_compile custom_components/fordpass_cn/*.py`
-- 测试：`pytest`（见 `tests/`）
+- 质量：`python3 -X utf8 -m py_compile` 全量通过（项目不含测试套件，隐私最小化）
 
 ## 提交 PR 流程
 
@@ -30,7 +30,7 @@
    - 所有网络请求走 `await`（aiohttp），阻塞 IO 用 `asyncio.to_thread`，禁 `requests.get` 裸调
    - 云端端点按「分层 TTL 缓存 + 失败退避 + 保留最后已知状态」处理（防风控限流）
 4. 更新 `README.md` 版本日志（新条目置顶、折叠旧日志）与 `manifest.json` 版本号（十进制逐位 +1）
-5. `py_compile` + `pytest` 通过后提交 PR，描述里附实测结果（HA 版本 / 车型 / 功能验证）
+5. `py_compile` 通过后提交 PR，描述里附实测结果（HA 版本 / 车型 / 功能验证）
 
 ## 版本规则
 
