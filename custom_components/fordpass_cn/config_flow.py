@@ -321,7 +321,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             return self.async_abort(reason="reauth_successful")
         return self.async_create_entry(
-            title=(self._phone or self._username) or DOMAIN,
+            title=f"{self._phone or self._username or DOMAIN}（{BRAND_LABELS.get(self._brand, self._brand)}）",
             data={
                 **(extra_data or {}),
                 CONF_LOGIN_MODE: mode,
@@ -336,6 +336,27 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
             },
         )
+
+    def _check_duplicate_entry(self) -> FlowResult | None:
+        """v5.5.5: 同手机号**同品牌**才视为已配置。
+
+        同一手机号可同时拥有福特派与林肯之道两品牌车辆（两个 config entry
+        并存，集成按 entry 各自建 coordinator）。旧逻辑用 unique_id=手机号
+        查重，同手机号第二品牌会被 abort "already_configured"。改为手动
+        遍历：品牌 + 手机号均相同才拦截；不同品牌放行。
+        """
+        phone = _normalize_phone(self._phone or "")
+        for entry in self._async_current_entries():
+            e_phone = entry.data.get(CONF_PHONE)
+            if not e_phone:
+                continue
+            try:
+                same_phone = _normalize_phone(e_phone) == phone
+            except Exception:  # noqa: BLE001 - 归一化失败保守比较原文
+                same_phone = e_phone == phone
+            if same_phone and entry.data.get(CONF_BRAND, DEFAULT_BRAND) == self._brand:
+                return self.async_abort(reason="already_configured")
+        return None
 
     def _get_reauth_entry(self):
         """v4.0.11: 解析 reauth 对应的原 config entry。
@@ -376,8 +397,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "bad_phone"
             else:
                 if not (self._reauth or self._reconfigure):
-                    await self.async_set_unique_id(self._phone)
-                    self._abort_if_unique_id_configured()
+                    dup = self._check_duplicate_entry()
+                    if dup is not None:
+                        return dup
                 session = async_get_clientsession(self.hass)
                 api = FordPassApi(session, _LOGGER, brand=self._brand)
                 try:
@@ -453,8 +475,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "bad_username"
             else:
                 if not (self._reauth or self._reconfigure):
-                    await self.async_set_unique_id(self._username)
-                    self._abort_if_unique_id_configured()
+                    dup = self._check_duplicate_entry()
+                    if dup is not None:
+                        return dup
                 self._password = user_input[CONF_PASSWORD]
                 return await self.async_step_b2c()
         return self.async_show_form(

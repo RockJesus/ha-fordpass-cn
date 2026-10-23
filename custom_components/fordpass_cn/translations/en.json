@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Choose Brand",
-        "description": "Choose the brand to connect: {brands}.\n\n- FordPass China: fully supported (SMS/password login, all features)\n- Lincoln Way China: shares the same cloud crypto stack with FordPass (reverse-verified libwbsk_crypto_tool.so binds Lincoln package names), but its B2C login page / SMS endpoint / app fingerprint are not yet captured — login pending",
+        "description": "Choose the brand to connect: {brands}.",
         "data": {
           "brand": "Brand"
         },
@@ -13,7 +13,7 @@
       },
       "phone": {
         "title": "Phone Number Login",
-        "description": "Enter the phone number registered with FordPass China and we will send a SMS verification code.",
+        "description": "Enter the registered phone number to receive an SMS code.",
         "data": {
           "phone": "Phone number"
         },
@@ -23,7 +23,7 @@
       },
       "code": {
         "title": "Enter Verification Code",
-        "description": "The verification code has been sent to {phone}. Enter the 6-digit code.",
+        "description": "The code has been sent to {phone}. Enter the 6-digit code.",
         "data": {
           "passcode": "SMS verification code"
         },
@@ -33,7 +33,7 @@
       },
       "password": {
         "title": "Username & Password Login",
-        "description": "Enter your FordPass China account (phone) and password. Then open the login link in a real browser, sign in, and paste the authorization code from the address bar into the next step. (Since 2026-10 the Ford login page WAF blocks plain HTTP clients.)",
+        "description": "Enter the account and password. Next, open the login link in a browser and paste the authorization code.",
         "data": {
           "username": "Username (phone number)",
           "password": "Password"
@@ -55,11 +55,11 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate",
-        "description": "Your FordPass China credentials have expired. Re-authenticate to continue. You will be asked to choose a login method and obtain fresh tokens (the integration and entities are kept)."
+        "description": "Your credentials have expired. Re-authenticate to continue (the integration and entities will not be removed)."
       },
       "login_mode": {
         "title": "Choose Login Method",
-        "description": "Choose a login method: {login_modes}. If login fails, check the fordpass_cn entries in the Home Assistant log (Settings → System → Logs).",
+        "description": "Choose a login method: {login_modes}. On failure, check the fordpass_cn entries in the Home Assistant log.",
         "data": {
           "login_mode": "Login method"
         },
@@ -84,7 +84,7 @@
       "bad_code": "Invalid or expired authorization code. Please log in again in the browser and copy a fresh code."
     },
     "abort": {
-      "already_configured": "This phone number is already configured",
+      "already_configured": "This phone number is already configured for this brand",
       "reauth_phone_mismatch": "The logged-in account differs from the original phone number. Please remove and reconfigure the integration.",
       "reauth_successful": "Account re-authenticated successfully",
       "reconfigure_successful": "Configuration updated"

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "选择品牌",
-        "description": "选择要接入的品牌：{brands}。\n\n- 福特派 FordPass：完整支持（验证码/密码登录、全部功能）\n- 林肯之道 Lincoln Way：与福特派共用同一套云端加密体系，但登录链路（B2C 登录页/验证码端点/App 指纹）待抓包补齐，当前暂不可登录——选中后会提示",
+        "description": "选择要接入的品牌：{brands}。",
         "data": {
           "brand": "品牌"
         },
@@ -13,7 +13,7 @@
       },
       "phone": {
         "title": "手机号验证码登录",
-        "description": "输入注册福特派的手机号，我们会发送短信验证码。",
+        "description": "输入注册手机号，接收短信验证码。",
         "data": {
           "phone": "手机号"
         },
@@ -23,7 +23,7 @@
       },
       "code": {
         "title": "输入验证码",
-        "description": "验证码已发送至 {phone}，请输入 6 位短信验证码。",
+        "description": "验证码已发送至 {phone}，请输入 6 位验证码。",
         "data": {
           "passcode": "短信验证码"
         },
@@ -33,7 +33,7 @@
       },
       "password": {
         "title": "用户名密码登录",
-        "description": "输入福特派账号（手机号）与密码。然后请在真实浏览器中打开登录链接完成登录，把地址栏里的 authorization code 粘贴到下一步（2026-10 起福特登录页 WAF 会拦截纯 HTTP 客户端，浏览器登录可正常通过）。",
+        "description": "输入账号与密码。下一步在浏览器中打开登录链接，粘贴授权码完成登录。",
         "data": {
           "username": "用户名（手机号）",
           "password": "密码"
@@ -55,11 +55,11 @@
       },
       "reauth_confirm": {
         "title": "重新认证",
-        "description": "福特派登录凭据已过期，请重新认证。继续后将选择登录方式并重新获取令牌（不会卸载集成、不会删除实体）。"
+        "description": "登录凭据已过期，请重新认证（不会卸载集成、不会删除实体）。"
       },
       "login_mode": {
         "title": "选择登录方式",
-        "description": "选择登录方式：{login_modes}。如提示失败，请查看 Home Assistant 日志（设置 → 系统 → 日志）中的 fordpass_cn 记录。",
+        "description": "选择登录方式：{login_modes}。失败时查看 Home Assistant 日志中 fordpass_cn 记录。",
         "data": {
           "login_mode": "登录方式"
         },
@@ -84,7 +84,7 @@
       "bad_code": "授权码无效或已过期，请重新在浏览器登录并复制新的授权码。"
     },
     "abort": {
-      "already_configured": "该手机号已配置",
+      "already_configured": "该手机号已配置此品牌",
       "reauth_phone_mismatch": "重新认证账号与原手机号不一致，请删除后重新配置集成",
       "reauth_successful": "账号重新认证成功",
       "reconfigure_successful": "配置已更新"
