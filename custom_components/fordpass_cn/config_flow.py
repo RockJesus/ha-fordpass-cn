@@ -36,7 +36,6 @@ from .const import (
     BRAND_FORD,
     BRAND_LABELS,
     BRAND_LINCOLN,
-    BRAND_PROFILE,
     CONF_BRAND,
     CONF_COORDINATE_SYSTEM,
     CONF_LOGIN_MODE,
@@ -180,15 +179,6 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             self._brand = user_input[CONF_BRAND]
-            profile = BRAND_PROFILE.get(self._brand, {})
-            if not profile.get("ready"):
-                # 林肯之道登录链路待抓包（B2C tenant/验证码端点/App 指纹无
-                # 逆向数据，不编造）——提示页，可返回重选品牌
-                return self.async_show_form(
-                    step_id="lincoln_pending",
-                    data_schema=vol.Schema({}),
-                    description_placeholders={"brand": BRAND_LABELS.get(self._brand, self._brand)},
-                )
             return await self.async_step_login_mode()
         return self.async_show_form(
             step_id="user",
@@ -220,18 +210,6 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_LOGIN_MODE_SCHEMA,
             errors=errors,
             description_placeholders={"login_modes": "、".join(LOGIN_MODE_LABELS.values())},
-        )
-
-    async def async_step_lincoln_pending(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """v4.7.5: 林肯之道登录链路未就绪提示页——提交后返回重选品牌。"""
-        if user_input is not None:
-            return await self.async_step_user()
-        return self.async_show_form(
-            step_id="lincoln_pending",
-            data_schema=vol.Schema({}),
-            description_placeholders={"brand": BRAND_LABELS.get(self._brand, self._brand)},
         )
 
     async def async_step_reauth(

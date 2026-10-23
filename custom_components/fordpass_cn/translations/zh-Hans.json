@@ -53,11 +53,6 @@
           "login_mode": "登录方式"
         },
         "data_description": {}
-      },
-      "lincoln_pending": {
-        "title": "林肯之道登录链路待支持",
-        "description": "已选择「{brand}」。林肯之道与福特派共用同一套云端加密库（逆向确认 libwbsk_crypto_tool.so 包名绑定含林肯），但林肯的 B2C 登录页、短信验证码登录端点与 App 指纹头尚无逆向数据，无法编造——当前暂不可登录。\n\n支持方式：用模拟器安装林肯之道 App 抓包登录流程（HAR），拿到 B2C tenant / 验证码端点 / application-id 后，下一版本即可完整接入。点击提交返回重选品牌。",
-        "data": {}
       }
     },
     "error": {
