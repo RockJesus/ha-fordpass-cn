@@ -166,7 +166,88 @@ action:
       message: 车门未锁，请确认
 ```
 
+**云端同步异常监控**（后端接口变更/风控拦截第一时间发现，v5.5.2 模板——利用集成自带「云端同步状态」诊断传感器，零额外请求）：
+```yaml
+alias: 福特云端同步异常提醒
+trigger:
+  - platform: state
+    entity_id: sensor.<vin>_sync_health   # 「云端同步状态」实体
+    to: "异常"
+action:
+  - service: notify.mobile_app
+    data:
+      title: 福特派同步异常
+      message: >
+        云端同步连续失败，请检查福特服务器/账号状态。
+        失败摘要：{{ state_attr('sensor.<vin>_sync_health', 'last_failure') }}
+```
+> 恢复后该传感器自动回到「正常」，无需人工复位。
+
+**胎压告警通知**（利用胎压系统状态传感器）：
+```yaml
+alias: 胎压告警提醒
+trigger:
+  - platform: state
+    entity_id: sensor.<vin>_tpms_system_status   # 「胎压系统状态」实体
+    to: "Fault"
+action:
+  - service: notify.mobile_app
+    data:
+      message: >
+        胎压系统报警！左前 {{ states('sensor.<vin>_lf_tire') }} kPa，
+        右前 {{ states('sensor.<vin>_rf_tire') }} kPa，
+        左后 {{ states('sensor.<vin>_lr_tire') }} kPa，
+        右后 {{ states('sensor.<vin>_rr_tire') }} kPa
+```
+
+**保养到期提醒**（利用「保养计划」实体，可按需加时间条件避免每日重复提醒）：
+```yaml
+alias: 保养到期提醒
+trigger:
+  - platform: time
+    at: "10:00:00"
+condition:
+  - condition: template
+    value_template: "{{ '保养' in states('sensor.<vin>_maintenance_plan') }}"
+action:
+  - service: notify.mobile_app
+    data:
+      title: 车辆保养提醒
+      message: "{{ states('sensor.<vin>_maintenance_plan') }}"
+```
+
 > 实体 id 中的 `<vin>` 需替换为实际车辆识别码；全部实体名与服务名可在 HA 开发者工具中查询确认。
+
+## 🎛 仪表盘卡片示例（v5.5.2）
+
+推荐配合 **Vehicle Status Card**（HACS → Frontend 搜索安装，通用车辆卡片）把福特派实体拼成车况面板。在仪表盘「原始配置编辑器」中加一张卡（YAML）：
+
+```yaml
+type: custom:vehicle-status-card
+vehicle: 福特锐际
+image: /local/fordpass_cn/vehicle.png   # 可选：集成车辆图片
+entities:
+  - entity: lock.<vin>_door_lock        # 门锁状态
+    label: 门锁
+  - entity: sensor.<vin>_fuel_level     # 燃油量 %
+    unit: "%"
+  - entity: sensor.<vin>_driving_range  # 续航 km
+    unit: km
+  - entity: sensor.<vin>_odometer       # 总里程 km
+    unit: km
+  - entity: sensor.<vin>_lf_tire        # 左前轮胎压 kPa
+    unit: kPa
+  - entity: sensor.<vin>_rr_tire        # 右后轮胎压 kPa
+    unit: kPa
+buttons:
+  - entity: button.<vin>_refresh        # 刷新车辆状态
+  - entity: button.<vin>_horn           # 鸣笛（按车型可用）
+  - entity: button.<vin>_remote_start   # 远程启动（按车型可用）
+map:
+  entity: device_tracker.<vin>_location  # 车辆定位
+```
+
+> 不同车型可用按钮不同（鸣笛/远程启动/尾门/空调/充电开关等），在开发者工具按 `button.` + 车型前缀查询实际实体；定位实体需在集成选项开启「位置跟踪」。卡片配置细节以 Vehicle Status Card 官方文档为准。
 
 ## 🔌 与 EVCC 联动（v5.4.6）
 
@@ -282,6 +363,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.5.2**（2026-10-23）：**隐私加固 + 文档增强**——① 日志隐私：`vehicles` 调试日志剔除解密后车牌、VIN 掩码只留后 6 位（解密字段沿用加密键名会绕过旧掩码逻辑，现已显式处理）；② 文档新增：云端同步异常监控、胎压告警、保养到期提醒三个现成自动化模板，Vehicle Status Card 车况面板配置示例（门锁/油量/续航/里程/胎压/车控按钮/定位映射）
 - **v5.5.1**（2026-10-23）：**日志修复**——首轮补写日志去掉硬编码版本号（v5.1.6 起多轮未更新，日志显示失真版本误导排查）
 - **v5.5.0**（2026-10-23）：**风控与 TTL 专项加固**——手动全量刷新（刷新车辆状态按钮）加 30 秒冷却：force_all 绕过全部 TTL 强制真拉，连点会成倍放大云端请求量触发风控；冷却期内重复点击静默跳过（日志可查），车控命令后的自动刷新不受限制。集成风控体系（TTL 分层缓存/账号级共享/per-key 锁/401 单飞/6 类风控响应分类/探测一次性缓存/失败保留最后已知状态）经专项审计确认达标
 - **v5.4.9**（2026-10-23）：**探测明细补全 + 单位规范化**——① 消息中心/保养历史/车辆共享/充电订单与事件/家充桩记录/充电站 6 类探测数据，属性新增「最近记录」（最近 3 条逐条结构化：标题/时间、项目/日期、对象/状态、订单号/金额、电量/时间、站名/距离，宽松提取 + raw 兜底防丢数据）与「记录条数」，HA 里直接可读不必查 JSON；② 时长类单位「分钟」→ 官方单位码 `min`（HA 长期统计可识别，趋势图正常绘制）——远程启动时长、距离自动熄火时间两处
