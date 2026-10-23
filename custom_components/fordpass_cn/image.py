@@ -41,7 +41,8 @@ def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
     /local/ 无认证对外暴露）；hass.config.path(".storage")
     即 /config/.storage，由 HA 私有管理。
     """
-    safe = vin if re.fullmatch(r"[A-Za-z0-9]{6,20}", vin) else hashlib.sha1(vin.encode("utf-8")).hexdigest()[:16]
+    # v5.6.5: 文件名一律用 sha1 摘要（不再以完整 VIN 命名），杜绝 VIN 落盘
+    safe = hashlib.sha1(vin.encode("utf-8")).hexdigest()[:16]
     return os.path.join(hass.config.path(".storage"), "fordpass_cn", f"{safe}{suffix}.png")
 
 
