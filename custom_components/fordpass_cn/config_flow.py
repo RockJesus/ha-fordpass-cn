@@ -249,9 +249,14 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """v4.4.9: reauth 确认对话框（官方 reauth 指南要求）。"""
+        """v4.4.9: reauth 确认对话框（官方 reauth 指南要求）。
+
+        v5.4.5: 提交（空表单，user_input={}）后无参进入 login_mode——此前
+        传 user_input 给 async_step_login_mode 会因缺 CONF_LOGIN_MODE 键
+        KeyError 500（空表单提交 user_input 恒为 {} 而非 None）。
+        """
         if user_input is not None:
-            return await self.async_step_login_mode(user_input)
+            return await self.async_step_login_mode()
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema({}),
