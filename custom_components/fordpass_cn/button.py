@@ -96,7 +96,7 @@ async def async_setup_entry(
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     buttons: list[ButtonEntity] = []
     for coordinator in coordinators:
-        status = coordinator.data.get("vehiclestatus", {}) or {}
+        status = (coordinator.data or {}).get("vehiclestatus", {}) or {}
         buttons.extend(
             FordPassButton(coordinator, key, label, icon, command, cmd_spec)
             for key, label, icon, command, paths, check, cmd_spec in _BUTTONS
@@ -115,7 +115,7 @@ async def async_setup_entry(
         # 选择后即时上传云端（见 select.py 云端同步），无需手动保存。
         # v3.1.7: 空调滤芯重置（AAR 能力车型——vehicle-status 无关，按
         # coordinator 已拉取的 air_filter 数据创建，无该数据的车型不创建）
-        air_filter = coordinator.data.get("air_filter")
+        air_filter = (coordinator.data or {}).get("air_filter")
         if isinstance(air_filter, dict):
             af_payload = air_filter.get("data") if isinstance(air_filter.get("data"), dict) else None
             if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
@@ -550,39 +550,39 @@ class FordPassManualRefreshButton(_FordPassButtonBase):
             await self.hass.services.async_call("logbook", "log", service_data)
         except Exception as exc:  # noqa: BLE001 - logbook 失败不影响刷新
             _LOGGER.warning("FordPass manual refresh logbook failed: %s", exc)
-        # 1) 请求车机刷新状态（上报云端）
-        try:
-            await self.coordinator.api.send_command(vin, CMD_AUTO_REFRESH)
-        except Exception as exc:
-            _LOGGER.warning("FordPass 请求车机刷新状态失败: %s", exc)
-            raise
-        # 2) 延时 30 秒（v3.3.10：车机上报 + 云端落盘需要时间，实测 3 秒过短
-        # 常拉到旧数据；30 秒与 App 下拉刷新节奏一致）
-        await asyncio.sleep(30)
-        # 3) 手动拉取最新状态（ForceRefresh）+ 全量刷新实体（复刻 App 下拉刷新）
-        try:
-            await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)
-        except Exception as exc:
-            _LOGGER.warning("FordPass 手动拉取最新状态失败: %s", exc)
-            raise
-        try:
-            await self.coordinator.force_refresh(force_all=True)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass 手动刷新后全量数据拉取失败: %s", exc)
-        # v4.6.1: 手动刷新同时强制重探全部探测端点——探测类实体（车型主
-        # 数据/OTA 协议/应用设置/分享能力/用户登录状态/充电域/维保预约/
-        # 告警列表等）数据源在 extra_probes 等探测结果，此前只在 setup
-        # 探测一次、force_refresh 不覆盖，手动刷新后这些实体不刷新。
-        try:
-            await self.coordinator.async_probe_capabilities(force=True)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("FordPass 手动刷新后探测端点重探失败: %s", exc)
-        # v4.7.7: 手动刷新完成后逐实体写刷新后的状态值（用户要求：不要
-        # 笼统的"手动刷新完成"，要显示各实体刷新后的状态）。
-        # v5.1.3: 逐实体状态活动已统一由 coordinator._async_update_data
-        # 成功路径写（自动轮询与手动刷新共用，每轮一次）——button 层不再
-        # 重复调用，避免手动刷新双写同一条状态活动。
-        _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA 全量）")
+        # P2-3（v5.6.0）：30 秒等待 + 全量刷新改受跟踪后台任务——此前
+        # async_press 内 await sleep(30) 使服务调用挂起 30 秒、不可取消、
+        # 集成卸载后任务仍继续执行。点击已即时写「已触发」活动，后台任务
+        # 完成后由 coordinator 写成功摘要（失败走既有失败活动路径）。
+        async def _refresh_flow() -> None:
+            # 1) 请求车机刷新状态（上报云端）
+            try:
+                await self.coordinator.api.send_command(vin, CMD_AUTO_REFRESH)
+            except Exception as exc:
+                _LOGGER.warning("FordPass 请求车机刷新状态失败: %s", exc)
+                return
+            # 2) 延时 30 秒（v3.3.10：车机上报 + 云端落盘需要时间，实测 3 秒
+            # 过短常拉到旧数据；30 秒与 App 下拉刷新节奏一致）
+            await asyncio.sleep(30)
+            # 3) 手动拉取最新状态（ForceRefresh）+ 全量刷新实体
+            try:
+                await self.coordinator.api.send_command(vin, CMD_REFRESH_STATUS)
+            except Exception as exc:
+                _LOGGER.warning("FordPass 手动拉取最新状态失败: %s", exc)
+                return
+            try:
+                await self.coordinator.force_refresh(force_all=True)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("FordPass 手动刷新后全量数据拉取失败: %s", exc)
+            # v4.6.1: 手动刷新同时强制重探全部探测端点（车型主数据/OTA
+            # 协议/应用设置/分享能力/用户登录状态/充电域/维保预约/告警等）。
+            try:
+                await self.coordinator.async_probe_capabilities(force=True)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("FordPass 手动刷新后探测端点重探失败: %s", exc)
+            _LOGGER.info("FordPass 手动刷新车辆状态完成（车机→云端→HA 全量）")
+
+        self.hass.async_create_task(_refresh_flow())
 
 
 class FordPassAirFilterResetButton(_FordPassButtonBase):

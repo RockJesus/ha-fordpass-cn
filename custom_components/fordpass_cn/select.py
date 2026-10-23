@@ -85,7 +85,7 @@ async def async_setup_entry(
     )
     entities: list[SelectEntity] = []
     for coordinator in coordinators:
-        status = coordinator.data.get("vehiclestatus", {}) or {}
+        status = (coordinator.data or {}).get("vehiclestatus", {}) or {}
         # 鸣笛寻车设置与鸣笛开关同为远程控车能力（crccFlag 有效才创建）
         if capability.usable(status, [["crccFlag"]]):
             entities.append(

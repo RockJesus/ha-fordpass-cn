@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import json
 import logging
 import os
@@ -14,6 +13,7 @@ from homeassistant.config_entries import (
     ConfigEntryAuthFailed,
     ConfigEntryError,
     ConfigEntryNotReady,
+    ConfigEntryState,
 )
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -103,8 +103,90 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     async_update_entry 渐进写入，不涉及 minor 迁移），此处返回 True
     即视为迁移完成，并为未来 schema 变更预留分段迁移入口。
     """
+    # P2-11（v5.6.0）：version=0 的历史 entry 迁移完成后回写 version=1——
+    # 此前只返回 True 不回写，每次加载都重跑迁移。
+    if config_entry.version == 0:
+        hass.config_entries.async_update_entry(config_entry, version=1)
     # 未来版本降级到此版时的保护（正常不应发生）
     return config_entry.version <= 1
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """注册集成级服务（v5.6.0，P1-6）。
+
+    此前服务在 async_setup_entry 内按 entry 注册——第二个 entry 会覆盖
+    第一个的 handler（refresh_status 只刷新最后注册的 entry），卸载任一
+    entry 都会 async_remove 掉全局服务。改为 async_setup 注册一次、遍历
+    全部已加载 entry 的 runtime_data；最后一个 entry 卸载时再移除服务
+    （见 async_unload_entry）。
+    """
+
+    def _all_coordinators() -> list[FordPassCoordinator]:
+        out: list[FordPassCoordinator] = []
+        for e in hass.config_entries.async_entries(DOMAIN):
+            if e.state != ConfigEntryState.LOADED:
+                continue
+            payload = getattr(e, "runtime_data", None)
+            if not isinstance(payload, dict):
+                continue
+            coords = payload.get("coordinators") or (
+                [payload["coordinator"]] if payload.get("coordinator") else []
+            )
+            out.extend(coords)
+        return out
+
+    async def _service_refresh_status(call) -> None:
+        vin = call.data.get("vin")
+        targets = [c for c in _all_coordinators() if not vin or c.vin == vin]
+        if not targets:
+            # v5.3.0: action-exceptions（quality_scale Silver）——服务失败抛异常，
+            # 自动化/脚本可感知（HomeAssistantError 在服务调用处显示失败原因）。
+            raise HomeAssistantError(
+                f"fordpass_cn refresh_status: VIN {vin} 不在当前账号车辆中"
+            )
+        for coord in targets:
+            _LOGGER.info(
+                "fordpass_cn service refresh_status vin=%s", coord.vin
+            )
+            await coord.async_request_refresh()
+
+    async def _service_clear_tokens(call) -> None:
+        # P1-6（v5.6.0）：多 entry 时逐一清除各账号令牌（内存 + entry.data
+        # 落盘），最后一个 entry 卸载后服务随 async_setup 卸载流程移除。
+        cleared = 0
+        for e in hass.config_entries.async_entries(DOMAIN):
+            if e.state != ConfigEntryState.LOADED:
+                continue
+            payload = getattr(e, "runtime_data", None)
+            if not isinstance(payload, dict) or "api" not in payload:
+                continue
+            payload["api"].set_token("", "")
+            try:
+                hass.config_entries.async_update_entry(
+                    e,
+                    data={**e.data, CONF_ACCESS_TOKEN: "", CONF_REFRESH_TOKEN: ""},
+                )
+            except Exception as exc:  # noqa: BLE001 - 落盘失败不阻断清令牌
+                _LOGGER.warning("fordpass_cn clear_tokens persist failed: %s", exc)
+            cleared += 1
+        _LOGGER.warning(
+            "fordpass_cn clear_tokens: 已清除 %d 个账号访问令牌，重载集成后需重新认证",
+            cleared,
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REFRESH_STATUS,
+        _service_refresh_status,
+        schema=vol.Schema({vol.Optional("vin"): cv.string}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLEAR_TOKENS,
+        _service_clear_tokens,
+        schema=vol.Schema({}),
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -245,13 +327,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     def _vehicle_label(vehicle: dict) -> str | None:
+        # P2-9（v5.6.0）：nickName 两键已含在首段 key 列表，删除重复循环。
         for key in ("localMarketValue", "displayModelName", "modelName",
                     "vehicleModel", "model", "carModel", "vehicleType",
                     "encryptedNickName", "nickName"):
-            val = vehicle.get(key)
-            if val and not str(val).strip().startswith("SYNC"):
-                return str(val)
-        for key in ("encryptedNickName", "nickName"):
             val = vehicle.get(key)
             if val and not str(val).strip().startswith("SYNC"):
                 return str(val)
@@ -381,67 +460,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "account_cache": account_cache,
     }
 
-    # v5.1.7: 注册服务（services.yaml）——refresh_status（可选 VIN 全车/单车
-    # 刷新）+ clear_tokens（清令牌重置会话）。闭包持有 coordinators/api，
-    # 多 entry 同域注册同名服务由 HA 覆盖，无副作用。
-    async def _service_refresh_status(call) -> None:
-        vin = call.data.get("vin")
-        targets = [c for c in coordinators if not vin or c.vin == vin]
-        if not targets:
-            # v5.3.0: action-exceptions（quality_scale Silver）——服务失败抛异常，
-            # 自动化/脚本可感知（HomeAssistantError 在服务调用处显示失败原因）。
-            raise HomeAssistantError(
-                f"fordpass_cn refresh_status: VIN {vin} 不在当前账号车辆中"
-            )
-        for coord in targets:
-            _LOGGER.info(
-                "fordpass_cn service refresh_status vin=%s", coord.vin
-            )
-            await coord.async_request_refresh()
-
-    async def _service_clear_tokens(call) -> None:
-        _LOGGER.warning(
-            "fordpass_cn clear_tokens: 已清除访问令牌，重载集成后需重新认证"
-        )
-        # v5.3.1: 同时清空 entry.data 中的令牌——只清内存的话重载后旧令牌
-        # 又会被 set_token 装回（旧令牌未过期则白清），必须落盘才算彻底。
-        api.set_token("", "")
-        try:
-            hass.config_entries.async_update_entry(
-                entry,
-                data={
-                    **entry.data,
-                    CONF_ACCESS_TOKEN: "",
-                    CONF_REFRESH_TOKEN: "",
-                },
-            )
-        except Exception as exc:  # noqa: BLE001 - 落盘失败不阻断清令牌
-            _LOGGER.warning("fordpass_cn clear_tokens persist failed: %s", exc)
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_REFRESH_STATUS,
-        _service_refresh_status,
-        schema=vol.Schema({vol.Optional("vin"): cv.string}),
-    )
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_CLEAR_TOKENS,
-        _service_clear_tokens,
-        schema=vol.Schema({}),
-    )
-    # v5.3.5: 服务随 entry 生命周期注销——否则卸载集成后服务仍注册，
-    # 调用时 coordinator 已卸载（报错/无效果），且重载会残留服务。
-    # v5.3.8 修复：必须传回调（functools.partial），此前误写
-    # async_on_unload(async_remove(...)) 把 None 存进卸载栈——setup 后
-    # 服务被立即删除（功能不存在），卸载/重载时 pop 到 None 报
-    # "TypeError: 'NoneType' object is not callable"。
-    entry.async_on_unload(
-        functools.partial(hass.services.async_remove, DOMAIN, SERVICE_REFRESH_STATUS)
-    )
-    entry.async_on_unload(
-        functools.partial(hass.services.async_remove, DOMAIN, SERVICE_CLEAR_TOKENS)
-    )
+    # v5.6.0（P1-6）：服务注册已迁移到 async_setup（集成级，不随 entry
+    # 生命周期），此处不再注册/注销。
 
     # v4.9.6: 移除 cevs 变体手动探测调试服务（probe_cevs_variant）——
     # 合规审查项：逆向调试服务残留，自动化探测（probe_cevs_auto）已覆盖
@@ -536,4 +556,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except Exception as exc:  # noqa: BLE001 - 关闭失败不阻断卸载
                 _LOGGER.warning("fordpass_cn coordinator shutdown failed: %s", exc)
     # v5.3.0: runtime_data 由 HA 生命周期管理，无需手动 pop hass.data
+    # v5.6.0（P1-6）：服务注册在 async_setup（集成级）；最后一个 entry
+    # 卸载后移除服务，避免残留服务调用时遍历不到任何 coordinator。
+    if not any(
+        e.state == ConfigEntryState.LOADED
+        for e in hass.config_entries.async_entries(DOMAIN)
+    ):
+        hass.services.async_remove(DOMAIN, SERVICE_REFRESH_STATUS)
+        hass.services.async_remove(DOMAIN, SERVICE_CLEAR_TOKENS)
     return unload_ok

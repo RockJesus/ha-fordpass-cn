@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "选择品牌",
-        "description": "选择要接入的品牌：{brands}。\n\n- 福特派 FordPass：完整支持（验证码/密码登录、全部功能）\n- 林肯之道 Lincoln Way：与福特派共用同一套云端加密体系，但登录链路（B2C 登录页/验证码端点/App 指纹）待抓包补齐，当前暂不可登录——选中后会提示",
+        "description": "选择要接入的品牌：{brands}。\n\n- 福特派 FordPass：完整支持（验证码/密码登录、全部功能）\n- 林肯之道 Lincoln Way：完整支持（短信验证码登录，与福特派共用同一套云端加密体系）",
         "data": {
           "brand": "品牌"
         }
@@ -53,9 +53,8 @@
       "bad_phone": "请输入 11 位有效手机号",
       "bad_username": "请输入 11 位有效手机号（用户名）",
       "passcode_failed": "验证码发送失败，请检查手机号是否已注册福特派，或稍后重试（详见日志）",
-      "missing_deps": "缺少依赖（unicorn 或 pyelftools），请确认集成安装时已自动安装成功，或在 HA 环境执行 pip install unicorn pyelftools 后重启",
+      "missing_deps": "缺少依赖包，请确认集成安装时已自动安装成功，或稍后重试（详见日志）",
       "login_failed": "登录失败，请检查验证码是否正确（详见日志）",
-      "password_login_failed": "登录失败：福特登录页安全防护（腾讯云 EdgeOne）当前拦截纯 HTTP 客户端，请改用短信验证码登录，或稍后重试（详见日志）",
       "unknown": "发生未知错误，请查看 Home Assistant 日志中的 fordpass_cn 记录",
       "bad_code": "授权码无效或已过期，请重新在浏览器登录并复制新的授权码。"
     },

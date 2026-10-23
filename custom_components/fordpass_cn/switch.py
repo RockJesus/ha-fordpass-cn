@@ -54,7 +54,7 @@ async def async_setup_entry(
     coordinators = payload.get("coordinators") or [payload["coordinator"]]
     switches: list[SwitchEntity] = []
     for coordinator in coordinators:
-        status = coordinator.data.get("vehiclestatus", {}) or {}
+        status = (coordinator.data or {}).get("vehiclestatus", {}) or {}
         # v4.9.3: 远程启动开关按车型能力创建——remoteStartStatus 字段
         # 数据可用或云端命令白名单含 RemoteStart 才创建（纯电/无远程
         # 启动能力车型不创建，全车型正确性）
@@ -279,7 +279,7 @@ class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         value = status.get("remoteStartStatus", {}).get("value")
         return self._restore_bool(bool(value) if value is not None else None)
 
