@@ -16,7 +16,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfLength, UnitOfPressure
+from homeassistant.const import UnitOfLength, UnitOfPressure, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
@@ -286,7 +286,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
 
     # ===== C 组：其他状态 =====
     sensors += [
-        FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", "分钟", None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"]),
+        FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", UnitOfTime.MINUTES, None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"]),
         # v2.8.0: 远程启动时间（unix 秒 → 本地时间字符串）与动态"距离自动熄火时间"倒计时
         # v3.0.2: 未启动（值为 0）时显示「未启动」，不再显示 unknown
         FordPassSensor(coordinator, "remote_start_time", "远程启动时间", None, None, "mdi:clock-start",
@@ -1158,7 +1158,7 @@ class FordPassAutoOffSensor(SensorEntity):
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:timer-sand"
-        self._attr_native_unit_of_measurement = "分钟"
+        self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
         # v5.4.8: 数值传感器补 measurement——可进长期统计趋势图
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -2108,6 +2108,46 @@ def _swb_find(node, key: str):
             if r is not None:
                 return r
     return None
+
+
+def _first_list(node):
+    """递归找第一个「元素全部为 dict 的列表」（v5.4.9，通用业务记录列表
+    提取——消息/保养/订单/共享/充电站等探测响应容器形态多样，深度优先
+    取第一个业务记录列表；纯数值/字符串数组跳过）。"""
+    if isinstance(node, dict):
+        for v in node.values():
+            r = _first_list(v)
+            if r is not None:
+                return r
+    elif isinstance(node, list):
+        if node and all(isinstance(x, dict) for x in node):
+            return node
+        for item in node:
+            r = _first_list(item)
+            if r is not None:
+                return r
+    return None
+
+
+def _detail_entries(records: list, fields: dict, n: int = 3) -> list:
+    """v5.4.9: 最近 n 条记录逐条结构化——fields: {标签: [候选key...]}，
+    宽松匹配（_swb_find）；提取不到关键字段保留 raw 兜底防丢数据。"""
+    out: list = []
+    for rec in reversed(records[-n:]):
+        if not isinstance(rec, dict):
+            out.append({"raw": rec})
+            continue
+        entry: dict = {}
+        for label, keys in fields.items():
+            for k in keys:
+                v = _swb_find(rec, k)
+                if v is not None:
+                    entry[label] = v
+                    break
+        if not entry:
+            entry = {"raw": json.dumps(rec, ensure_ascii=False)}
+        out.append(entry)
+    return out
 
 
 def _swb_list(node):
@@ -3160,6 +3200,68 @@ class FordPassProbeSensor(SensorEntity):
                     "保修起始": str(vi.get("warrantyStartDate") or "")[:10] or None,
                 }
                 attrs.update({k: v for k, v in extra.items() if v is not None and v != ""})
+        # v5.4.9: 明细补全——消息/保养/共享/充电订单/家充桩记录/充电站
+        # 探测到的列表数据逐条结构化（最近 3 条），HA 里直接可读不必查 JSON
+        _detail_fields = {
+            "messages": ("标题", ("subject", "title", "content", "messageTitle",
+                                  "readMessageSubject")),
+            "messages_v2": ("标题", ("subject", "title", "content", "messageTitle",
+                                    "readMessageSubject")),
+            "mcm_messages": ("标题", ("subject", "title", "content", "messageTitle",
+                                      "readMessageSubject")),
+            "maintenance": ("项目", ("description", "item", "taskName", "content",
+                                     "workItem")),
+            "share_list": ("对象", ("shareUserName", "nickName", "userName", "name")),
+            "share_history": ("对象", ("shareUserName", "nickName", "userName", "name")),
+            "evss_orders": ("订单号", ("orderId", "orderNo", "id", "eventId")),
+            "evss_events_v3": ("事件", ("eventId", "id", "eventName", "title", "content")),
+            "evss_invoiceables": ("订单号", ("orderId", "orderNo", "id", "invoiceId")),
+            "evss_payment_summary": ("订单号", ("orderId", "orderNo", "id", "payId")),
+            "wallbox_records_v2": ("电量", ("batteryLevel", "soc", "chargePercent", "power")),
+            "evss_stations": ("站名", ("stationName", "name", "title", "poiName", "address")),
+            "vpoi_chargestations": ("站名", ("stationName", "name", "title", "poiName", "address")),
+        }
+        _second_fields = {
+            "messages": ("时间", ("sendTime", "publishTime", "createTime", "date", "time")),
+            "messages_v2": ("时间", ("sendTime", "publishTime", "createTime", "date", "time")),
+            "mcm_messages": ("时间", ("sendTime", "publishTime", "createTime", "date", "time")),
+            "maintenance": ("日期", ("maintenanceDate", "date", "serviceDate", "time")),
+            "share_list": ("状态", ("shareStatus", "status", "authorizationStatus", "state")),
+            "share_history": ("时间", ("shareTime", "createTime", "date", "time")),
+            "evss_orders": ("金额", ("amount", "price", "totalAmount", "payAmount")),
+            "evss_events_v3": ("时间", ("eventTime", "createTime", "date", "time", "startTime")),
+            "evss_invoiceables": ("金额", ("amount", "price", "totalAmount", "payAmount")),
+            "evss_payment_summary": ("金额", ("amount", "price", "totalAmount", "payAmount")),
+            "wallbox_records_v2": ("时间", ("startTime", "endTime", "date", "time", "chargingTime")),
+            "evss_stations": ("距离", ("distance", "dist", "distanceMeter")),
+            "vpoi_chargestations": ("距离", ("distance", "dist", "distanceMeter")),
+        }
+        if self._kind in _detail_fields:
+            lst = _first_list(data)
+            if lst:
+                label1, keys1 = _detail_fields[self._kind]
+                label2, keys2 = _second_fields[self._kind]
+                entries = []
+                for rec in reversed(lst[-3:]):
+                    if not isinstance(rec, dict):
+                        entries.append({"raw": rec})
+                        continue
+                    e: dict = {}
+                    for k in keys1:
+                        v = _swb_find(rec, k)
+                        if v is not None:
+                            e[label1] = v
+                            break
+                    for k in keys2:
+                        v = _swb_find(rec, k)
+                        if v is not None:
+                            e[label2] = v
+                            break
+                    if not e:
+                        e = {"raw": json.dumps(rec, ensure_ascii=False)}
+                    entries.append(e)
+                attrs["最近记录"] = entries
+                attrs["记录条数"] = len(lst)
         attrs["last_poll"] = (
             f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
             if self.coordinator.last_poll
