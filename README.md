@@ -368,6 +368,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.6.9**（2026-10-24）：**彻底修复 token 刷新失败**（HAR 6.16.0 完整 body/headers 取证）：① token-exchange 家族端点（刷新/撤销/验证码登录/B2C 换 token）App 实拍**均不带 auth-token**——集成此前给刷新请求带上已失效的旧 access token，网关校验失败返回 `401/600`（这是 v5.6.6 刷新失败真根因）；② refresh/revoke 请求体恢复 `brand` 字段（该字段必填，缺失返回 400 `errorCode 100502 brand can not be empty`）。修复后刷新/撤销请求与 App 完全一致（encryptedRefreshToken+brand+xjw+timestamp+sign，无 auth-token）。
 - **v5.6.8**（2026-10-24）：**修复 Ruff CI 红叉**——image.py 未使用的 `import re` 触发 F401（`re imported but unused`），删除该导入，Ruff Lint 恢复全绿。
 - **v5.6.7**（2026-10-24）：**修复 token 刷新被网关拒绝（refresh-dlt-token 401/600）**——登录成功但刷新令牌时报 `token refresh failed (401/600 after retry)`：集成刷新请求体此前多带 `brand` 字段，与 App 6.16.0 实测不符（HAR 实拍刷新请求仅 `encryptedRefreshToken`+`xjw` 两个字段），网关 DTO 严格校验拒绝额外字段；同步对齐登出撤销请求（App 实测仅 `encryptedRefreshToken` 一个字段）。修复后刷新链路与 App 完全一致。
 - **v5.6.6**（2026-10-24）：**修复登录白盒加密 IV 回归（generate-passcode 500）**——v5.6.0 起 `_new_iv()` 误改为 `os.urandom(16)`，任意字节 IV 被网关拒绝（`whitebox decrypt error / 100500`，福特/林肯双品牌登录发码均失败）；恢复与 App 6.16.0 一致的 16 位小写字母 IV（实机抓包逐字符核对），修复后集成加密实测发码接口 **200 成功**。

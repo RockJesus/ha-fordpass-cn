@@ -539,7 +539,17 @@ class FordPassApi:
             "x-dynatrace": "",
             "x-b3-traceid": _new_traceid(),
         }
-        if self._access_token:
+        # v5.6.9: token-exchange 家族（refresh/revoke/login/sms 等）App 实拍
+        # 均不带 auth-token（HAR 6.16.0 实证 27 个无 auth-token 请求全部属
+        # token-exchange/app-init 域）——refresh/revoke 时 access token 已失效，
+        # 带旧 auth-token 会让网关校验失败返回 401/600。extra 传
+        # {"auth-token": None} 表示该请求必须不带 auth-token。
+        if extra is not None and "auth-token" in extra:
+            if extra["auth-token"] is None:
+                extra = {k: v for k, v in extra.items() if k != "auth-token"}
+            else:
+                headers["auth-token"] = extra["auth-token"]
+        elif self._access_token:
             headers["auth-token"] = self._access_token
         if extra:
             headers.update(extra)
@@ -806,6 +816,9 @@ class FordPassApi:
                 "osType": "ANDROID",
                 "xjw": xjw,
             },
+            # v5.6.9: token-exchange 家族不带 auth-token（App HAR 实证）；
+            # reauth 场景旧 access token 仍在内存，必须显式排除。
+            headers={"auth-token": None},
         )
         inner = data.get("data", {}) if isinstance(data, dict) else {}
         xjw2 = inner.get("xjw", xjw)
@@ -840,16 +853,19 @@ class FordPassApi:
                 if time.monotonic() < self._refresh_cache[1]:
                     return self._refresh_cache[2]
                 self._refresh_cache = None
-            # The server DTO (RefreshDLTTokenRequest) rejects any extra field
-            # (e.g. touchPoint / brand -> 401/600 business reject; verified live
-            # 2026-10-24 v5.6.7: App 6.16.0 HAR refresh-dlt-token body 仅
-            # encryptedRefreshToken + xjw 两个字段，集成此前多带 brand 被网关拒绝
-            # -> "token refresh failed (401/600 after retry)"）。仅这两个字段。
+            # v5.6.9（2026-10-24 HAR 6.16.0 完整 body 取证）：refresh-dlt-token
+            # 与 App 完全一致 = encryptedRefreshToken + brand + xjw + timestamp
+            # + sign 五字段（timestamp/sign 由 _request 通用层补）。brand 必填
+            # （去掉返回 400 errorCode 100502 "brand can not be empty"）。
+            # 关键：本端点**不带 auth-token**（App 无 auth-token，集成 v5.6.6
+            # 带旧 access token 致网关 401/600 业务拒绝——这是 v5.6.6 刷新
+            # 失败的真根因；v5.6.7 误删 brand 反把 401/600 改成 400 必填）。
             enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
             data = await self._request(
                 "POST",
                 PATH_REFRESH_TOKEN,
-                {"encryptedRefreshToken": enc, "xjw": xjw},
+                {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
+                headers={"auth-token": None},
             )
             inner = data.get("data", {})
             xjw2 = inner.get("xjw", xjw)
@@ -882,13 +898,15 @@ class FordPassApi:
             return result
 
     async def revoke_token(self, refresh_token: str) -> None:
-        # v5.6.7: 对齐 App 6.16.0 HAR——revoke-dlt-token body 仅
-        # encryptedRefreshToken 一个字段（无 brand/xjw），DTO 拒绝额外字段。
-        enc, _ = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
+        # v5.6.9（HAR 6.16.0 完整 body 取证）：revoke-dlt-token 与 App 一致 =
+        # encryptedRefreshToken + brand + xjw + timestamp + sign 五字段
+        # （timestamp/sign 由 _request 补）；同样**不带 auth-token**。
+        enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
         await self._request(
             "POST",
             PATH_REVOKE_TOKEN,
-            {"encryptedRefreshToken": enc},
+            {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
+            headers={"auth-token": None},
         )
 
     # -------------------------------------------------------------- vehicles
@@ -3008,6 +3026,8 @@ class FordPassApi:
                 "osType": "ANDROID",
                 "policyType": "SIGNINSIGNUP",
             },
+            # v5.6.9: token-exchange 家族不带 auth-token（App HAR 实证）
+            headers={"auth-token": None},
         )
         inner = data.get("data", {})
         # v4.5.4: code 无效/过期时福特派返回 {"status":600,"error":"Auth code is
