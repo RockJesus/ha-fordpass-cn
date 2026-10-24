@@ -375,6 +375,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.7.7**（2026-10-24）：**token 刷新响应结构保护（修复诊断信息丢失）**——`refresh_token` 对「HTTP 200 但响应无 token 字段」的异常结构（网关异常响应/结构变更/业务拒绝）此前直接 `KeyError: encryptedAccessToken`，被 `_as_refresh_failed` 按 500 处理、仅记录「token refresh failed」，无法区分业务拒绝与结构异常；现与 `passcode_login` 对齐：无 token 字段时携带服务端 status/error/errorCode 抛 `FordPassApiError`，日志可直接定位真实原因（2026-10-24 福特网关 whitebox decrypt 500 熔断期间该缺口导致排障只能靠猜）。
 - **v5.7.6**（2026-10-24）：**活动日志隐私跳过优化 + README 脱敏清单更新**——① `_log_refresh_states` 隐私尾缀常量提升为模块级 `_PRIVACY_UID_SUFFIXES`（VIN/车牌/定位三实体跳过逻辑不变），循环内按 entity_id 的 registry 查询改为预构建映射（一次遍历替代每实体一次查询）；② 注释明确车辆定位 device_tracker（unique_id 尾缀 `-tracker`）**不进跳过名单的原因**：其 state 为 zone 状态（home/not_home）而非坐标/地址，经纬度仅在 attribute 中，保留「车辆离家/回家」活动显示价值——防止后续误加导致活动显示缺失；③ 隐私与安全章节更新为完整脱敏措施清单（历史重写/zip 快照清除/unique_id 哈希/logbook 跳过/日志掩码/发布前强制审计/数据本地）。
 - **v5.7.5**（2026-10-24）：**修复重启后活动补写崩溃（hass.helpers 移除）**——`_log_refresh_states` 用 `self.hass.helpers.entity_registry` 快捷属性获取实体注册表，该属性在 HA 2026.10 已移除（`AttributeError: 'HomeAssistant' object has no attribute 'helpers'`），重启后 45 秒延迟补写活动任务直接崩溃报「Task exception was never retrieved」；改为标准导入 `from homeassistant.helpers import entity_registry as er` + `er.async_get(hass)`（与集成内其他 2 处一致），重启后活动补写恢复正常。
 - **v5.7.4**（2026-10-24）：**TTL 缓存修复（告警/未读消息不再每轮真拉）**——`active_alerts` 与 `messages` 的 TTL 原为 1800s，与 30 分钟刷新间隔**等长**，每次轮询时缓存恰好过期、永不命中（等效每轮真拉，白写缓存）；改为 3600s 后每两轮命中一次缓存，云端请求量下降；告警/消息实时性仍为 30 分钟轮询粒度内（最多延迟 1 个周期），手动刷新按钮 force 绕过缓存照常全量真拉不受影响。
