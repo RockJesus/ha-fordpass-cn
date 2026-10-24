@@ -26,6 +26,11 @@ PATH_V5_DOOR_LOCK_STATUS = "/api/vehicles/v5/{vin}/door/lock/{commandId}"
 # 通道暂不可用，实体点击如实报错，网关恢复后自动可用）
 PATH_V5_STATUS = "/api/vehicles/v5/{vin}/status"
 PATH_V5_STATUSREFRESH = "/api/vehicles/v5/{vin}/statusrefresh/{commandId}"
+# v5.8.2 未接入端点补全（2026-10-24 逆向差集）：整门锁/引擎启停 v5 原生
+# 通道（6.16.0 Dart 确认 PUT=执行/DELETE=取消语义化；载荷未抓包实测，
+# 仅实现 API 方法不建实体——v5.2.4 遥控命令纪律：未验证载荷不下发）
+PATH_V5_DOORS_LOCK = "/api/vehicles/v5/{vin}/doors/lock"
+PATH_V5_ENGINE_START = "/api/vehicles/v5/{vin}/engine/start/"
 
 # 鸣笛寻车设置（v3.1.4）——「保存上传到车机」真云端通道：
 # 账户云端持久化 = UserPreferenceV2（2026-10-02 逆向 libapp.so 还原，实机验证）：
@@ -231,6 +236,15 @@ PATH_SMARTWALLBOX_SHARING_QUERY = "/api/smartwallbox/processor/sharing/query/v3"
 PATH_SMARTWALLBOX_CHG_STATUS_WB = "/api/smartwallbox/processor/charging/status/wallbox"
 PATH_SMARTWALLBOX_CHG_WB = "/api/smartwallbox/processor/charging/wallbox"
 PATH_SMARTWALLBOX_ORDERS = "/api/charging-center/v2/wallbox/orders"
+# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——家充桩分享（6.16.0 逆向
+# 端点：share 分享家人/unshare 取消/sharerInfo 分享人信息/signTnc 签署/
+# tnc content+sign 条款；写入类 body 结构从 sharing/query 探测返回回填）
+PATH_WALLBOX_SHARE = "/api/smartwallbox/processor/sharing/share/v3"
+PATH_WALLBOX_UNSHARE = "/api/smartwallbox/processor/sharing/unshare/v2"
+PATH_WALLBOX_SHARER_INFO = "/api/smartwallbox/processor/sharing/sharerInfo/v2"
+PATH_WALLBOX_TNC_CONTENT = "/api/smartwallbox/processor/tnc/content/v3"
+PATH_WALLBOX_TNC_SIGN = "/api/smartwallbox/processor/tnc/sign/v3"
+PATH_WALLBOX_SHARE_SIGN_TNC = "/api/smartwallbox/processor/sharer/signTnc/v3"
 
 # v3.7.2: 车辆授权管理（vds/v1/vehicles/vehicle-user-auth 查询授权列表）与
 # 公共充电探测（纯电/插混车型专属，数据驱动创建，锐际纯油探测无数据不创建）：
@@ -238,6 +252,8 @@ PATH_SMARTWALLBOX_ORDERS = "/api/charging-center/v2/wallbox/orders"
 #   evss/orders/v2              充电订单
 #   vpoi/chargestations/v3      充电站地图（位置相关）
 PATH_VEHICLE_USER_AUTH = "/api/cnxapi-vds/v1/vehicles/vehicle-user-auth"
+# v5.8.2: 车辆授权审批（写入——同意/拒绝他人申请授权你的车）
+PATH_VEHICLE_USER_AUTH_APPROVAL = "/api/cnxapi-vds/v1/vehicles/vehicle-user-auth-approval"
 PATH_EVSS_STATIONS = "/api/evss/stations/v1"
 PATH_EVSS_ORDERS = "/api/evss/orders/v2"
 PATH_VPOI_CHARGESTATIONS = "/api/vpoi/chargestations/v3"
@@ -260,6 +276,8 @@ PATH_SMARTWALLBOX_PROCESS_LOG = "/api/smartwallbox/processor/charging/records/pr
 # 消息列表/标记已读（cnxapi-message）
 PATH_MESSAGES_PAGE = "/api/cnxapi-message/app/messages/page"
 PATH_MESSAGES_READ = "/api/cnxapi-message/app/messages/read"
+# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——消息单条已读
+PATH_MESSAGES_V2_READBYID = "/api/cnxapi-message/app/message/v2/readbyid"
 # OTA 红点（alert/v1/vehicle-reddot-status——首页 OTA 可用角标）
 PATH_OTA_REDDOT = "/api/alert/v1/vehicle-reddot-status"
 # 车辆在线状态（vds/v1/vehicles/onlinernr）
@@ -278,6 +296,12 @@ PATH_CEVS_COMMAND_STATUS = "/api/cevs/v2/commandstatus/retrieve"
 #   departuretimes/deleteall 清空全部预约出发/充电计划（body: data 包装+白盒
 #   加密；集成侧与 retrieve 同构：vin=cevs 场景密文 + xjw，raw_body 无外层签名）
 PATH_DEPARTURE_DELETE_ALL = "/api/cevs/v2/departuretimes/deleteall"
+# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——cevs 写入补全：
+#   departuretimes/save 保存/新建预约出发充电计划（App 创建计划；写入
+#     body 从 retrieve 探测返回结构回填，字段名全部实测）
+#   chargelogs/delete    删除充电记录（chargeLogId 从 chargelogs 探测回填）
+PATH_DEPARTURE_SAVE = "/api/cevs/v2/departuretimes/save"
+PATH_CHARGELOGS_DELETE = "/api/cevs/v2/chargelogs/delete"
 # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认——CDS 域
 #   GET vehicle/search-cmcc-traffic-h5-url，只读，keys data/status）
 PATH_CMCC_TRAFFIC = "/api/cnxapi-cds/v1/vehicle/search-cmcc-traffic-h5-url"
@@ -289,6 +313,10 @@ PATH_FPOSB_BOOKING_DETAIL = "/api/cnjvsl-fposb/v2/book/query/osbbookingdetail"
 PATH_FPOSB_AVAILABLE_RESOURCE = "/api/cnjvsl-fposb/v2/book/query/availableresource"
 PATH_FPOSB_SA_INFO = "/api/cnjvsl-fposb/v2/book/query/sainfo"
 PATH_FPOSB_PUD_DETAIL = "/api/cnjvsl-fposb/v2/book/pudorder/puddetail"
+# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——fposb 写操作：
+#   osborder 维保预约下单（POST）/ osbcancel 取消预约（DELETE）
+PATH_FPOSB_ORDER = "/api/cnjvsl-fposb/v2/book/operation/osborder"
+PATH_FPOSB_CANCEL = "/api/cnjvsl-fposb/v2/book/operation/osbcancel"
 # v4.3.3: evss 充电站/免密支付（仅电/插混/混动车型探测创建）——
 #   accounts 账户 / chargers/v1/info 充电站信息 / chargers/v2/parking 停车位 /
 #   chargers/v2/events/order 充电订单事件 / freepassword 免密支付状态·通知
@@ -298,6 +326,9 @@ PATH_EVSS_PARKING = "/api/evss/chargers/v2/parking"
 PATH_EVSS_ORDER_EVENTS = "/api/evss/chargers/v2/events/order"
 PATH_EVSS_FREEPASS_STATUS = "/api/evss/freepassword/v1/status"
 PATH_EVSS_FREEPASS_NOTICE = "/api/evss/freepassword/v1/notice"
+# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——evss 充电枪锁/解锁
+# （品牌专属桩 equipment 锁枪/解锁，equipmentId 从 chargers/v1/info 回填）
+PATH_EVSS_CHARGER_LOCK = "/api/evss/chargers/v1/brand/equipment/lock/down"
 
 # v3.7.4: cevs 域 RSA 加密候选公钥（App encryptByRSA 用公钥加密敏感字段后
 # POST；集成原白盒 AES 密文被服务器 RSA 解密失败 → Impossible modulus）。
@@ -319,6 +350,10 @@ PATH_PDS_DEVICE = "/api/cnxapi-pds/v1/device"
 PATH_USER_AUTH_STATUS = "/api/cnxapi-vds/v1/vehicles/search-vehicle-user-auth-status"
 # SRS 安全档案（cds/v1/vehicles/search-srs-profile）
 PATH_SRS_PROFILE = "/api/cnxapi-cds/v1/vehicles/search-srs-profile"
+# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——SRS 紧急联系人档案写操作
+# （add 新增/update 更新，body 从 search-srs-profile 探测返回回填）
+PATH_SRS_ADD = "/api/cnxapi-cds/v1/vehicles/add-srs-profile"
+PATH_SRS_UPDATE = "/api/cnxapi-cds/v1/vehicles/update-srs-profile"
 # 传感器影子（cnjvsl-sensor-mapping/v2/sensor/shadow）
 PATH_SENSOR_SHADOW = "/api/cnjvsl-sensor-mapping/v2/sensor/shadow"
 

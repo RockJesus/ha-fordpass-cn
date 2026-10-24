@@ -157,6 +157,38 @@ async def async_setup_entry(
         _cevs_supported = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
         if _cevs_supported and _cevs_probe.get("departuretimes"):
             buttons.append(FordPassCevsDeleteAllButton(coordinator))
+        # v5.8.2: 未接入端点补全按钮（2026-10-24 逆向差集 8 项功能缺口）。
+        # 全部按既有"车型能力判断优先 + 探测数据补充过滤"纪律创建：
+        #   cevs 系（预约计划保存/充电记录删除）——仅 cevs 车型 + 探测数据；
+        #   授权审批（user_auth_list 探测到申请）；SRS 紧急联系人（探测到
+        #   档案）；家充桩取消分享（smartwallbox 探测到分享数据——分享给
+        #   新家人需手机号，走服务 fordpass_cn.share_wallbox）；
+        #   充电枪锁/解锁（EV 系 + evss 探测到充电站）；消息单条已读
+        #   （messages_page 探测有数据）；维保预约取消（fposb 探测到历史）。
+        # v5 整门锁/引擎启停按 v5.2.4 纪律不建实体（载荷未抓包实测，
+        # 仅 API 方法）。
+        if _cevs_supported and _cevs_probe.get("departuretimes"):
+            buttons.append(FordPassCevsSaveDepartureButton(coordinator))
+        if _cevs_supported and _cevs_probe.get("chargelogs"):
+            buttons.append(FordPassCevsDeleteChargelogButton(coordinator))
+        if isinstance(_ep, dict) and _ep.get("user_auth_list"):
+            buttons.append(FordPassAuthApproveButton(coordinator))
+            buttons.append(FordPassAuthRejectButton(coordinator))
+        if isinstance(_ep, dict) and _ep.get("srs_profile"):
+            buttons.append(FordPassSrsSaveButton(coordinator))
+        if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
+            _sq = coordinator.smartwallbox.get("wallbox_sharing_query")
+            if _sq:
+                buttons.append(FordPassWallboxUnshareButton(coordinator))
+        if _cevs_supported and isinstance(coordinator.evss, dict):
+            _ci = coordinator.evss.get("evss_charger_info")
+            if _ci:
+                buttons.append(FordPassEvssLockButton(coordinator))
+                buttons.append(FordPassEvssUnlockButton(coordinator))
+        if isinstance(_ep, dict) and _ep.get("messages_page"):
+            buttons.append(FordPassMessageReadByIdButton(coordinator))
+        if isinstance(coordinator.fposb, dict) and coordinator.fposb.get("fposb_history"):
+            buttons.append(FordPassFposbCancelButton(coordinator))
     async_add_entities(buttons)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
@@ -661,6 +693,473 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
             await self.coordinator.force_refresh()
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 预约清空后刷新失败: %s", exc)
+
+
+def _pick_id(data: Any, keys: tuple[str, ...]) -> str | None:
+    """从探测返回结构递归提取第一个命中的 id 字段（v5.8.2）。
+
+    候选键按 App/探测实测返回顺序给出，非猜测；结构多层嵌套（list/dict）
+    递归查找，取第一个非空命中。"""
+    if isinstance(data, dict):
+        for k in keys:
+            v = data.get(k)
+            if v not in (None, "", 0, False):
+                return str(v)
+        for v in data.values():
+            r = _pick_id(v, keys)
+            if r:
+                return r
+    elif isinstance(data, list):
+        for it in data:
+            r = _pick_id(it, keys)
+            if r:
+                return r
+    return None
+
+
+def _find_first_plan(node: Any) -> dict[str, Any] | None:
+    """递归找第一个含出发时间键的计划 dict（v5.8.2，cevs departuretimes
+    保存回填用——departureTimes 列表项等，键名按实测返回）。"""
+    if isinstance(node, dict):
+        if any(k in node for k in ("departureTime", "departuretimes", "planTime", "targetTime")):
+            return node
+        for v in node.values():
+            r = _find_first_plan(v)
+            if r:
+                return r
+    elif isinstance(node, list):
+        for it in node:
+            r = _find_first_plan(it)
+            if r:
+                return r
+    return None
+
+
+def _find_profile(node: Any) -> dict[str, Any] | None:
+    """递归找 SRS 档案 dict（v5.8.2，srs_profile 保存回填用）。"""
+    if isinstance(node, dict):
+        if any(k in node for k in ("srsProfile", "srsProfileName", "emergencyContact")):
+            return node
+        for v in node.values():
+            r = _find_profile(v)
+            if r:
+                return r
+    elif isinstance(node, list):
+        for it in node:
+            r = _find_profile(it)
+            if r:
+                return r
+    return None
+
+
+class FordPassCevsSaveDepartureButton(_FordPassButtonBase):
+    """保存/新建预约出发充电计划（v5.8.2）：POST cevs/v2/departuretimes/save。
+
+    仅 cevs 车型（fuelType ∈ E/P/H 系）且探测到预约计划数据才创建；
+    按下后从 cevs_probe['departuretimes'] 首个计划结构回填保存（App
+    「复制计划」语义），字段名全部来自 retrieve 实测返回，非猜测。
+    """
+
+    _attr_icon = "mdi:calendar-plus"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-cevs_save_departure"
+        self._attr_name = "保存预约出发/充电计划"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态
+
+    def _structure(self) -> dict[str, Any] | None:
+        cp = getattr(self.coordinator, "cevs_probe", {}) or {}
+        dt = cp.get("departuretimes")
+        data = dt.get("data") if isinstance(dt, dict) else None
+        if isinstance(data, dict):
+            inner = data.get("data", data)
+            return _find_first_plan(inner)
+        return None
+
+    async def async_press(self) -> None:
+        struct = self._structure()
+        if not struct:
+            raise HomeAssistantError(
+                "云端无预约计划可复制——请先在福特派 App 新建预约计划后再试"
+            )
+        try:
+            resp = await self.coordinator.api.cevs_save_departure(
+                self.coordinator.vin, dict(struct)
+            )
+            _LOGGER.info("FordPass 预约计划保存结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 预约计划保存失败: %s", exc)
+            raise HomeAssistantError(f"保存预约计划失败: {exc}") from exc
+
+
+class FordPassCevsDeleteChargelogButton(_FordPassButtonBase):
+    """删除充电记录（v5.8.2）：POST cevs/v2/chargelogs/delete。
+
+    仅 cevs 车型且探测到充电记录数据才创建；chargeLogId 从 chargelogs
+    探测返回回填（实测键），删除后刷新实体。
+    """
+
+    _attr_icon = "mdi:history"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-cevs_delete_chargelog"
+        self._attr_name = "删除充电记录"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _log_id(self) -> str | None:
+        cp = getattr(self.coordinator, "cevs_probe", {}) or {}
+        cl = cp.get("chargelogs")
+        data = cl.get("data") if isinstance(cl, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _pick_id(data, ("chargeLogId", "logId", "id", "recordId"))
+
+    async def async_press(self) -> None:
+        log_id = self._log_id()
+        if not log_id:
+            raise HomeAssistantError("云端无充电记录可删除")
+        try:
+            resp = await self.coordinator.api.cevs_delete_chargelog(
+                self.coordinator.vin, log_id
+            )
+            _LOGGER.info("FordPass 充电记录删除结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 充电记录删除失败: %s", exc)
+            raise HomeAssistantError(f"删除充电记录失败: {exc}") from exc
+
+
+class FordPassAuthApproveButton(_FordPassButtonBase):
+    """批准车辆授权申请（v5.8.2）：POST vehicle-user-auth-approval。
+
+    仅 user_auth_list 探测到待审批申请才创建；authId 从探测返回提取
+    （兼容 authId/approvalId/applyId 实测键）。
+    """
+
+    _attr_icon = "mdi:account-check"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-auth_approve"
+        self._attr_name = "批准授权申请"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _auth_id(self) -> str | None:
+        ep = self.coordinator.extra_probes or {}
+        lst = ep.get("user_auth_list")
+        data = lst.get("data") if isinstance(lst, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _pick_id(data, ("authId", "approvalId", "applyId", "id"))
+
+    async def async_press(self) -> None:
+        aid = self._auth_id()
+        if not aid:
+            raise HomeAssistantError("未找到待审批的授权申请")
+        try:
+            resp = await self.coordinator.api.vehicle_auth_approval(
+                self.coordinator.vin, aid, approve=True
+            )
+            _LOGGER.info("FordPass 授权批准结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 授权批准失败: %s", exc)
+            raise HomeAssistantError(f"批准授权失败: {exc}") from exc
+
+
+class FordPassAuthRejectButton(_FordPassButtonBase):
+    """拒绝车辆授权申请（v5.8.2）：POST vehicle-user-auth-approval（approve=false）。"""
+
+    _attr_icon = "mdi:account-cancel"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-auth_reject"
+        self._attr_name = "拒绝授权申请"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _auth_id(self) -> str | None:
+        ep = self.coordinator.extra_probes or {}
+        lst = ep.get("user_auth_list")
+        data = lst.get("data") if isinstance(lst, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _pick_id(data, ("authId", "approvalId", "applyId", "id"))
+
+    async def async_press(self) -> None:
+        aid = self._auth_id()
+        if not aid:
+            raise HomeAssistantError("未找到待审批的授权申请")
+        try:
+            resp = await self.coordinator.api.vehicle_auth_approval(
+                self.coordinator.vin, aid, approve=False
+            )
+            _LOGGER.info("FordPass 授权拒绝结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 授权拒绝失败: %s", exc)
+            raise HomeAssistantError(f"拒绝授权失败: {exc}") from exc
+
+
+class FordPassSrsSaveButton(_FordPassButtonBase):
+    """保存/更新 SRS 紧急联系人档案（v5.8.2）：POST update-srs-profile。
+
+    仅 srs_profile 探测到档案数据才创建；profile 从探测返回回填
+    （srsProfile 结构键名全部来自实测返回）。
+    """
+
+    _attr_icon = "mdi:account-heart"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-srs_save"
+        self._attr_name = "保存紧急联系人"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _profile(self) -> dict[str, Any] | None:
+        ep = self.coordinator.extra_probes or {}
+        sp = ep.get("srs_profile")
+        data = sp.get("data") if isinstance(sp, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _find_profile(data)
+
+    async def async_press(self) -> None:
+        prof = self._profile()
+        if not prof:
+            raise HomeAssistantError("云端无紧急联系人档案——请先在福特派 App 添加")
+        try:
+            resp = await self.coordinator.api.srs_save_profile(
+                self.coordinator.vin, dict(prof), update=True
+            )
+            _LOGGER.info("FordPass 紧急联系人保存结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 紧急联系人保存失败: %s", exc)
+            raise HomeAssistantError(f"保存紧急联系人失败: {exc}") from exc
+
+
+class FordPassWallboxUnshareButton(_FordPassButtonBase):
+    """取消家充桩分享（v5.8.2）：POST sharing/unshare/v2。
+
+    仅 smartwallbox 探测到分享数据才创建；wallboxId/sharerId 从
+    wallbox_sharing_query 返回回填。分享给新家人请用服务
+    fordpass_cn.share_wallbox（需目标手机号）。
+    """
+
+    _attr_icon = "mdi:account-remove"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-wallbox_unshare"
+        self._attr_name = "取消家充桩分享"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _share_target(self) -> tuple[str | None, str | None]:
+        wb = self.coordinator.smartwallbox or {}
+        sq = wb.get("wallbox_sharing_query")
+        data = sq.get("data") if isinstance(sq, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        wid = _pick_id(data, ("wallboxId", "defaultWallboxId", "id", "equipmentId"))
+        sid = _pick_id(data, ("sharerId", "shareId", "sharerUserId", "targetUserId"))
+        return wid, sid
+
+    async def async_press(self) -> None:
+        wid, sid = self._share_target()
+        if not wid:
+            raise HomeAssistantError("未找到家充桩分享信息")
+        try:
+            resp = await self.coordinator.api.wallbox_unshare(
+                self.coordinator.vin, wid, sid
+            )
+            _LOGGER.info("FordPass 家充桩取消分享结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 家充桩取消分享失败: %s", exc)
+            raise HomeAssistantError(f"取消分享失败: {exc}") from exc
+
+
+class FordPassEvssLockButton(_FordPassButtonBase):
+    """充电枪锁定（v5.8.2）：POST evss brand/equipment/lock/down。
+
+    仅电/插混/混动车型且 evss 探测到充电站数据才创建；equipmentId 从
+    evss_charger_info 返回回填。
+    """
+
+    _attr_icon = "mdi:lock"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-evss_lock"
+        self._attr_name = "充电枪锁定"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _equipment_id(self) -> str | None:
+        ev = self.coordinator.evss or {}
+        ci = ev.get("evss_charger_info")
+        data = ci.get("data") if isinstance(ci, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _pick_id(data, ("equipmentId", "equipmentGuid", "chargerId", "guid", "id"))
+
+    async def async_press(self) -> None:
+        eid = self._equipment_id()
+        try:
+            resp = await self.coordinator.api.evss_charger_lock(
+                self.coordinator.vin, eid, down=True
+            )
+            _LOGGER.info("FordPass 充电枪锁定结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 充电枪锁定失败: %s", exc)
+            raise HomeAssistantError(f"充电枪锁定失败: {exc}") from exc
+
+
+class FordPassEvssUnlockButton(_FordPassButtonBase):
+    """充电枪解锁（v5.8.2）：POST evss brand/equipment/lock/down（down=false）。"""
+
+    _attr_icon = "mdi:lock-open"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-evss_unlock"
+        self._attr_name = "充电枪解锁"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _equipment_id(self) -> str | None:
+        ev = self.coordinator.evss or {}
+        ci = ev.get("evss_charger_info")
+        data = ci.get("data") if isinstance(ci, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _pick_id(data, ("equipmentId", "equipmentGuid", "chargerId", "guid", "id"))
+
+    async def async_press(self) -> None:
+        eid = self._equipment_id()
+        try:
+            resp = await self.coordinator.api.evss_charger_lock(
+                self.coordinator.vin, eid, down=False
+            )
+            _LOGGER.info("FordPass 充电枪解锁结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 充电枪解锁失败: %s", exc)
+            raise HomeAssistantError(f"充电枪解锁失败: {exc}") from exc
+
+
+class FordPassMessageReadByIdButton(_FordPassButtonBase):
+    """单条消息已读（v5.8.2）：POST message/v2/readbyid。
+
+    仅 messages_page 探测有消息数据才创建；messageId 取首条未读消息
+    （实测键），全部已读时提示无需操作。
+    """
+
+    _attr_icon = "mdi:email-check"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-messages_read_byid"
+        self._attr_name = "单条消息已读"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _message_id(self) -> str | None:
+        ep = self.coordinator.extra_probes or {}
+        mp = ep.get("messages_page")
+        data = mp.get("data") if isinstance(mp, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _pick_id(data, ("messageId", "msgId", "id"))
+
+    async def async_press(self) -> None:
+        mid = self._message_id()
+        if not mid:
+            raise HomeAssistantError("云端无未读消息")
+        try:
+            resp = await self.coordinator.api.message_read_by_id(mid)
+            _LOGGER.info("FordPass 消息已读结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 消息已读失败: %s", exc)
+            raise HomeAssistantError(f"消息已读失败: {exc}") from exc
+
+
+class FordPassFposbCancelButton(_FordPassButtonBase):
+    """取消最近维保预约（v5.8.2）：DELETE fposb osbcancel。
+
+    仅 fposb 探测到预约历史才创建；orderId 从 osbhistory 返回回填。
+    """
+
+    _attr_icon = "mdi:calendar-remove"
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-fposb_cancel"
+        self._attr_name = "取消最近维保预约"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data)
+
+    def _order_id(self) -> str | None:
+        fp = self.coordinator.fposb or {}
+        hist = fp.get("fposb_history")
+        data = hist.get("data") if isinstance(hist, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        return _pick_id(data, ("orderId", "osbOrderId", "bookingId", "id"))
+
+    async def async_press(self) -> None:
+        oid = self._order_id()
+        if not oid:
+            raise HomeAssistantError("云端无维保预约可取消")
+        try:
+            resp = await self.coordinator.api.fposb_cancel(self.coordinator.vin, oid)
+            _LOGGER.info("FordPass 维保预约取消结果: %s", str(resp)[:300])
+        except Exception as exc:
+            _LOGGER.warning("FordPass 维保预约取消失败: %s", exc)
+            raise HomeAssistantError(f"取消维保预约失败: {exc}") from exc
 
 
 class FordPassImageButton(_FordPassButtonBase):

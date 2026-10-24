@@ -375,6 +375,17 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.8.2**（2026-10-24）：**云端已支持未接入功能全部接入（8 项，按车型创建实体）**——逆向端点差集收尾，接入此前「已逆向但未接入」的云端功能缺口：
+  - **预约计划新建**：`cevs/v2/departuretimes/save`——保存/新建预约出发充电计划（「保存预约出发/充电计划」按钮，从云端现有计划结构回填，App 复制计划语义；仅电/插混/混动车型）
+  - **充电记录删除**：`cevs/v2/chargelogs/delete`——删除充电记录（「删除充电记录」按钮，chargeLogId 从探测返回回填）
+  - **车辆授权审批**：`vds/v1/vehicles/vehicle-user-auth-approval`——同意/拒绝他人申请授权你的车（「批准/拒绝授权申请」按钮，探测到待审批申请才创建）
+  - **SRS 紧急联系人写入**：`add/update-srs-profile`——保存/更新紧急联系人档案（「保存紧急联系人」按钮，档案结构从探测返回回填）
+  - **家充桩分享**：`sharing/share|unshare|sharerInfo|tnc/*`——分享/取消分享家充桩（「取消家充桩分享」按钮；分享给新家人需目标手机号，用服务 `fordpass_cn.share_wallbox`）
+  - **维保预约下单/取消**：`fposb osborder/osbcancel`——维保预约取消（「取消最近维保预约」按钮，orderId 从预约历史回填；下单参数复杂走服务 `fordpass_cn.create_departure` 等价说明）
+  - **充电枪锁/解锁**：`evss brand/equipment/lock/down`——锁枪/解锁（「充电枪锁定/解锁」按钮，equipmentId 从充电站信息回填；仅电/插混/混动）
+  - **消息单条已读**：`message/v2/readbyid`——单条消息已读（「单条消息已读」按钮，messageId 取首条未读）
+  - **v5 整门锁/引擎启停原生通道**：`v5 doors/lock`、`engine/start` 已实现 API 方法但**不建实体**（载荷未对照官方 App 抓包确认，遵守遥控命令纪律，待抓包后启用）
+  - 全部按「车型能力判断优先 + 探测数据补充过滤」创建：纯油/柴油不建充电域按钮（cevs/evss），账号级功能（授权/SRS/消息/维保）探测到数据即创建；新增服务 `share_wallbox`/`create_departure`/`update_srs`/`approve_auth` 供自动化带参调用
 - **v5.8.1**（2026-10-24）：**修复旧 VIN 设备清理失败（HA 2026.10 API 签名变更）**——`_cleanup_legacy_vin` 调 `DeviceRegistry.async_get_device_by_identifier` 时 HA 2026.10 起需必填 `config_entry_id` 参数，旧调用缺参每次启动抛 `TypeError`（日志 `fordpass_cn legacy vin device cleanup failed`），导致升级后旧 VIN 设备条目无法清理；补传 `entry.entry_id` 修复（清理失败不阻断 setup 的兜底逻辑保留）。
 - **v5.8.0**（2026-10-24）：**B2C 密码登录引导优化（EdgeOne WAF 实证说明）**——2026-10-24 手机号密码登录 HAR 实测：login.ford.com.cn 前置腾讯云 EdgeOne 安全防护，按 TLS/行为指纹拦截纯 HTTP 客户端（requests 完整伪造 WebView UA/headers 与 curl_cffi impersonate chrome110/120/chrome 全指纹均返回 567 拦截页；集成四步流参数与 App HAR 逐项一致，非参数问题）——密码登录无法改为纯 API 直连，浏览器辅助是唯一可靠路径。① 配置向导「用户名密码登录」第 2 步改为分步操作说明：EdgeOne 拦截原因、电脑/手机浏览器登录步骤、地址栏复制 `?code=` 指引、授权码一次性有效提示、被拦截时改用短信验证码建议；② 密码步骤补充「密码仅保存在 Home Assistant 本地配置中」；③ README 故障排查表同步更新该说明（含实测日期与拦截机理）。
 - **v5.7.9**（2026-10-24）：**服务日志/异常消息 VIN 掩码收口（运行时 VIN 暴露最后残留）**——① `fordpass_cn.refresh_status` 服务 info 日志此前打印完整 VIN（`vin=%s`），现只留尾段 `vin=…%s`（`coord.vin[-6:]`）；② 服务调用时 VIN 不在当前账号车辆的异常消息（HomeAssistantError）同步掩码为 `VIN …尾段`（此前完整 VIN 进错误消息/前端通知/日志）；③ 全量复查确认运行时完整 VIN 输出点已清零：图片缓存文件名 SHA1 摘要（v5.1.8）、实体 unique_id/设备标识 sha256 前缀（v5.7.1）、logbook 隐私尾缀跳过（v5.7.0）、api.py vehicle-status raw debug 掩码（v5.6.10）、diagnostics redact（v4.9.5）、coordinator 恢复日志 VIN 尾段（v5.6.x）均已在册。

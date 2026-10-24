@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import shutil
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import (
@@ -128,6 +129,11 @@ PLATFORMS = [
 # v5.1.7: 服务层（对齐 HA 官方 services.yaml 规范，自动化可直接调用）
 SERVICE_REFRESH_STATUS = "refresh_status"
 SERVICE_CLEAR_TOKENS = "clear_tokens"
+# v5.8.2 服务层扩展（未接入端点补全的带参入口；按钮为无参快捷方式）：
+SERVICE_SHARE_WALLBOX = "share_wallbox"
+SERVICE_CREATE_DEPARTURE = "create_departure"
+SERVICE_UPDATE_SRS = "update_srs"
+SERVICE_APPROVE_AUTH = "approve_auth"
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -210,6 +216,100 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             cleared,
         )
 
+    # ---- v5.8.2 未接入端点补全服务（share_wallbox / create_departure /
+    # update_srs / approve_auth）——按钮为无参快捷方式，服务为自动化带参
+    # 入口；日志与错误消息一律掩码 VIN 尾段（v5.7.9 纪律）。
+    def _pick_id(data: Any, keys: tuple[str, ...]) -> str | None:
+        """从探测返回结构递归提取第一个命中的 id 字段（与 button.py 同款）。"""
+        if isinstance(data, dict):
+            for k in keys:
+                v = data.get(k)
+                if v not in (None, "", 0, False):
+                    return str(v)
+            for v in data.values():
+                r = _pick_id(v, keys)
+                if r:
+                    return r
+        elif isinstance(data, list):
+            for it in data:
+                r = _pick_id(it, keys)
+                if r:
+                    return r
+        return None
+
+    async def _service_share_wallbox(call) -> None:
+        vin = call.data.get("vin") or ""
+        phone = call.data.get("phone") or ""
+        wid = call.data.get("wallbox_id")
+        targets = [c for c in _all_coordinators() if not vin or c.vin == vin]
+        if not targets:
+            raise HomeAssistantError(
+                f"fordpass_cn share_wallbox: VIN …{vin[-6:] if vin else ''} 不在当前账号车辆中"
+            )
+        coord = targets[0]
+        if not wid:
+            wb = coord.smartwallbox or {}
+            sq = wb.get("wallbox_sharing_query")
+            data = sq.get("data") if isinstance(sq, dict) else None
+            if isinstance(data, dict):
+                data = data.get("data", data)
+            wid = _pick_id(data, ("wallboxId", "defaultWallboxId", "id", "equipmentId"))
+        if not wid:
+            raise HomeAssistantError("未找到已绑定的家充桩（wallboxId）")
+        if not phone:
+            raise HomeAssistantError("share_wallbox 需要 phone（目标手机号）参数")
+        _LOGGER.info("fordpass_cn service share_wallbox vin=…%s", coord.vin[-6:])
+        await coord.api.wallbox_share(coord.vin, wid, phone)
+
+    async def _service_create_departure(call) -> None:
+        vin = call.data.get("vin") or ""
+        structure = call.data.get("structure")
+        targets = [c for c in _all_coordinators() if not vin or c.vin == vin]
+        if not targets:
+            raise HomeAssistantError(
+                f"fordpass_cn create_departure: VIN …{vin[-6:] if vin else ''} 不在当前账号车辆中"
+            )
+        coord = targets[0]
+        _LOGGER.info("fordpass_cn service create_departure vin=…%s", coord.vin[-6:])
+        await coord.api.cevs_save_departure(coord.vin, structure)
+
+    async def _service_update_srs(call) -> None:
+        vin = call.data.get("vin") or ""
+        targets = [c for c in _all_coordinators() if not vin or c.vin == vin]
+        if not targets:
+            raise HomeAssistantError(
+                f"fordpass_cn update_srs: VIN …{vin[-6:] if vin else ''} 不在当前账号车辆中"
+            )
+        coord = targets[0]
+        _LOGGER.info("fordpass_cn service update_srs vin=…%s", coord.vin[-6:])
+        ep = coord.extra_probes or {}
+        sp = ep.get("srs_profile")
+        data = sp.get("data") if isinstance(sp, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        profile = data if isinstance(data, dict) else None
+        await coord.api.srs_save_profile(coord.vin, profile, update=True)
+
+    async def _service_approve_auth(call) -> None:
+        vin = call.data.get("vin") or ""
+        approve = bool(call.data.get("approve", True))
+        targets = [c for c in _all_coordinators() if not vin or c.vin == vin]
+        if not targets:
+            raise HomeAssistantError(
+                f"fordpass_cn approve_auth: VIN …{vin[-6:] if vin else ''} 不在当前账号车辆中"
+            )
+        coord = targets[0]
+        ep = coord.extra_probes or {}
+        lst = ep.get("user_auth_list")
+        data = lst.get("data") if isinstance(lst, dict) else None
+        if isinstance(data, dict):
+            data = data.get("data", data)
+        auth_id = _pick_id(data, ("authId", "approvalId", "applyId", "id"))
+        if not auth_id:
+            raise HomeAssistantError("未找到待审批的授权申请")
+        _LOGGER.info("fordpass_cn service approve_auth vin=…%s", coord.vin[-6:])
+        await coord.api.vehicle_auth_approval(coord.vin, auth_id, approve)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_REFRESH_STATUS,
@@ -221,6 +321,43 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         SERVICE_CLEAR_TOKENS,
         _service_clear_tokens,
         schema=vol.Schema({}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SHARE_WALLBOX,
+        _service_share_wallbox,
+        schema=vol.Schema(
+            {
+                vol.Optional("vin"): cv.string,
+                vol.Required("phone"): cv.string,
+                vol.Optional("wallbox_id"): cv.string,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CREATE_DEPARTURE,
+        _service_create_departure,
+        schema=vol.Schema(
+            {
+                vol.Optional("vin"): cv.string,
+                vol.Optional("structure"): dict,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UPDATE_SRS,
+        _service_update_srs,
+        schema=vol.Schema({vol.Optional("vin"): cv.string}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_APPROVE_AUTH,
+        _service_approve_auth,
+        schema=vol.Schema(
+            {vol.Optional("vin"): cv.string, vol.Optional("approve"): cv.boolean}
+        ),
     )
     return True
 

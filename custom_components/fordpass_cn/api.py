@@ -58,11 +58,13 @@ from .const import (
     PATH_B2C_TOKEN,
     PATH_CCFEATURES,
     PATH_CEVS_COMMAND_STATUS,
+    PATH_CHARGELOGS_DELETE,
     PATH_CHARGELOGS_RETRIEVE,
     PATH_CMCC_TRAFFIC,
     PATH_COMMAND_STATUS,
     PATH_CVFEATURES,
     PATH_DEPARTURE_DELETE_ALL,
+    PATH_DEPARTURE_SAVE,
     PATH_DEPARTURE_TIMES_RETRIEVE,
     PATH_DEPARTURE_TOGGLE_OFF,
     PATH_DEPARTURE_TOGGLE_ON,
@@ -70,6 +72,7 @@ from .const import (
     PATH_EVSS_ACCOUNTS,
     PATH_EVSS_APPS_INFO,
     PATH_EVSS_CHARGER_INFO,
+    PATH_EVSS_CHARGER_LOCK,
     PATH_EVSS_EVALUATE_URL,
     PATH_EVSS_EVENTS_V3,
     PATH_EVSS_FREEPASS_STATUS,
@@ -82,7 +85,9 @@ from .const import (
     PATH_EVSS_STATIONS,
     PATH_EVSS_USAGE_NOTICE,
     PATH_FPOSB_BOOKING_DETAIL,
+    PATH_FPOSB_CANCEL,
     PATH_FPOSB_HISTORY,
+    PATH_FPOSB_ORDER,
     PATH_FPOSB_PUD_DETAIL,
     PATH_FPOSB_SA_INFO,
     PATH_GENERATE_PASSCODE,
@@ -97,6 +102,7 @@ from .const import (
     PATH_MESSAGES_READ,
     PATH_MESSAGES_SUMMARY,
     PATH_MESSAGES_V2_PAGE,
+    PATH_MESSAGES_V2_READBYID,
     PATH_MONITOR_TRAFFIC,
     PATH_ONLINENR,
     PATH_OTA_AGREEMENTS,
@@ -136,7 +142,9 @@ from .const import (
     PATH_SMARTWALLBOX_RECORDS_V2,
     PATH_SMARTWALLBOX_SHARING_QUERY,
     PATH_SMARTWALLBOX_UNBIND,
+    PATH_SRS_ADD,
     PATH_SRS_PROFILE,
+    PATH_SRS_UPDATE,
     PATH_THIRD_PARTY_TOKEN,
     PATH_USER_AUTH_STATUS,
     PATH_USER_LOGIN_STATUS,
@@ -147,6 +155,8 @@ from .const import (
     PATH_V5_ANNOUNCE_STATUS,
     PATH_V5_DOOR_LOCK,
     PATH_V5_DOOR_LOCK_STATUS,
+    PATH_V5_DOORS_LOCK,
+    PATH_V5_ENGINE_START,
     PATH_V5_HONK,
     PATH_V5_PANIC,
     PATH_V5_STATUS,
@@ -154,6 +164,7 @@ from .const import (
     PATH_VEHICLE_MODEL_MASTERDATA,
     PATH_VEHICLE_STATUS,
     PATH_VEHICLE_USER_AUTH,
+    PATH_VEHICLE_USER_AUTH_APPROVAL,
     PATH_VEHICLES_LIST,
     PATH_VIDEO_FILE,
     PATH_VIDEO_START,
@@ -162,6 +173,12 @@ from .const import (
     PATH_VPOI_SAVED,
     PATH_VPOI_STATUS,
     PATH_WALLBOX_BLE_VEHICLES,
+    PATH_WALLBOX_SHARE,
+    PATH_WALLBOX_SHARER_INFO,
+    PATH_WALLBOX_SHARE_SIGN_TNC,
+    PATH_WALLBOX_TNC_CONTENT,
+    PATH_WALLBOX_TNC_SIGN,
+    PATH_WALLBOX_UNSHARE,
     PATH_WARRANTY,
     PATH_WIFI_STATUS,
     PAYLOAD_KEY,
@@ -3044,6 +3061,143 @@ class FordPassApi:
         return await self._request(
             "POST", PATH_VIDEO_STOP, {"encryptedVin": enc_vin, "xjw": xjw}
         )
+
+    # ------------------------------------------------ v5.8.2 未接入端点补全
+    # （2026-10-24 逆向差集 8 项功能缺口全部接入。写入类 body 结构来自既有
+    #  探测返回回填 + APK 逆向，字段名非猜测；遥控命令类（v5 doors/engine）
+    #  仅实现 API 方法不建实体——v5.2.4 纪律：未对照官方 App 抓包确认的
+    #  遥控载荷不下发，待抓包后启用对应实体。）
+    async def v5_doors_lock(self, vin: str, lock: bool = True) -> dict[str, Any]:
+        """整门锁/解锁（v5 原生通道，6.16.0 Dart 确认 PUT=执行/DELETE=取消
+        语义化）。载荷未抓包实测——仅方法实现，不建实体。"""
+        method = "PUT" if lock else "DELETE"
+        return await self._v5_verb(
+            method, V5_BASE_URL + PATH_V5_DOORS_LOCK.format(vin=vin), "doors_lock"
+        )
+
+    async def v5_engine_start(self, vin: str, start: bool = True) -> dict[str, Any]:
+        """v5 引擎启停原生通道：PUT=启动、DELETE=停止（v5 语义化）。
+        载荷未抓包实测——仅方法实现，不建实体（现有 send-command
+        RemoteStart 通道已确认可用）。"""
+        method = "PUT" if start else "DELETE"
+        return await self._v5_verb(
+            method, V5_BASE_URL + PATH_V5_ENGINE_START.format(vin=vin), "engine"
+        )
+
+    async def cevs_save_departure(
+        self, vin: str, structure: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """保存/新建预约出发充电计划：POST cevs/v2/departuretimes/save。
+
+        structure 缺省时由按钮/服务从 cevs_probe['departuretimes'] 首个
+        计划结构回填（App「复制计划」语义）；字段名全部来自 retrieve 实测
+        返回，非猜测。走 _cevs_write（cevs 场景白盒 AES + raw_body）。
+        """
+        result = await self._cevs_write(vin, PATH_DEPARTURE_SAVE, structure or None)
+        self._log.info(
+            "FordPass cevs save -> %s", json.dumps(result, ensure_ascii=False)[:400]
+        )
+        return result
+
+    async def cevs_delete_chargelog(
+        self, vin: str, log_id: str | None = None,
+    ) -> dict[str, Any]:
+        """删除充电记录：POST cevs/v2/chargelogs/delete。
+
+        log_id 缺省由按钮从 chargelogs 探测返回回填（chargeLogId 实测键）。
+        """
+        extra = {"chargeLogId": log_id} if log_id else None
+        return await self._cevs_write(vin, PATH_CHARGELOGS_DELETE, extra)
+
+    async def vehicle_auth_approval(
+        self, vin: str, auth_id: str | None = None, approve: bool = True,
+    ) -> dict[str, Any]:
+        """车辆授权审批：POST vds/v1/vehicles/vehicle-user-auth-approval。
+
+        同意/拒绝他人申请授权你的车；auth_id 由按钮从 user_auth_list 探测
+        返回提取（兼容 authId/approvalId/applyId 实测键）。"""
+        body: dict[str, Any] = {"approve": approve}
+        if auth_id:
+            body["authId"] = auth_id
+        return await self._request("POST", PATH_VEHICLE_USER_AUTH_APPROVAL, body)
+
+    async def srs_save_profile(
+        self, vin: str, profile: dict[str, Any] | None = None, update: bool = True,
+    ) -> dict[str, Any]:
+        """SRS 紧急联系人档案保存：POST add-srs-profile（无档案）/
+        update-srs-profile（已有档案）。profile 缺省从 srs_profile 探测
+        返回回填（srsProfile 结构键名全部来自实测返回）。"""
+        path = PATH_SRS_UPDATE if update else PATH_SRS_ADD
+        return await self._request("POST", path, dict(profile or {}))
+
+    async def wallbox_share(self, vin: str, wallbox_id: str, phone: str) -> dict[str, Any]:
+        """家充桩分享：POST sharing/share/v3（分享给家人手机号）。"""
+        return await self._request(
+            "POST", PATH_WALLBOX_SHARE, {"wallboxId": wallbox_id, "phone": phone}
+        )
+
+    async def wallbox_unshare(
+        self, vin: str, wallbox_id: str, sharer_id: str | None = None,
+    ) -> dict[str, Any]:
+        """取消家充桩分享：POST sharing/unshare/v2（sharerId 由按钮从
+        sharing/query 探测返回回填）。"""
+        body: dict[str, Any] = {"wallboxId": wallbox_id}
+        if sharer_id:
+            body["sharerId"] = sharer_id
+        return await self._request("POST", PATH_WALLBOX_UNSHARE, body)
+
+    async def wallbox_sharer_info(self, vin: str, wallbox_id: str) -> dict[str, Any]:
+        """家充桩分享人信息：POST sharing/sharerInfo/v2（只读）。"""
+        return await self._request(
+            "POST", PATH_WALLBOX_SHARER_INFO, {"wallboxId": wallbox_id}
+        )
+
+    async def wallbox_tnc_content(self, vin: str) -> dict[str, Any]:
+        """家充桩分享条款内容：POST tnc/content/v3（只读）。"""
+        return await self._request("POST", PATH_WALLBOX_TNC_CONTENT)
+
+    async def wallbox_sign_tnc(self, vin: str) -> dict[str, Any]:
+        """签署家充桩分享条款：POST tnc/sign/v3。"""
+        return await self._request("POST", PATH_WALLBOX_TNC_SIGN)
+
+    async def fposb_order(
+        self, vin: str, booking: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """维保预约下单：POST fposb osborder。
+
+        booking 参数复杂（门店/工位/时间/服务项目），推荐经服务调用传入；
+        缺省空 body 由网关给出缺字段错误消息便于校准。"""
+        return await self._request("POST", PATH_FPOSB_ORDER, dict(booking or {}))
+
+    async def fposb_cancel(
+        self, vin: str, order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """取消维保预约：DELETE fposb osbcancel（orderId 由按钮从
+        osbhistory 探测返回回填）。"""
+        if order_id:
+            return await self._request("DELETE", PATH_FPOSB_CANCEL, {"orderId": order_id})
+        return await self._request("DELETE", PATH_FPOSB_CANCEL)
+
+    async def evss_charger_lock(
+        self, vin: str, equipment_id: str | None = None, down: bool = True,
+    ) -> dict[str, Any]:
+        """充电枪锁/解锁：POST evss chargers/v1/brand/equipment/lock/down。
+
+        equipmentId 由按钮从 evss_charger_info 探测返回回填（品牌专属桩）；
+        仅电/插混/混动车型创建实体。"""
+        body: dict[str, Any] = {"down": down}
+        if equipment_id:
+            body["equipmentId"] = equipment_id
+        return await self._request("POST", PATH_EVSS_CHARGER_LOCK, body)
+
+    async def message_read_by_id(self, message_id: str | None = None) -> dict[str, Any]:
+        """单条消息已读：POST cnxapi-message/app/message/v2/readbyid。
+
+        message_id 由按钮从 messages_page 探测返回回填（首条未读）。"""
+        body: dict[str, Any] = {}
+        if message_id:
+            body["messageId"] = message_id
+        return await self._request("POST", PATH_MESSAGES_V2_READBYID, body)
 
     # --------------------------------------------------------- b2c login
     async def password_login(
