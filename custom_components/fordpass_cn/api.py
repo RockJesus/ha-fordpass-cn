@@ -823,6 +823,13 @@ class FordPassApi:
             "POST",
             PATH_GENERATE_PASSCODE,
             {"encryptedPhoneNumber": enc, "touchPoint": self._touch_point, "xjw": xjw},
+            # v5.7.8: 与 passcode_login 一致的防御——token-exchange 家族 App
+            # 实拍均不带 auth-token（HAR 2026-10-24 林肯 6.0.0 实证
+            # generate-passcode 无 auth-token 头）；reauth 场景若内存残留旧
+            # access token，默认 _headers 会带上导致网关校验失败。当前
+            # config_flow 每次新建 api 实例不 set_token 不触发，但防未来
+            # 复用路径（v5.6.9 修 passcode_login 时漏掉 generate_passcode）。
+            headers={"auth-token": None},
         )
         return xjw
 

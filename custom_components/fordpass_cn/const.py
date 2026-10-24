@@ -522,7 +522,7 @@ BRAND_PROFILE = {
         "brand_code": "LINCOLN",
         "app_key": "lincoln",
         "client_type": "LW",
-        "app_version": "6.7.0",
+        "app_version": "6.0.0",
         "passcode_login": PATH_PASSCODE_LOGIN,
         "b2c_authority": None,
         "b2c_policy": None,
