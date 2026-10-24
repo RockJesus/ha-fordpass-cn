@@ -7,7 +7,7 @@
       ④ codeload zip 抽查 ⑤ **dangling commit 扫描**（filter-repo 重写后的不可达
       旧 commit 仍可按 SHA 从 GitHub 读取——git rev-list 扫不到，必须按已知 hash
       逐一 API 点查；命中即 FAIL 并提示提交 GitHub Support 清除）。
-白名单：示例假号 13800000000/13800138000/13900000000/13700000000 与 LVSHFAKE 假 VIN。
+白名单：示例假号（138/139/137 开头固定前缀段，见 FAKE_PREFIXES）与 LVSHFAKE 假 VIN。
 """
 import base64, io, json, os, re, subprocess, sys, tempfile, urllib.error, urllib.request, zipfile
 
@@ -16,14 +16,18 @@ REPO = "RockJesus/ha-fordpass-cn"
 VIN_RE = re.compile(r"LVSH[A-Z0-9]{13}")
 FIELD_PHONE_RE = re.compile(r'"(?:phone|phoneNumber|nickPhone|mobile|tel)"\s*:\s*"?([1-3][0-9]{9})"')
 PHONE_ANY_RE = re.compile(r"(?<![0-9a-fA-F])1[3-9][0-9]{9}(?![0-9a-fA-F])")
-FAKE = {"13800000000", "13800138000", "13900000000", "13700000000"}
+# 示例假号白名单：用前缀匹配避免源码出现完整号码形态（仓库零号码字符串）
+FAKE_PREFIXES = ("13800000", "13800138", "13900000", "13700000")
+
+
+def _is_fake(n: str) -> bool:
+    return any(n.startswith(p) for p in FAKE_PREFIXES)
 H = {"Authorization": "Bearer " + TOKEN, "Accept": "application/vnd.github+json"}
 
 # 已知 filter-repo 重写后仍可访问的旧 commit（dangling object，GitHub 按 SHA 提供）——
-# 发现新旧 hash 时用 --dangling 参数追加；待 GitHub Support purge 生效后移除对应项
-KNOWN_DANGLING = [
-    "0f2f278", "155c2ee", "3d99f0d", "1a69eb9",
-]
+# 注意：不得把具体 SHA 硬编码入库（等于公开含敏感数据的旧 commit 访问索引）。
+# 审计时用 --dangling <sha> 参数临时传入；待 GitHub Support purge 生效后移除对应项。
+KNOWN_DANGLING: list[str] = []
 
 
 def gh(url):
@@ -38,8 +42,8 @@ def gh(url):
 
 def scan_text(t: str) -> tuple[set, set, set]:
     vin = {m.group(0) for m in VIN_RE.finditer(t) if not m.group(0).startswith("LVSHFAKE")}
-    fp = {m.group(1) for m in FIELD_PHONE_RE.finditer(t) if m.group(1) not in FAKE}
-    ap = {m.group(0) for m in PHONE_ANY_RE.finditer(t) if m.group(0) not in FAKE}
+    fp = {m.group(1) for m in FIELD_PHONE_RE.finditer(t) if not _is_fake(m.group(1))}
+    ap = {m.group(0) for m in PHONE_ANY_RE.finditer(t) if not _is_fake(m.group(0))}
     return vin, fp, ap
 
 
@@ -95,9 +99,9 @@ def main() -> int:
         for m in VIN_RE.finditer(out.stdout):
             if not m.group(0).startswith("LVSHFAKE"): vin_bad.add(m.group(0))
         for m in FIELD_PHONE_RE.finditer(out.stdout):
-            if m.group(1) not in FAKE: phone_bad.add(m.group(1))
+            if not _is_fake(m.group(1)): phone_bad.add(m.group(1))
         for m in PHONE_ANY_RE.finditer(out.stdout):
-            if m.group(0) not in FAKE: any_bad.add(m.group(0))
+            if not _is_fake(m.group(0)): any_bad.add(m.group(0))
     msg = subprocess.run([*git, "log", "--all", "--format=%s"], capture_output=True, text=True).stdout
     msg_bad = [m for m in VIN_RE.finditer(msg) if not m.group(0).startswith("LVSHFAKE")]
     print(f"[2] 历史内容: 真实VIN={sorted(vin_bad) or 0} phone字段={sorted(phone_bad) or 0} 任意号码={sorted(any_bad) or 0} message={len(msg_bad)}")
@@ -141,7 +145,7 @@ def main() -> int:
     print("RESULT:", "PASS（可达历史与发布物无个人信息）" if ok_all else "FAIL")
     if dang_bad:
         print("  待 GitHub Support purge：", ", ".join(dang_bad))
-        print("  处理完成后从 KNOWN_DANGLING / --dangling 移除对应项并重跑本脚本")
+        print("  处理完成后从 --dangling 移除对应项并重跑本脚本")
     return 0
 
 
