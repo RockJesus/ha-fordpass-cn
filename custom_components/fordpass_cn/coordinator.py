@@ -1014,9 +1014,20 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return 0
         _written = 0
         _failed = 0
+        # v5.6.10: 隐私实体不写 logbook——VIN（车辆识别码）、车牌号、
+        # 车辆定位的状态值会进活动历史（recorder 持久化），按 unique_id
+        # 尾缀精确跳过（entity_id 为拼音 slug 不稳定）。registry 查询
+        # 为 dict 读取，开销可忽略。
+        _registry = self.hass.helpers.entity_registry.async_get(self.hass)
+        _privacy_uid_suffixes = ("-vehicle_vin", "-license_plate", "-location")
         for eid in self.all_entity_ids():
             if eid.startswith(("button.", "image.")):
                 continue  # button=按下时间戳 / image=图片URL，无状态含义
+            _ent = _registry.async_get(eid)
+            if _ent is not None and (_ent.unique_id or "").endswith(
+                _privacy_uid_suffixes
+            ):
+                continue  # VIN/车牌/定位属个人信息，不进 logbook
             st = self.hass.states.get(eid)
             # v5.1.0: 跳过不可用/未知/空状态——活动页不显示无意义
             # 的「不可用」条目（用户 2026-10-17 要求：只显示有实际
