@@ -104,7 +104,10 @@ async def _cleanup_legacy_vin(hass: HomeAssistant, entry: ConfigEntry, coord) ->
         from homeassistant.helpers import device_registry as dr
         dreg = dr.async_get(hass)
         # v5.7.2: async_get_device 已废弃（2027.8 移除）——改用按 identifier 查询
-        dev = dreg.async_get_device_by_identifier({(DOMAIN, coord.vin)})
+        # v5.8.1: HA 2026.10 async_get_device_by_identifier 增加必填 config_entry_id
+        #         参数（缺失导致 TypeError 清理失败，日志 legacy vin device cleanup
+        #         failed）——补传 entry.entry_id
+        dev = dreg.async_get_device_by_identifier({(DOMAIN, coord.vin)}, entry.entry_id)
         if dev is not None:
             _LOGGER.debug("fordpass_cn cleanup legacy vin device: %s", dev.id)
             dreg.async_remove_device(dev.id)
