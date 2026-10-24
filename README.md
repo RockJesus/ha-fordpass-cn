@@ -352,8 +352,15 @@ content: >-
 
 ## 🔒 隐私与安全
 
-- 本仓库**不含任何个人信息**：真实 VIN、手机号、密码等一律使用测试假数据（假 VIN `LVSHFAKE000000001`、示例号码）。
-- 发布前运行 `python3 -X utf8 -u docs/privacy_audit.py`（需设置 `GITHUB_TOKEN` 环境变量）做全库隐私审计，输出 **PASS** 方可发布。
+本仓库与集成运行时的个人信息防护措施（v5.6.1 起持续加固，v5.7.6 更新）：
+
+- **仓库零个人信息**：真实 VIN、手机号、密码等一律使用测试假数据（假 VIN `LVSHFAKE000000001`、示例号码）；真实格式 VIN（17 位）禁止入库，发布脚本内置断言拦截。
+- **git 历史无残留**：历史曾出现的敏感内容已通过 filter-repo 全历史重写清除（1235→1214 commits），并已删除历史 release 的全部 zip 快照（快照不受历史重写影响）；不可达旧 commit 已提交 GitHub Support 请求清除，`docs/privacy_audit.py` 支持 `--dangling <sha>` 逐点复查。
+- **实体唯一标识脱敏**：所有平台实体 unique_id 与设备标识使用 `sha256(VIN) 前 16 位` 确定性哈希前缀（稳定、不可逆），registry 不存真实 VIN。
+- **活动历史不记录个人信息**：车辆识别码（VIN）、车牌号、车辆定位三个实体的状态值不写入 logbook 活动历史（按 unique_id 尾缀精确跳过）；车辆定位 device_tracker 状态为 zone 状态（home/not_home）不含坐标，其经纬度仅在 attribute 中。
+- **日志掩码**：debug 日志对 VIN / 经纬度 / 地址掩码输出（VIN 保留首 4 末 4）；车辆图片缓存文件名使用 sha1 摘要不含 VIN；操作日志不打印完整 VIN。
+- **发布前强制审计**：发布脚本内置断言（禁词 + 真实格式 VIN 正则 + BOM 检查 + hacs.json 归档模式断言）+ `docs/privacy_audit.py` 全库审计（需设置 `GITHUB_TOKEN` 环境变量，覆盖可达历史 + dangling commit + releases + codeload 归档），输出 **PASS** 方可发布；发布后复检 `/releases/latest` 无 zip 资产。
+- **数据本地**：您的车辆数据（VIN、位置、车况等）仅存储在您自己的 Home Assistant 中，集成除福特/林肯官方服务端外不向任何第三方传输、共享您的数据。
 
 ## ⚠️ 免责声明
 
@@ -368,6 +375,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.7.6**（2026-10-24）：**活动日志隐私跳过优化 + README 脱敏清单更新**——① `_log_refresh_states` 隐私尾缀常量提升为模块级 `_PRIVACY_UID_SUFFIXES`（VIN/车牌/定位三实体跳过逻辑不变），循环内按 entity_id 的 registry 查询改为预构建映射（一次遍历替代每实体一次查询）；② 注释明确车辆定位 device_tracker（unique_id 尾缀 `-tracker`）**不进跳过名单的原因**：其 state 为 zone 状态（home/not_home）而非坐标/地址，经纬度仅在 attribute 中，保留「车辆离家/回家」活动显示价值——防止后续误加导致活动显示缺失；③ 隐私与安全章节更新为完整脱敏措施清单（历史重写/zip 快照清除/unique_id 哈希/logbook 跳过/日志掩码/发布前强制审计/数据本地）。
 - **v5.7.5**（2026-10-24）：**修复重启后活动补写崩溃（hass.helpers 移除）**——`_log_refresh_states` 用 `self.hass.helpers.entity_registry` 快捷属性获取实体注册表，该属性在 HA 2026.10 已移除（`AttributeError: 'HomeAssistant' object has no attribute 'helpers'`），重启后 45 秒延迟补写活动任务直接崩溃报「Task exception was never retrieved」；改为标准导入 `from homeassistant.helpers import entity_registry as er` + `er.async_get(hass)`（与集成内其他 2 处一致），重启后活动补写恢复正常。
 - **v5.7.4**（2026-10-24）：**TTL 缓存修复（告警/未读消息不再每轮真拉）**——`active_alerts` 与 `messages` 的 TTL 原为 1800s，与 30 分钟刷新间隔**等长**，每次轮询时缓存恰好过期、永不命中（等效每轮真拉，白写缓存）；改为 3600s 后每两轮命中一次缓存，云端请求量下降；告警/消息实时性仍为 30 分钟轮询粒度内（最多延迟 1 个周期），手动刷新按钮 force 绕过缓存照常全量真拉不受影响。
 - **v5.7.3**（2026-10-24）：**隐私审计工具去 SHA 索引**——`docs/privacy_audit.py` 不再把已知旧 commit 的具体 SHA 硬编码入库（硬编码等于在仓库中公开含敏感数据的不可达旧 commit 的访问索引，任何人按 SHA 即可读取历史残留）；改为审计时通过 `--dangling <sha>` 命令行参数临时传入。仓库除 main 与全部可达 git 历史零个人信息外，可读渠道（releases、codeload 归档）复检全净。

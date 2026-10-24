@@ -27,6 +27,14 @@ from .const import (
     PROBE_PERSIST_TTL,
 )
 
+# v5.7.6: 隐私实体 unique_id 尾缀（logbook 活动跳过）从函数内提升为
+# 模块级常量。device_tracker（-tracker）state 为 zone 状态
+# （home/not_home）而非坐标/地址，不进活动历史，无需跳过——保留
+# "车辆离家/回家"活动显示价值（其经纬度仅在 attribute 中）。
+# 其余隐私尾缀在 v5.7.0 起精确跳过：VIN/车牌/定位的 state 值
+# （真实 VIN、车牌、地址/坐标字符串）不得进 logbook 活动历史。
+_PRIVACY_UID_SUFFIXES = ("-vehicle_vin", "-license_plate", "-location")
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -1042,13 +1050,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from homeassistant.helpers import entity_registry as er
 
         _registry = er.async_get(self.hass)
-        _privacy_uid_suffixes = ("-vehicle_vin", "-license_plate", "-location")
+        # v5.7.6: 预构建 entity_id→entry 映射（一次遍历），替代循环内
+        # 每实体一次 async_get 查询；尾缀常量提升为模块级
+        # _PRIVACY_UID_SUFFIXES。
+        _reg_entities = _registry.entities
         for eid in self.all_entity_ids():
             if eid.startswith(("button.", "image.")):
                 continue  # button=按下时间戳 / image=图片URL，无状态含义
-            _ent = _registry.async_get(eid)
+            _ent = _reg_entities.get(eid)
             if _ent is not None and (_ent.unique_id or "").endswith(
-                _privacy_uid_suffixes
+                _PRIVACY_UID_SUFFIXES
             ):
                 continue  # VIN/车牌/定位属个人信息，不进 logbook
             st = self.hass.states.get(eid)
