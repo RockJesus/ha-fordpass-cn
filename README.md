@@ -368,6 +368,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.6.8**（2026-10-24）：**修复 Ruff CI 红叉**——image.py 未使用的 `import re` 触发 F401（`re imported but unused`），删除该导入，Ruff Lint 恢复全绿。
 - **v5.6.7**（2026-10-24）：**修复 token 刷新被网关拒绝（refresh-dlt-token 401/600）**——登录成功但刷新令牌时报 `token refresh failed (401/600 after retry)`：集成刷新请求体此前多带 `brand` 字段，与 App 6.16.0 实测不符（HAR 实拍刷新请求仅 `encryptedRefreshToken`+`xjw` 两个字段），网关 DTO 严格校验拒绝额外字段；同步对齐登出撤销请求（App 实测仅 `encryptedRefreshToken` 一个字段）。修复后刷新链路与 App 完全一致。
 - **v5.6.6**（2026-10-24）：**修复登录白盒加密 IV 回归（generate-passcode 500）**——v5.6.0 起 `_new_iv()` 误改为 `os.urandom(16)`，任意字节 IV 被网关拒绝（`whitebox decrypt error / 100500`，福特/林肯双品牌登录发码均失败）；恢复与 App 6.16.0 一致的 16 位小写字母 IV（实机抓包逐字符核对），修复后集成加密实测发码接口 **200 成功**。
 - **v5.6.5**（2026-10-24）：**运行时 VIN 暴露收口 + 审计工具补 dangling 扫描**——① 日志隐私：按钮操作 info 日志 VIN 掩码只留后 6 位（此前 `重置空调滤芯/清空预约出发` 打完整 VIN）；② 车辆图片缓存文件名不再含 VIN（一律 sha1 摘要，杜绝 VIN 落盘）；③ `docs/privacy_audit.py` 新增 **dangling commit 扫描**：filter-repo 重写后不可达旧 commit（如 `155c2ee`/`3d99f0d` 等）仍可按 SHA 从 GitHub 读取，审计工具内置已知旧 commit 黑名单逐一点查（git/trees + contents 全文件），发现真实 VIN/手机号即 **FAIL** 并提示提交 GitHub Support 清除——不再误报 PASS；④ unique_id/设备标识符保留 VIN（HA 官方要求稳定唯一标识，仅存本地注册表，不对外暴露）。
