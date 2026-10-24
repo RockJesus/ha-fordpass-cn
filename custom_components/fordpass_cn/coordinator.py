@@ -795,10 +795,13 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception as exc:  # noqa: BLE001
                 self.logger.debug("FordPass location fetch failed: %s", exc)
                 data["location"] = (self.data or {}).get("location")
-        # Vehicle health alerts（30 分钟 TTL；失败保留旧列表/清空，
+        # Vehicle health alerts（60 分钟 TTL；失败保留旧列表/清空，
         # TTL 命中天然抑制重试——取代旧"连续失败 2 次抑制 1h"逻辑）
+        # v5.7.4: TTL 1800→3600——旧值与刷新间隔 30min 等长，每轮 TTL 刚
+        # 过期导致缓存永不命中（每轮真拉）；拉长到 60min 后每两轮命中一次，
+        # 告警实时性仍为 30min 轮询粒度内可接受。
         alerts = await self._cached_fetch(
-            "active_alerts", 1800, lambda: self.api.get_active_alerts(self.vin), force=force_all
+            "active_alerts", 3600, lambda: self.api.get_active_alerts(self.vin), force=force_all
         )
         data["active_alerts"] = alerts if isinstance(alerts, list) else []
         # OTA 设置状态（6 小时 TTL——OTA 排程配置几乎不变）
@@ -853,10 +856,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data[key] = await self._cached_fetch(
                 key, ttl, factory, force=force_all
             )
-        # 未读消息摘要（30 分钟 TTL；v5.1.8: 账号级共享缓存——账户级
+        # 未读消息摘要（60 分钟 TTL；v5.1.8: 账号级共享缓存——账户级
         # 端点多车共享一份，多车每轮只真拉一次）
+        # v5.7.4: TTL 1800→3600——与刷新间隔等长导致缓存永不命中，改后
+        # 每两轮命中一次账号级缓存，减少云端请求。
         data["messages"] = await self._cached_fetch(
-            "messages", 1800, lambda: self.api.get_messages_summary(),
+            "messages", 3600, lambda: self.api.get_messages_summary(),
             force=force_all, account=True,
         )
         # v2.7.8: record the successful poll time for the sensor last_poll
