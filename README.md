@@ -335,7 +335,7 @@ vehicles:
 
 | 问题 | 处理 |
 |---|---|
-| 用户名密码登录失败/被拦截（`AADB2C: An exception has occurred`、567） | 微软 Azure AD B2C 网关风控可能拦截非浏览器自动化请求——**改用短信验证码登录**（登录后令牌自动续期，无需频繁重登） |
+| 用户名密码登录失败/被拦截（`AADB2C: An exception has occurred`、567） | 福特登录页（login.ford.com.cn）前置腾讯云 EdgeOne 安全防护，按 TLS/行为指纹拦截纯 HTTP 客户端（2026-10-24 实测 requests 与 curl_cffi 全指纹均返回 567 拦截页）——**密码登录须走浏览器辅助**：按配置向导第 2 步在浏览器打开登录链接完成登录，复制地址栏 `?code=xxx` 粘贴回集成（一次性有效）。被拦截/不便时**改用短信验证码登录**（登录后令牌自动续期，无需频繁重登） |
 | 某车型实体没有创建 | 集成按云端能力/车型字段判断，**探测端点 200 ≠ 车型支持**——未支持的功能不创建假实体，属正常设计 |
 | 重新加载弹「Setup ... cancelled」 | v4.9.8 已修复：setup 首次刷新 20s 短超时转 ConfigEntryNotReady 自动重试，请更新到最新版 |
 | 密钥轮换后无法登录/加密失败 | 福特轮换密钥后需发布新版本适配，请关注 Releases 更新 |
@@ -375,7 +375,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
-- **v5.7.9**（2026-10-24）：**服务日志/异常消息 VIN 掩码收口（运行时 VIN 暴露最后残留）**——① `fordpass_cn.refresh_status` 服务 info 日志此前打印完整 VIN（`vin=%s`），现只留尾段 `vin=…%s`（`coord.vin[-6:]`）；② 服务调用时 VIN 不在当前账号车辆的异常消息（HomeAssistantError）同步掩码为 `VIN …尾段`（此前完整 VIN 进错误消息/前端通知/日志）；③ 全量复查确认运行时完整 VIN 输出点已清零：图片缓存文件名 SHA1 摘要（v5.1.8）、实体 unique_id/设备标识 sha256 前缀（v5.7.1）、logbook 隐私尾缀跳过（v5.7.0）、api.py vehicle-status raw debug 掩码（v5.6.10）、diagnostics redact（v4.9.5）、coordinator 恢复日志 VIN 尾段（v5.6.x）均已在册。
+- **v5.7.9**（2026-10-24）：**服务日志/异常消息 VIN 掩码收口（运行时 VIN 暴露最后残留）+ B2C 密码登录引导优化**——① `fordpass_cn.refresh_status` 服务 info 日志此前打印完整 VIN（`vin=%s`），现只留尾段 `vin=…%s`（`coord.vin[-6:]`）；② 服务调用时 VIN 不在当前账号车辆的异常消息（HomeAssistantError）同步掩码为 `VIN …尾段`（此前完整 VIN 进错误消息/前端通知/日志）；③ 全量复查确认运行时完整 VIN 输出点已清零：图片缓存文件名 SHA1 摘要（v5.1.8）、实体 unique_id/设备标识 sha256 前缀（v5.7.1）、logbook 隐私尾缀跳过（v5.7.0）、api.py vehicle-status raw debug 掩码（v5.6.10）、diagnostics redact（v4.9.5）、coordinator 恢复日志 VIN 尾段（v5.6.x）均已在册；④ **B2C 密码登录引导优化**（2026-10-24 手机号密码登录 HAR 实测：纯 HTTP 客户端被 login.ford.com.cn 前置 EdgeOne WAF 按 TLS/行为指纹拦截，requests 与 curl_cffi 全指纹均返回 567——密码登录无法改为纯 API 直连，浏览器辅助是唯一可靠路径）：配置向导密码登录第 2 步改为分步操作说明（含 EdgeOne 拦截原因、电脑/手机浏览器登录步骤、地址栏复制 `?code=` 指引、授权码一次性提示、被拦截时改用短信验证码建议）；README 故障排查表同步更新该说明。
 - **v5.7.8**（2026-10-24）：**林肯登录参数对齐（App 6.0.0 HAR 实证）**——① 林肯品牌 `app_version` 由 6.7.0 对齐为 **6.0.0**（2026-10-24 林肯之道 App 实拍：generate-passcode/passcode-login headers `appversion=6.0.0`、vehicles/list query `appVersion=6.0.0`，与福特侧同规：网关按 App 实拍版本发请求最稳）；② `generate_passcode` 补 `auth-token: None` 防御（与 `passcode_login` 一致——token-exchange 家族 App 实拍均不带 auth-token 头，reauth 场景防旧 token 残留导致网关校验失败；v5.6.9 修复时漏掉发码端点）。其余登录参数经逐项核对全部与 App 一致：touchPoint=LINCOLN_APP_LOGIN / brand=LINCOLN / appKey=lincoln / clientType=LW / tncAccepted / tncOutBoundAccepted / osType=ANDROID / timestamp+sign 签名 / 林肯自生成会话 IV（不沿用发码 IV，App 实证 generate/login xjw 不同仍 200）。
 - **v5.7.7**（2026-10-24）：**token 刷新响应结构保护（修复诊断信息丢失）**——`refresh_token` 对「HTTP 200 但响应无 token 字段」的异常结构（网关异常响应/结构变更/业务拒绝）此前直接 `KeyError: encryptedAccessToken`，被 `_as_refresh_failed` 按 500 处理、仅记录「token refresh failed」，无法区分业务拒绝与结构异常；现与 `passcode_login` 对齐：无 token 字段时携带服务端 status/error/errorCode 抛 `FordPassApiError`，日志可直接定位真实原因（2026-10-24 福特网关 whitebox decrypt 500 熔断期间该缺口导致排障只能靠猜）。
 - **v5.7.6**（2026-10-24）：**活动日志隐私跳过优化 + README 脱敏清单更新**——① `_log_refresh_states` 隐私尾缀常量提升为模块级 `_PRIVACY_UID_SUFFIXES`（VIN/车牌/定位三实体跳过逻辑不变），循环内按 entity_id 的 registry 查询改为预构建映射（一次遍历替代每实体一次查询）；② 注释明确车辆定位 device_tracker（unique_id 尾缀 `-tracker`）**不进跳过名单的原因**：其 state 为 zone 状态（home/not_home）而非坐标/地址，经纬度仅在 attribute 中，保留「车辆离家/回家」活动显示价值——防止后续误加导致活动显示缺失；③ 隐私与安全章节更新为完整脱敏措施清单（历史重写/zip 快照清除/unique_id 哈希/logbook 跳过/日志掩码/发布前强制审计/数据本地）。
