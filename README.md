@@ -368,6 +368,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.7.2**（2026-10-24）：修复 v5.7.1 引入的废弃 API 警告——设备清理改用 sync_get_device_by_identifier（sync_get_device 将在 HA 2027.8 移除）。
 - **v5.7.1**（2026-10-24）：**实体 unique_id 全面脱敏**——所有平台实体 unique_id 与设备标识（identifiers）由真实 VIN 改为 **sha256(VIN) 前 16 位**确定性哈希前缀（同一车辆跨版本稳定、不可逆、无个人标识）；升级时自动清理旧 VIN 前缀实体/设备条目（registry 不再残留真实 VIN）；同步脱敏 coordinator 名称、默认车辆名、能力检测 debug 日志与按钮操作日志的 VIN 尾缀。
 - **v5.7.0**（2026-10-24）：**隐私脱敏加固**——① logbook 活动历史不再写入车辆识别码（VIN）、车牌号、车辆定位三个实体（按 unique_id 尾缀精确跳过，避免个人信息进 recorder 持久化）；② api.py vehicle-status raw debug 日志对 VIN / 经纬度 / 地址掩码输出（VIN 保留首 4 末 4，经纬度与地址整体掩码）。
 - **v5.6.9**（2026-10-24）：**彻底修复 token 刷新失败**（HAR 6.16.0 完整 body/headers 取证）：① token-exchange 家族端点（刷新/撤销/验证码登录/B2C 换 token）App 实拍**均不带 auth-token**——集成此前给刷新请求带上已失效的旧 access token，网关校验失败返回 `401/600`（这是 v5.6.6 刷新失败真根因）；② refresh/revoke 请求体恢复 `brand` 字段（该字段必填，缺失返回 400 `errorCode 100502 brand can not be empty`）。修复后刷新/撤销请求与 App 完全一致（encryptedRefreshToken+brand+xjw+timestamp+sign，无 auth-token）。
