@@ -81,12 +81,12 @@ class FordPassVehicleImage(ImageEntity):
         super().__init__(hass)
         self.coordinator = coordinator
         if kind == "overlook":
-            self._attr_unique_id = f"{coordinator.vin}-vehicle_overlook_image"
+            self._attr_unique_id = f"{coordinator.uid_key}-vehicle_overlook_image"
             self._attr_name = "俯视车型图"
             self._url_key = "vehicle_overlook_url"
             self._persist_suffix = "_overlook"
         else:
-            self._attr_unique_id = f"{coordinator.vin}-vehicle_image"
+            self._attr_unique_id = f"{coordinator.uid_key}-vehicle_image"
             self._attr_name = "侧视车型图"
             self._url_key = "vehicle_image_url"
             self._persist_suffix = ""
@@ -174,7 +174,7 @@ class FordPassRemoteImageEntity(ImageEntity):
         super().__init__(hass)
         self.coordinator = coordinator
         self._kind = kind
-        self._attr_unique_id = f"{coordinator.vin}-{kind}_remote_image"
+        self._attr_unique_id = f"{coordinator.uid_key}-{kind}_remote_image"
         self._attr_name = "停车影像图" if kind == "parking" else "行车监控图"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -292,7 +292,7 @@ class FordPass3dModelImage(ImageEntity):
     def __init__(self, hass: HomeAssistant, coordinator: FordPassCoordinator) -> None:
         super().__init__(hass)
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-vehicle_3d_image"
+        self._attr_unique_id = f"{coordinator.uid_key}-vehicle_3d_image"
         self._attr_name = "3D 车型图"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info

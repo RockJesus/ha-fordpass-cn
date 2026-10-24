@@ -58,7 +58,7 @@ async def async_setup_entry(
 class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-tracker"
+        self._attr_unique_id = f"{coordinator.uid_key}-tracker"
         self._attr_name = "车辆定位"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
