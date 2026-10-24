@@ -27,7 +27,7 @@
       },
       "password": {
         "title": "Username & Password Login",
-        "description": "Enter the account and password. Next, open the login link in a browser and paste the authorization code.",
+        "description": "Enter the account and password. The password is stored only in the local Home Assistant configuration. Next, open the login link in a browser and paste the authorization code.",
         "data": {
           "username": "Username (phone number)",
           "password": "Password"
@@ -36,7 +36,7 @@
       },
       "b2c": {
         "title": "Paste Authorization Code",
-        "description": "Open the following link in your browser and sign in with your FordPass account (username: {username}). After login the browser redirects to ford.com.cn with ?code=... in the address bar. Copy that code and paste it here. The code is single-use and expires right after the token exchange.\n\nLogin link:\n{login_url}",
+        "description": "The official Ford login page is protected by EdgeOne WAF, so the integration cannot submit the password directly. Please complete the login in a browser and copy the authorization code:\n\n1. Open the login link below in your computer or phone browser and sign in with your FordPass account (username: {username});\n2. After login the browser redirects to ford.com.cn with ?code=... in the address bar. Copy that code and paste it here;\n3. The code is single-use and expires right after the token exchange.\n\nIf the browser asks for verification or the page is unavailable, retry later or use SMS code login instead.\n\nLogin link:\n{login_url}",
         "data": {
           "code": "Authorization code"
         },
