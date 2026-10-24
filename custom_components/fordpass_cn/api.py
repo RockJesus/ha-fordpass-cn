@@ -841,12 +841,15 @@ class FordPassApi:
                     return self._refresh_cache[2]
                 self._refresh_cache = None
             # The server DTO (RefreshDLTTokenRequest) rejects any extra field
-            # (e.g. touchPoint -> JSON parse error); only these three are allowed.
+            # (e.g. touchPoint / brand -> 401/600 business reject; verified live
+            # 2026-10-24 v5.6.7: App 6.16.0 HAR refresh-dlt-token body 仅
+            # encryptedRefreshToken + xjw 两个字段，集成此前多带 brand 被网关拒绝
+            # -> "token refresh failed (401/600 after retry)"）。仅这两个字段。
             enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
             data = await self._request(
                 "POST",
                 PATH_REFRESH_TOKEN,
-                {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
+                {"encryptedRefreshToken": enc, "xjw": xjw},
             )
             inner = data.get("data", {})
             xjw2 = inner.get("xjw", xjw)
@@ -879,11 +882,13 @@ class FordPassApi:
             return result
 
     async def revoke_token(self, refresh_token: str) -> None:
-        enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
+        # v5.6.7: 对齐 App 6.16.0 HAR——revoke-dlt-token body 仅
+        # encryptedRefreshToken 一个字段（无 brand/xjw），DTO 拒绝额外字段。
+        enc, _ = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
         await self._request(
             "POST",
             PATH_REVOKE_TOKEN,
-            {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
+            {"encryptedRefreshToken": enc},
         )
 
     # -------------------------------------------------------------- vehicles
