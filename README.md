@@ -368,6 +368,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.7.4**（2026-10-24）：**TTL 缓存修复（告警/未读消息不再每轮真拉）**——`active_alerts` 与 `messages` 的 TTL 原为 1800s，与 30 分钟刷新间隔**等长**，每次轮询时缓存恰好过期、永不命中（等效每轮真拉，白写缓存）；改为 3600s 后每两轮命中一次缓存，云端请求量下降；告警/消息实时性仍为 30 分钟轮询粒度内（最多延迟 1 个周期），手动刷新按钮 force 绕过缓存照常全量真拉不受影响。
 - **v5.7.3**（2026-10-24）：**隐私审计工具去 SHA 索引**——`docs/privacy_audit.py` 不再把已知旧 commit 的具体 SHA 硬编码入库（硬编码等于在仓库中公开含敏感数据的不可达旧 commit 的访问索引，任何人按 SHA 即可读取历史残留）；改为审计时通过 `--dangling <sha>` 命令行参数临时传入。仓库除 main 与全部可达 git 历史零个人信息外，可读渠道（releases、codeload 归档）复检全净。
 - **v5.7.2**（2026-10-24）：修复 v5.7.1 引入的废弃 API 警告——设备清理改用 sync_get_device_by_identifier（sync_get_device 将在 HA 2027.8 移除）。
 - **v5.7.1**（2026-10-24）：**实体 unique_id 全面脱敏**——所有平台实体 unique_id 与设备标识（identifiers）由真实 VIN 改为 **sha256(VIN) 前 16 位**确定性哈希前缀（同一车辆跨版本稳定、不可逆、无个人标识）；升级时自动清理旧 VIN 前缀实体/设备条目（registry 不再残留真实 VIN）；同步脱敏 coordinator 名称、默认车辆名、能力检测 debug 日志与按钮操作日志的 VIN 尾缀。
