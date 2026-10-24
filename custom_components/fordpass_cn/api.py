@@ -914,6 +914,21 @@ class FordPassApi:
             )
             inner = data.get("data", {})
             xjw2 = inner.get("xjw", xjw)
+            if not isinstance(inner, dict) or "encryptedAccessToken" not in inner:
+                # v5.7.7: 与 passcode_login 同等的响应结构保护——HTTP 200 但
+                # 无 token 字段（网关异常响应/结构变更/业务拒绝）抛带
+                # status/error/errorCode 的 FordPassApiError，避免裸 KeyError
+                # 被 _as_refresh_failed 按 500 处理丢失诊断信息（2026-10-24
+                # 福特网关 whitebox decrypt 500 期间日志只有 "token refresh
+                # failed"，无法区分业务拒绝与结构异常）。
+                status = data.get("status") if isinstance(data, dict) else None
+                err_text = (
+                    "token refresh returned no token fields"
+                    f"(status={status}, error={data.get('error') if isinstance(data, dict) else '?'}, "
+                    f"errorCode={data.get('errorCode') if isinstance(data, dict) else '?'})"
+                )
+                self._log.warning("FordPass %s -> %s", PATH_REFRESH_TOKEN, err_text)
+                raise FordPassApiError(status if isinstance(status, int) else 200, err_text)
             result: dict[str, str] = {
                 "access_token": await asyncio.to_thread(lambda: self.crypto.decrypt_field(
                     inner["encryptedAccessToken"], xjw2
