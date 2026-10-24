@@ -24,6 +24,8 @@ from __future__ import annotations
 import base64
 import json
 import os
+import random
+import string
 import struct
 import threading
 from typing import ClassVar
@@ -221,9 +223,11 @@ class FordPassCrypto:
 
     @staticmethod
     def _new_iv() -> bytes:
-        # P2-4（v5.6.0）：改用 CSPRNG（os.urandom）——random 的梅森旋转
-        # 可预测，用作 CBC IV 属安全缺陷。
-        return os.urandom(16)
+        # 修复（v5.6.6）：IV 必须为 16 个小写字母（a-z）——App 与网关协议
+        # 要求 xjw 为字母 hex；v5.6.0 误改 os.urandom 后任意字节 IV 被网关
+        # 拒绝（generate-passcode 500 whitebox decrypt error 100500）。
+        # 与 App 6.16.0 实机抓包 IV（oihilknuiwtxnm 等）逐字符一致。
+        return "".join(random.choice(string.ascii_lowercase) for _ in range(16)).encode()
 
     @staticmethod
     def _pkcs7(data: bytes) -> bytes:
