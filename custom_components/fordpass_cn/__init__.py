@@ -172,12 +172,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         if not targets:
             # v5.3.0: action-exceptions（quality_scale Silver）——服务失败抛异常，
             # 自动化/脚本可感知（HomeAssistantError 在服务调用处显示失败原因）。
+            # v5.7.9: 异常消息掩码 VIN 尾段（完整 VIN 曾进错误消息/日志）
             raise HomeAssistantError(
-                f"fordpass_cn refresh_status: VIN {vin} 不在当前账号车辆中"
+                f"fordpass_cn refresh_status: VIN …{vin[-6:]} 不在当前账号车辆中"
             )
         for coord in targets:
+            # v5.7.9: 服务日志掩码 VIN 尾段（info 级曾打印完整 VIN）
             _LOGGER.info(
-                "fordpass_cn service refresh_status vin=%s", coord.vin
+                "fordpass_cn service refresh_status vin=…%s", coord.vin[-6:]
             )
             await coord.async_request_refresh()
 
