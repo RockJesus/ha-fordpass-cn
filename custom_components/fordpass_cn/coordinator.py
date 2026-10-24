@@ -1036,7 +1036,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 车辆定位的状态值会进活动历史（recorder 持久化），按 unique_id
         # 尾缀精确跳过（entity_id 为拼音 slug 不稳定）。registry 查询
         # 为 dict 读取，开销可忽略。
-        _registry = self.hass.helpers.entity_registry.async_get(self.hass)
+        # v5.7.5: `hass.helpers` 快捷属性在 HA 2026.10 已移除
+        # （AttributeError: 'HomeAssistant' object has no attribute
+        # 'helpers'），改用标准导入方式（与 973/1111 行一致）。
+        from homeassistant.helpers import entity_registry as er
+
+        _registry = er.async_get(self.hass)
         _privacy_uid_suffixes = ("-vehicle_vin", "-license_plate", "-location")
         for eid in self.all_entity_ids():
             if eid.startswith(("button.", "image.")):

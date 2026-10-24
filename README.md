@@ -368,6 +368,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.7.5**（2026-10-24）：**修复重启后活动补写崩溃（hass.helpers 移除）**——`_log_refresh_states` 用 `self.hass.helpers.entity_registry` 快捷属性获取实体注册表，该属性在 HA 2026.10 已移除（`AttributeError: 'HomeAssistant' object has no attribute 'helpers'`），重启后 45 秒延迟补写活动任务直接崩溃报「Task exception was never retrieved」；改为标准导入 `from homeassistant.helpers import entity_registry as er` + `er.async_get(hass)`（与集成内其他 2 处一致），重启后活动补写恢复正常。
 - **v5.7.4**（2026-10-24）：**TTL 缓存修复（告警/未读消息不再每轮真拉）**——`active_alerts` 与 `messages` 的 TTL 原为 1800s，与 30 分钟刷新间隔**等长**，每次轮询时缓存恰好过期、永不命中（等效每轮真拉，白写缓存）；改为 3600s 后每两轮命中一次缓存，云端请求量下降；告警/消息实时性仍为 30 分钟轮询粒度内（最多延迟 1 个周期），手动刷新按钮 force 绕过缓存照常全量真拉不受影响。
 - **v5.7.3**（2026-10-24）：**隐私审计工具去 SHA 索引**——`docs/privacy_audit.py` 不再把已知旧 commit 的具体 SHA 硬编码入库（硬编码等于在仓库中公开含敏感数据的不可达旧 commit 的访问索引，任何人按 SHA 即可读取历史残留）；改为审计时通过 `--dangling <sha>` 命令行参数临时传入。仓库除 main 与全部可达 git 历史零个人信息外，可读渠道（releases、codeload 归档）复检全净。
 - **v5.7.2**（2026-10-24）：修复 v5.7.1 引入的废弃 API 警告——设备清理改用 sync_get_device_by_identifier（sync_get_device 将在 HA 2027.8 移除）。
