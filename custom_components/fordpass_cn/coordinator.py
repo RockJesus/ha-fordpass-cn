@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import time
@@ -27,6 +28,16 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _uid_key(vin: str) -> str:
+    """v5.7.1: VIN 脱敏唯一键——sha256 前 16 位 hex。
+
+    实体 unique_id 与设备 identifiers 一律用此前缀，避免真实 VIN 进入
+    entity/device registry（recorder 持久化、HA 导出、日志均可能暴露）。
+    同一 VIN 永远同值（稳定，跨版本不变），不可逆（无法从哈希反推 VIN）。
+    """
+    return hashlib.sha256((vin or "").encode("utf-8")).hexdigest()[:16]
 
 
 def _status_summary(data: dict[str, Any]) -> str:
@@ -141,15 +152,17 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         car_id: str | None = None,
         config_entry=None,
     ) -> None:
+        uid_key = _uid_key(vin)  # v5.7.1: 脱敏前缀（name/identifiers/实体 unique_id）
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}-{vin[-6:]}",
+            name=f"{DOMAIN}-{uid_key[-6:]}",
             update_interval=timedelta(minutes=interval),
             config_entry=config_entry,
         )
         self.api = api
-        self.vin = vin
+        self.vin = vin  # 仅运行时云端请求用（加密字段），不进任何 registry
+        self.uid_key = uid_key  # v5.7.1: 实体 unique_id / 设备 identifiers 前缀
         # v4.8.1: 品牌（福特派/林肯之道）——config flow 第一步选择，
         # 林肯专属端点（俱乐部/取送车）仅在本品牌下探测
         self.brand = (
@@ -175,7 +188,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v5.1.4: 首轮刷新延迟补写逐实体活动标志（重启/重载后 setup 时
         # 实体尚未注册，all_entity_ids() 为空 → 45s 后补写一次）
         self._initial_states_pending = False
-        self._vehicle_name = vehicle_name or f"Ford {vin[-6:]}"
+        self._vehicle_name = vehicle_name or f"Ford {self.uid_key[-6:]}"
         # v3.4.1: active_alerts 频率由 TTL 缓存控制（30 分钟）——取代旧
         # "_alerts_fail/_alerts_hold_until 连续失败 2 次抑制 1h" 逻辑
         # （TTL 命中天然抑制重试，失败保留最后已知状态）。
@@ -647,7 +660,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             manufacturer = "Ford"
             sw_version = "6.14.0"
         return dr.DeviceInfo(
-            identifiers={(DOMAIN, self.vin)},
+            identifiers={(DOMAIN, self.uid_key)},  # v5.7.1: VIN 脱敏（sha256 前缀）
             name=self._vehicle_name,
             manufacturer=manufacturer,
             model=self._vehicle_name,
@@ -941,7 +954,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def activity_entity_id(self) -> str | None:
         """v5.1.1: 实时查 registry 的"车辆识别码"传感器 entity_id（活动日志关联）。
 
-        unique_id=f"{vin}-vehicle_vin"（VIN 实体无条件创建、稳定存在）。
+        unique_id=f"{uid_key}-vehicle_vin"（VIN 实体无条件创建、稳定存在；v5.7.1 起 uid_key 为 sha256 脱敏前缀）。
         历史教训：v4.5.1 关联"车辆信息"传感器（unique_id={vin}-vehicle_info），
         v4.5.2 删除该传感器后摘要活动 entity_id=None——全局活动页可见但
         集成设备页"来源"过滤视图不可见（entity_id=None 事件被设备过滤）。
@@ -955,7 +968,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
             return reg.async_get_entity_id(
-                "sensor", DOMAIN, f"{self.vin}-vehicle_vin"
+                "sensor", DOMAIN, f"{self.uid_key}-vehicle_vin"
             )
         except Exception:  # noqa: BLE001 - 找不到不阻断活动写入
             return None

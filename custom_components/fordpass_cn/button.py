@@ -231,7 +231,7 @@ class FordPassWallboxUnbindButton(_FordPassButtonBase):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-wallbox_unbind"
+        self._attr_unique_id = f"{coordinator.uid_key}-wallbox_unbind"
         self._attr_name = "解绑家充桩"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -281,7 +281,7 @@ class FordPassWallboxBleAddButton(_FordPassButtonBase):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-wallbox_ble_add"
+        self._attr_unique_id = f"{coordinator.uid_key}-wallbox_ble_add"
         self._attr_name = "家充桩 BLE 自动认证"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -329,7 +329,7 @@ class FordPassMarkReadButton(_FordPassButtonBase):
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-messages_read"
+        self._attr_unique_id = f"{coordinator.uid_key}-messages_read"
         self._attr_name = "标记消息已读"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -364,7 +364,7 @@ class FordPassVideoStartButton(_FordPassButtonBase):
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-video_start"
+        self._attr_unique_id = f"{coordinator.uid_key}-video_start"
         self._attr_name = "开始行车记录"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -383,7 +383,7 @@ class FordPassVideoStopButton(_FordPassButtonBase):
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-video_stop"
+        self._attr_unique_id = f"{coordinator.uid_key}-video_stop"
         self._attr_name = "停止行车记录"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -402,7 +402,7 @@ class FordPassButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._command = command
         self._cmd_spec = cmd_spec
-        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_unique_id = f"{coordinator.uid_key}-{key}"
         self._attr_name = label
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -513,7 +513,7 @@ class FordPassManualRefreshButton(_FordPassButtonBase):
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-manual_refresh"
+        self._attr_unique_id = f"{coordinator.uid_key}-manual_refresh"
         self._attr_name = "手动刷新车辆状态"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -598,7 +598,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-reset_air_filter"
+        self._attr_unique_id = f"{coordinator.uid_key}-reset_air_filter"
         self._attr_name = "重置空调滤芯"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -608,7 +608,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     async def async_press(self) -> None:
-        _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.vin[-6:])
+        _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.uid_key[-6:])
         try:
             resp = await self.coordinator.api.reset_air_filter(self.coordinator.vin)
             _LOGGER.info("FordPass 空调滤芯重置成功: %s", str(resp)[:200])
@@ -638,7 +638,7 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-cevs_deleteall"
+        self._attr_unique_id = f"{coordinator.uid_key}-cevs_deleteall"
         self._attr_name = "清空预约出发/充电"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -648,7 +648,7 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     async def async_press(self) -> None:
-        _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.vin[-6:])
+        _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.uid_key[-6:])
         try:
             resp = await self.coordinator.api.cevs_delete_all_departures(
                 self.coordinator.vin
@@ -680,7 +680,7 @@ class FordPassImageButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator, label: str, icon: str, kind: str) -> None:
         self.coordinator = coordinator
         self._kind = kind
-        self._attr_unique_id = f"{coordinator.vin}-{kind}_image"
+        self._attr_unique_id = f"{coordinator.uid_key}-{kind}_image"
         self._attr_name = label
         self._attr_icon = icon
         self._attr_device_info = coordinator.device_info

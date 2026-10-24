@@ -630,7 +630,7 @@ class FordPassVehicleAttrSensor(SensorEntity):
     def __init__(self, coordinator, key, label, attr, icon=None) -> None:
         self.coordinator = coordinator
         self._attr_key = attr
-        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_unique_id = f"{coordinator.uid_key}-{key}"
         self._attr_name = label
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -662,7 +662,7 @@ class FordPassLocationSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-location"
+        self._attr_unique_id = f"{coordinator.uid_key}-location"
         self._attr_name = "车辆定位"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -816,7 +816,7 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         self._skip_if_missing = skip_if_missing
         # v3.5.7: 值为 0/停用 时不创建（如 dualRearWheel=0 = 非双后轮车型）
         self._skip_if_zero = skip_if_zero
-        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_unique_id = f"{coordinator.uid_key}-{key}"
         self._attr_name = label
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -912,7 +912,7 @@ class FordPassAlertSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-vehicle_alerts"
+        self._attr_unique_id = f"{coordinator.uid_key}-vehicle_alerts"
         self._attr_name = "车辆异常警示"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -1015,7 +1015,7 @@ class FordPassActiveAlertListSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-active_alert_list"
+        self._attr_unique_id = f"{coordinator.uid_key}-active_alert_list"
         self._attr_name = "车辆告警列表"
         self._attr_device_info = coordinator.device_info
 
@@ -1158,7 +1158,7 @@ class FordPassAutoOffSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-auto_off_remaining"
+        self._attr_unique_id = f"{coordinator.uid_key}-auto_off_remaining"
         self._attr_name = "距离自动熄火时间"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -1227,7 +1227,7 @@ class FordPassOtaSettingSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-ota_setting"
+        self._attr_unique_id = f"{coordinator.uid_key}-ota_setting"
         self._attr_name = "OTA 设置状态"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
@@ -1278,7 +1278,7 @@ class _ServiceInfoSensor(SensorEntity):
     def __init__(self, coordinator, key: str, label: str, icon: str, uid: str | None = None) -> None:
         self.coordinator = coordinator
         self._data_key = key
-        self._attr_unique_id = f"{coordinator.vin}-{uid or key}"
+        self._attr_unique_id = f"{coordinator.uid_key}-{uid or key}"
         self._attr_name = label
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
@@ -1380,7 +1380,7 @@ class FordPassCloudProbeSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-cloud_probe"
+        self._attr_unique_id = f"{coordinator.uid_key}-cloud_probe"
         self._attr_name = "云端能力探测"
         self._attr_device_info = coordinator.device_info
 
@@ -1520,7 +1520,7 @@ class FordPassServiceFieldSensor(SensorEntity):
     ) -> None:
         self.coordinator = coordinator
         self._key = key  # v4.6.7: 用于「可用功能」中文解析分支
-        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_unique_id = f"{coordinator.uid_key}-{key}"
         self._attr_name = name
         self._attr_icon = icon
         self._attr_device_info = coordinator.device_info
@@ -1989,7 +1989,7 @@ class FordPassChirpCloudSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-chirp_cloud"
+        self._attr_unique_id = f"{coordinator.uid_key}-chirp_cloud"
         self._attr_name = "鸣笛设置云端状态"
         self._attr_device_info = coordinator.device_info
 
@@ -2062,7 +2062,7 @@ class FordPassAnnounceStatusSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-announce_status"
+        self._attr_unique_id = f"{coordinator.uid_key}-announce_status"
         self._attr_name = "鸣笛命令状态"
         self._attr_device_info = coordinator.device_info
 
@@ -2189,7 +2189,7 @@ class FordPassLastChargeSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-last_charge_soc"
+        self._attr_unique_id = f"{coordinator.uid_key}-last_charge_soc"
         self._attr_name = "上次充电电量"
         self._attr_device_info = coordinator.device_info
 
@@ -2223,7 +2223,7 @@ class FordPassSyncHealthSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-sync_health"
+        self._attr_unique_id = f"{coordinator.uid_key}-sync_health"
         self._attr_name = "云端同步状态"
         self._attr_device_info = coordinator.device_info
 
@@ -2270,7 +2270,7 @@ class FordPassSmartWallboxSensor(SensorEntity):
         self.coordinator = coordinator
         self._key = key
         self._kind = kind
-        self._attr_unique_id = f"{coordinator.vin}-{key}-{kind}"
+        self._attr_unique_id = f"{coordinator.uid_key}-{key}-{kind}"
         self._attr_name = label
         self._attr_device_info = coordinator.device_info
 
@@ -2368,7 +2368,7 @@ class FordPassFposbSensor(SensorEntity):
         self.coordinator = coordinator
         self._key = key
         self._kind = kind
-        self._attr_unique_id = f"{coordinator.vin}-fposb-{key}-{kind}"
+        self._attr_unique_id = f"{coordinator.uid_key}-fposb-{key}-{kind}"
         self._attr_name = label
         self._attr_device_info = coordinator.device_info
 
@@ -2443,7 +2443,7 @@ class FordPassEvssSensor(SensorEntity):
         self.coordinator = coordinator
         self._key = key
         self._kind = kind
-        self._attr_unique_id = f"{coordinator.vin}-evss-{key}-{kind}"
+        self._attr_unique_id = f"{coordinator.uid_key}-evss-{key}-{kind}"
         self._attr_name = label
         self._attr_device_info = coordinator.device_info
 
@@ -2525,7 +2525,7 @@ class FordPassCevsDepartureSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-cevs-departure"
+        self._attr_unique_id = f"{coordinator.uid_key}-cevs-departure"
         self._attr_name = "预约出发"
         self._attr_device_info = coordinator.device_info
 
@@ -2565,7 +2565,7 @@ class FordPassCevsChargelogSensor(SensorEntity):
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.vin}-cevs-chargelogs"
+        self._attr_unique_id = f"{coordinator.uid_key}-cevs-chargelogs"
         self._attr_name = "充电记录"
         self._attr_device_info = coordinator.device_info
 
@@ -2641,7 +2641,7 @@ class FordPassProbeSensor(SensorEntity):
         self.coordinator = coordinator
         self._key = key
         self._kind = kind
-        self._attr_unique_id = f"{coordinator.vin}-{key}"
+        self._attr_unique_id = f"{coordinator.uid_key}-{key}"
         self._attr_name = label
         self._attr_device_info = coordinator.device_info
         if kind in ("departure", "chargelog"):

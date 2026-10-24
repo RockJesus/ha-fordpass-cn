@@ -81,6 +81,36 @@ def _safe_vehicle_dump(vehicle: dict, limit: int = 500) -> str:
     return json.dumps(out, ensure_ascii=False, default=str)[:limit]
 
 
+async def _cleanup_legacy_vin(hass: HomeAssistant, entry: ConfigEntry, coord) -> None:
+    """v5.7.1: 清理旧格式（真实 VIN 前缀）实体与设备条目。
+
+    unique_id 与设备 identifiers 自 v5.7.1 起改为 sha256(vin) 脱敏前缀
+    （coordinator.uid_key）。升级时旧条目（unique_id 以真实 VIN + "-" 开头、
+    设备 identifiers=(DOMAIN, 真实 VIN)）仍在 entity/device registry 中——
+    必须显式移除，否则 registry 持久化文件残留真实 VIN 且旧实体永远
+    unavailable。各平台"unique_id 不在新集合即移除"只覆盖有清理段的
+    平台（sensor/button），本函数对全平台兜底。
+    """
+    try:
+        from homeassistant.helpers import entity_registry as er
+        reg = er.async_get(hass)
+        for entry_ in er.async_entries_for_config_entry(reg, entry.entry_id):
+            if entry_.unique_id and entry_.unique_id.startswith(coord.vin + "-"):
+                _LOGGER.debug("fordpass_cn cleanup legacy vin entity: %s", entry_.entity_id)
+                reg.async_remove(entry_.entity_id)  # v3.7.15: 同步返回 None
+    except Exception:  # noqa: BLE001 - 清理失败不阻断 setup
+        _LOGGER.debug("fordpass_cn legacy vin entity cleanup failed", exc_info=True)
+    try:
+        from homeassistant.helpers import device_registry as dr
+        dreg = dr.async_get(hass)
+        dev = dreg.async_get_device({(DOMAIN, coord.vin)})
+        if dev is not None:
+            _LOGGER.debug("fordpass_cn cleanup legacy vin device: %s", dev.id)
+            dreg.async_remove_device(dev.id)
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("fordpass_cn legacy vin device cleanup failed", exc_info=True)
+
+
 PLATFORMS = [
     Platform.LOCK,
     Platform.SWITCH,
@@ -415,7 +445,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             _vs = coordinator.data.get("vehiclestatus", {}) or {}
             _caps = {
-                "vin": coordinator.vin,
+                "vin": coordinator.uid_key,
                 "remote_ctrl": capability.usable(_vs, [["crccFlag"]]),
                 "tailgate": capability.usable(
                     _vs, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
@@ -467,6 +497,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 合规审查项：逆向调试服务残留，自动化探测（probe_cevs_auto）已覆盖
     # 所需变体，无需人工触发。对应 services.yaml 一并删除。
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # v5.7.1: unique_id/identifiers 脱敏迁移——清理旧 VIN 前缀实体与设备
+    # （registry 持久化不得再留真实 VIN）。在平台注册新实体后执行，
+    # 新实体（uid_key 前缀）不受影响。
+    for _coord in coordinators:
+        await _cleanup_legacy_vin(hass, entry, _coord)
     return True
 
 
