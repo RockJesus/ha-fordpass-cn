@@ -452,6 +452,51 @@ def _token_resp_summary(text: str) -> str:
     return "data=<non-dict>"
 
 
+# v5.6.10: debug 日志脱敏——vehicle-status raw 等整包 JSON 日志对 VIN、
+# 经纬度、地址等个人标识掩码，防止 debug 日志外泄（recorder/system_log
+# 均可能持久化）。键匹配只收窄到明确敏感键，不做宽泛子串匹配。
+_VIN_MASK_SUFFIXES = ("vin", "vehicleid", "chassisnumber", "chassisno")
+_COORD_MASK_KEYS = frozenset(
+    {"lat", "lon", "lng", "latitude", "longitude", "latdeg", "londeg"}
+)
+_ADDR_MASK_SUFFIXES = ("address",)
+_UNMASKED = object()
+
+
+def _mask_debug_value(key: str, value: Any) -> Any:
+    """单个键值脱敏：敏感键返回掩码值，其余返回 _UNMASKED 哨兵（继续递归）。"""
+    kl = key.lower()
+    if isinstance(value, str) and (
+        kl == "vin" or kl.endswith(_VIN_MASK_SUFFIXES)
+    ):
+        # 保留首 4 末 4（VIN 17 位），中间掩码——保留可辨识片段便于调试
+        return f"{value[:4]}****{value[-4:]}" if len(value) >= 8 else "****"
+    if kl in _COORD_MASK_KEYS or kl.endswith(("latitude", "longitude")):
+        # 经纬度整体掩码（小数位泄露街道级精度，整数度亦泄露城市位置）
+        return "***"
+    if isinstance(value, str) and kl.endswith(_ADDR_MASK_SUFFIXES):
+        return "***"
+    return _UNMASKED
+
+
+def _mask_debug_json(obj: Any) -> Any:
+    """递归脱敏 dict/list 中 VIN、经纬度、地址（v5.6.10）。
+
+    仅用于 debug 日志输出，不改动原始响应数据。"""
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            masked = _mask_debug_value(k, v)
+            if masked is _UNMASKED:
+                out[k] = _mask_debug_json(v)
+            else:
+                out[k] = masked
+        return out
+    if isinstance(obj, list):
+        return [_mask_debug_json(x) for x in obj]
+    return obj
+
+
 class FordPassApi:
     _last_wifi_reject_log: float = 0.0  # v4.3.0: wifi/status 业务拒绝降噪限频
 
@@ -969,7 +1014,7 @@ class FordPassApi:
                     result = json.loads(plain)
                     self._log.debug(
                         "FordPass vehicle-status raw: %s",
-                        json.dumps(result, ensure_ascii=False)[:6000],
+                        json.dumps(_mask_debug_json(result), ensure_ascii=False)[:6000],
                     )
                     return result
                 return inner
