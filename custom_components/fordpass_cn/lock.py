@@ -36,9 +36,14 @@ async def async_setup_entry(
     for coordinator in coordinators:
         locks.append(FordPassLock(coordinator))
         # 后备箱锁：有尾门 / 内尾门字段（支持后备箱解锁的车型）才创建
+        # v5.8.3: 按车型创建——TrunkUnlock 曾被云端确定性拒绝（实测失败，
+        # 如锐际 228205 依赖蓝牙 TIMA）的车型不再创建，无记录车型按字段创建
         status = (coordinator.data or {}).get("vehiclestatus", {}) or {}
-        if capability.usable(
-            status, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
+        if (
+            capability.usable(
+                status, [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]]
+            )
+            and not coordinator.cmd_rejected(CMD_TRUNK_UNLOCK)
         ):
             locks.append(FordPassTrunkLock(coordinator))
         # v3.3.7: 前备箱锁——v5.2.4 起移除：开/关命令按子串匹配 + fallback
@@ -78,6 +83,10 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:car-door-lock"
+        # v5.8.3: 操作中的乐观目标状态（None=无操作，读真实快照）——
+        # 门锁操作后立即显示目标状态，不再等 30s 轮询才有反馈；
+        # 命令完成由真实快照纠正，失败回滚并如实报错。
+        self._pending: bool | None = None
 
     @property
     def available(self) -> bool:
@@ -85,15 +94,35 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
 
     @property
     def is_locked(self) -> bool:
+        if self._pending is not None:  # v5.8.3: 操作中显示目标状态（乐观反馈）
+            return self._pending
         status = (self.coordinator.data or {}).get("vehiclestatus", {})
         value = status.get("lockStatus", {}).get("value")
         return self._restore_bool(value == "LOCKED" if value else None)
 
     async def async_lock(self, **kwargs: Any) -> None:
-        await self.coordinator.run_command(CMD_LOCK)
+        self._pending = True
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.run_command(CMD_LOCK)
+        except Exception:
+            self._pending = None
+            self.async_write_ha_state()
+            raise
+        self._pending = None
+        self.async_write_ha_state()
 
     async def async_unlock(self, **kwargs: Any) -> None:
-        await self.coordinator.run_command(CMD_UNLOCK)
+        self._pending = False
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.run_command(CMD_UNLOCK)
+        except Exception:
+            self._pending = None
+            self.async_write_ha_state()
+            raise
+        self._pending = None
+        self.async_write_ha_state()
 
     async def async_update(self) -> None:
         # v3.8.0: 锁状态由 coordinator 定时刷新驱动，实体轮询不再强制

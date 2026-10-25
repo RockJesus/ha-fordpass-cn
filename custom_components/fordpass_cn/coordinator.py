@@ -701,17 +701,85 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"FordPass update failed: {exc}") from exc
         self.async_set_updated_data(data)
 
+    def cmd_rejected(self, command_type: str) -> str | None:
+        """该命令被云端确定性拒绝的摘要（None=无记录，可按车型创建）。
+
+        v5.8.3: 「按车型创建」的实测驱动依据——命令执行被网关确定性拒绝
+        （如 228205 cmdSpec can not empty / 100502 非法命令 / 402 业务拒绝）
+        后记录并持久化，重启后该车型不再创建对应实体；无记录的车型按既有
+        能力字段创建（不臆断车型支持与否，见 entity-vehicle-creation.md）。
+        """
+        if not isinstance(self._probe_cache, dict):
+            return None
+        fails = self._probe_cache.get("cmd_fail")
+        if not isinstance(fails, dict):
+            return None
+        v = fails.get(command_type)
+        return str(v) if v else None
+
+    async def async_record_cmd_fail(
+        self, command_type: str, exc: BaseException
+    ) -> None:
+        """命令被网关确定性拒绝 → 记录"该车型不支持"并持久化（v5.8.3）。
+
+        仅确定性业务拒绝记录（228205/100502/402/400/404 或 cmdSpec/
+        not support/not allowed 关键词）；网络超时、5xx 熔断、401/403
+        风控属瞬时/外部限制，不记录，避免误判车型不支持而砍实体。
+        """
+        if not isinstance(exc, FordPassApiError):
+            self.logger.debug(
+                "FordPass 命令 %s 失败（非网关拒绝，不记录车型不支持）: %s",
+                command_type, str(exc)[:160],
+            )
+            return
+        code = exc.code
+        msg = str(exc).lower()
+        deterministic = (
+            code in (100502, 228205, 402, 400, 404)
+            or "cmdspec" in msg
+            or "not support" in msg
+            or "not allowed" in msg
+        )
+        if not deterministic:
+            self.logger.debug(
+                "FordPass 命令 %s 失败码 %s（非确定性拒绝，不记录）: %s",
+                command_type, code, str(exc)[:160],
+            )
+            return
+        if not isinstance(self._probe_cache, dict):
+            return
+        fails = self._probe_cache.get("cmd_fail")
+        if not isinstance(fails, dict):
+            fails = {}
+            self._probe_cache["cmd_fail"] = fails
+        fails[command_type] = str(exc)[:200]
+        self.logger.warning(
+            "FordPass 命令 %s 被云端拒绝（记录为不支持，下次重启不再创建该实体）: %s",
+            command_type, str(exc)[:200],
+        )
+        if self._probe_store is None:
+            return
+        try:
+            await self._probe_store.async_save(self._probe_cache)
+        except Exception as save_exc:  # noqa: BLE001
+            self.logger.debug("FordPass cmd_fail 持久化失败: %s", save_exc)
+
     async def run_command(self, command_type: str, wait: bool = True) -> None:
         """Send a remote command and reflect the result immediately (v2.7.7).
 
         Used by lock/switch/button so a press is not silently lost behind HA's
         refresh throttle: we send the command, poll command-execution-status
         until the decrypted snapshot flips to CURRENT, then push it straight
-        to the entities.  A send failure raises so the UI reports it.
+        to the entities.  A send failure raises so the UI reports it
+        (v5.8.3: 同时记录确定性拒绝 → 该车型下次重启不再创建对应实体).
 
         ``wait=False`` skips the polling loop and only force-refreshes.
         """
-        resp = await self.api.send_command(self.vin, command_type)
+        try:
+            resp = await self.api.send_command(self.vin, command_type)
+        except Exception as exc:  # noqa: BLE001 - 记录车型不支持后如实上报
+            await self.async_record_cmd_fail(command_type, exc)
+            raise
         command_id: str | None = None
         if isinstance(resp, dict):
             cid = resp.get("commandId")

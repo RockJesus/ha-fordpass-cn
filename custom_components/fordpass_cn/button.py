@@ -101,6 +101,10 @@ async def async_setup_entry(
             FordPassButton(coordinator, key, label, icon, command, cmd_spec)
             for key, label, icon, command, paths, check, cmd_spec in _BUTTONS
             if _capability_ok(status, paths, check)
+            # v5.8.3: 按车型创建——该命令曾被云端确定性拒绝（实测失败）的
+            # 车型不再创建（cmd_rejected 读取持久化命令失败记录）；无记录
+            # 车型按能力字段创建，不臆断支持与否（entity-vehicle-creation.md）
+            and not coordinator.cmd_rejected(command)
         )
         # v3.3.4: 「手动刷新车辆状态」——所有车型都有（合并原
         # 「请求车机刷新状态」「手动拉取最新状态」两按钮）
@@ -470,8 +474,17 @@ class FordPassButton(_FordPassButtonBase):
             resp = await self.coordinator.api.send_command(
                 self.coordinator.vin, self._command, self._cmd_spec
             )
-        except Exception as exc:  # noqa: BLE001 - keep going so entities still refresh
+        except Exception as exc:  # noqa: BLE001
+            # v5.8.3: 不再吞错——命令失败如实上报 UI（此前只打日志，用户
+            # 按了按钮无任何反馈 = "按了没反应"）。同时记录云端确定性拒绝
+            # （该车型下次重启不再创建此实体，按车型创建的实测依据）。
             _LOGGER.warning("FordPass command %s failed: %s", self._command, exc)
+            await self.coordinator.async_record_cmd_fail(self._command, exc)
+            raise HomeAssistantError(
+                f"福特派命令「{self._attr_name}」执行失败"
+                f"（该车云端可能不支持此命令，已记录；"
+                f"重新加载/重启后不再创建此按钮）：{exc}"
+            ) from exc
 
         if self._command == CMD_REFRESH_STATUS:
             command_id = await self._command_id(resp)

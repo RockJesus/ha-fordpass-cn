@@ -66,8 +66,11 @@ async def async_setup_entry(
         # 远程控车能力 crccFlag 有效才创建寻车类开关
         if capability.usable(status, [["crccFlag"]]):
             # v3.1.10: 恢复灯光寻车（v3.1.8 曾因锐际网关 228205 移除；
-            # 其他车型云端可能支持——登录后按能力创建，按下报错即如实提示）
-            switches.append(FordPassLightSwitch(coordinator))
+            # 其他车型云端可能支持——登录后按能力创建）
+            # v5.8.3: 按车型创建——灯光寻车命令被云端确定性拒绝（实测
+            # 失败）的车型不再创建，无记录车型按能力创建
+            if not coordinator.cmd_rejected(CMD_LIGHT_FIND_ON):
+                switches.append(FordPassLightSwitch(coordinator))
             # 鸣笛寻车（v3.0.5 由按钮迁移为开关）
             switches.append(FordPassHonkSwitch(coordinator))
             # v3.3.3: 声光寻车（鸣笛+灯光）开关——由 v3.2.1 的两个按钮
