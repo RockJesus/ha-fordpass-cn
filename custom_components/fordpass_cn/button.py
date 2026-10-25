@@ -32,6 +32,7 @@ from .const import (
     CMD_ASU_SETTING,
     CMD_AUTO_REFRESH,
     CMD_CENTRAL_LIGHTING,
+    CMD_EXTEND_START,
     CMD_OTA_SCHEDULE,
     CMD_REFRESH_STATUS,
     CMD_TRAILER_CHECK_START,
@@ -161,6 +162,21 @@ async def async_setup_entry(
         _cevs_supported = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
         if _cevs_supported and _cevs_probe.get("departuretimes"):
             buttons.append(FordPassCevsDeleteAllButton(coordinator))
+        # v5.8.4: 延长远程启动（FORD_EXTEND_START，2026-10-25 pp.txt 逆向确认
+        # App 有该命令 = 远程启动延时）。⚠️ commandType 字符串
+        # CMD_EXTEND_START="RemoteStartExtend" 为推断值（逆向仅见枚举名，
+        # 未见官方 App 抓包图文字符串），抓包校准后仅改 const 一处。
+        # 创建由**服务端 command_whitelist 门控**：白名单含该命令才创建
+        # （2026-09-29 服务端枚举 16 命令尚不含它；福特云后续开放则自动
+        # 出现）。不进 cmd_rejected 过滤（实验性：失败仅如实报错，不记录
+        # 车型拒绝、不误删按钮）。按钮按下走 send-command 通用通道，失败
+        # 时错误信息含云端原因。
+        _wl = coordinator.command_whitelist or []
+        if CMD_EXTEND_START in _wl:
+            buttons.append(FordPassButton(
+                coordinator, "extend_start", "延长远程启动",
+                "mdi:timer-plus-outline", CMD_EXTEND_START, None,
+            ))
         # v5.8.2: 未接入端点补全按钮（2026-10-24 逆向差集 8 项功能缺口）。
         # 全部按既有"车型能力判断优先 + 探测数据补充过滤"纪律创建：
         #   cevs 系（预约计划保存/充电记录删除）——仅 cevs 车型 + 探测数据；

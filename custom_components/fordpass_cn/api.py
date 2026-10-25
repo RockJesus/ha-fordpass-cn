@@ -930,12 +930,45 @@ class FordPassApi:
             # 带旧 access token 致网关 401/600 业务拒绝——这是 v5.6.6 刷新
             # 失败的真根因；v5.6.7 误删 brand 反把 401/600 改成 400 必填）。
             enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
-            data = await self._request(
-                "POST",
-                PATH_REFRESH_TOKEN,
-                {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
-                headers={"auth-token": None},
-            )
+            # v5.8.4: 防 refresh 端点自身 401/600 时 _request 递归刷新死锁——
+            # refresh_token 已持有 _refresh_lock（asyncio.Lock 不可重入），若
+            # refresh-dlt-token 响应业务 401/600 且 _retrying=False（直接调用
+            # 场景如 config flow / coordinator），_request 会再调 refresh_token
+            # 二次拿锁 → 永久阻塞。置空 self._refresh_token 使 _request 的
+            # HTTP 401 / 业务 401/600 分支都因「无 refresh_token」直接抛错
+            # （不触发刷新），由下方退避循环负责重试；finally 恢复。
+            _saved_rt = self._refresh_token
+            self._refresh_token = None
+            try:
+                # v5.8.4: refresh-dlt-token 失败退避重试——福特云对密集命令/会话
+                # 敏感端点有窗口式风控（2026-10-25 实测：命令路径 401/600 时
+                # refresh 端点同步被拒，但同一 access token 后台轮询成功 →
+                # 非 token 失效而是网关瞬时拒绝）。sleep 1/2/4s 有限重试 3 次
+                # （共 4 次尝试），仍失败抛最后异常由 _request 401 分支按
+                # refresh_failed 处理。与 lessons「失败退避与抑制」一致：有限
+                # 重试、不无限轰炸。
+                _attempts = 0
+                while True:
+                    try:
+                        data = await self._request(
+                            "POST",
+                            PATH_REFRESH_TOKEN,
+                            {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
+                            headers={"auth-token": None},
+                        )
+                        break
+                    except (FordPassApiError, OSError, asyncio.TimeoutError) as exc:
+                        _attempts += 1
+                        if _attempts > 3:
+                            raise
+                        delay = 2 ** (_attempts - 1)
+                        self._log.warning(
+                            "FordPass %s failed (attempt %d/4, retry in %ds): %s",
+                            PATH_REFRESH_TOKEN, _attempts + 1, delay, exc,
+                        )
+                        await asyncio.sleep(delay)
+            finally:
+                self._refresh_token = _saved_rt
             inner = data.get("data", {})
             xjw2 = inner.get("xjw", xjw)
             if not isinstance(inner, dict) or "encryptedAccessToken" not in inner:
@@ -2524,6 +2557,13 @@ class FordPassApi:
             # app-init 域（全车型公开配置类只读）：
             "app_init_settings": (PATH_APP_INIT_SETTINGS, None, True),
             "vehicle_model_masterdata": (PATH_VEHICLE_MODEL_MASTERDATA, None, True),
+            # v5.8.4: 访客模式 v3 页面初始化信息（App 设置页入口，全车型
+            # 公开配置类只读；探测到数据才创建「访客模式」传感器）
+            "visitor_mode": (PATH_VISITOR_MODE, None, True),
+            # v5.8.4: vpoi v4（App 已升级 v4 路由；数据格式待 App 抓包确认
+            # 后替换 v3 传感器数据源——先探测落盘）
+            "vpoi_chargestations_v4": (PATH_VPOI_CHARGESTATIONS_V4, None, True),
+            "vpoi_saved_v4": (PATH_VPOI_SAVED_V4, None, True),
         }
         # v3.5.1: 账号级端点。v3.5.6 实证——GET 全 404（v3.5.1/3.5.2 移除
         # 车辆参数后仍 404 → 路由为 POST-only）；POST body 需
@@ -2565,6 +2605,7 @@ class FordPassApi:
                 "evss_payment_summary", "evss_invoiceables", "evss_events_v3",
                 "evss_evaluate_url",
                 "vpoi_status", "vpoi_saved",
+                "vpoi_chargestations_v4", "vpoi_saved_v4",
                 "evss_stations", "evss_orders", "vpoi_chargestations",
             ):
                 probes.pop(_k, None)

@@ -510,6 +510,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("app_init_settings", "应用设置信息", "app_init_settings"),
             ("vehicle_model_masterdata", "车型主数据", "vehicle_model_masterdata"),
             ("user_login_status", "用户登录状态", "user_login_status"),
+            # v5.8.4: 访客模式 v3 页面初始化信息（App 设置页入口；逆向确认
+            # /api/app-init/v3/visitor-mode/init-page-info，探测到数据才创建，
+            # 全车型自动适配）
+            ("visitor_mode", "访客模式", "visitor_mode"),
             # v4.8.1: 林肯之道专属账号级只读端点（5.8.0 逆向）——仅
             # brand==lincoln 时 coordinator 探测，键存在（探测成功）才创建；
             # 福特派账号不探测、键不存在不创建，零副作用。
@@ -538,7 +542,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                              "wallbox_ble_vehicles")
             _common_kinds = ("ota_agreements", "share_capability", "share_history",
                              "app_init_settings", "vehicle_model_masterdata",
-                             "user_login_status")
+                             "user_login_status", "visitor_mode")
             _fuel = str(coordinator.vehicle_info.get("fuelType") or "").upper()
             _charge_ok = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
             _probe_ok = bool(_ep.get(_k))  # v5.0.1: 数据非空才创建
@@ -2951,6 +2955,25 @@ class FordPassProbeSensor(SensorEntity):
                 if cnt is not None:
                     return f"{cnt} 个充电站"
                 return "暂无充电站数据"
+            # v5.8.4: 访客模式 v3 页面初始化信息（逆向 DTO：DisplayProfile/
+            # Tab/Feature）。字段名待 App 抓包确认，先按通用 key 探测；
+            # 主值取访客模式开关状态/配置标题，抓包校准后细化。
+            if self._kind == "visitor_mode":
+                for _k in ("visitorModeStatus", "visitorMode", "status",
+                           "enable", "enabled", "isOpen", "openStatus"):
+                    _v = _swb_find(data, _k)
+                    if _v is not None:
+                        return str(_v)
+                _profile = data.get("displayProfile") if isinstance(data, dict) else None
+                if isinstance(_profile, dict):
+                    for _k in ("title", "subTitle", "description"):
+                        _v = _profile.get(_k)
+                        if _v:
+                            return str(_v)
+                _lst = _swb_list(data)
+                if _lst:
+                    return f"{len(_lst)} 项访客配置"
+                return "访客模式数据已连接"
             if self._kind == "evss_orders":
                 lst = _swb_list(data)
                 if lst:

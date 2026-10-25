@@ -370,6 +370,10 @@ PATH_EVSS_APPS_INFO = "/api/evss/apps/v1/info"
 PATH_EVSS_USAGE_NOTICE = "/api/evss/chargers/v1/events/usage-notice"
 PATH_VPOI_STATUS = "/api/vpoi/chargestations/v3/status/"
 PATH_VPOI_SAVED = "/api/vpoi/chargestations/v3/saved"
+# v5.8.4: vpoi v4（App 已升级 v4 路由；数据格式待 App 抓包确认后替换 v3
+# 传感器数据源——先探测落盘，抓包校准后启用实体）
+PATH_VPOI_CHARGESTATIONS_V4 = "/api/vpoi/chargestations/v4"
+PATH_VPOI_SAVED_V4 = "/api/vpoi/chargestations/v4/saved"
 # --- OTA 协议（全车型，只读） ---
 PATH_OTA_AGREEMENTS = "/api/alert/v1/search-ota-agreements"
 
@@ -386,6 +390,9 @@ PATH_SMARTWALLBOX_BLE_ADD = "/api/smartwallbox/processor/auto/charging/ble/add/v
 # --- app-init 域（全车型：应用设置/车型主数据，公开配置类只读） ---
 PATH_APP_INIT_SETTINGS = "/api/app-init/v1/app-setting/info"
 PATH_VEHICLE_MODEL_MASTERDATA = "/api/app-init/vehicleModel/v1/masterdata"
+# v5.8.4: 访客模式（visitor_mode v3 页面初始化信息，App 设置页入口；
+# 逆向确认（2026-10-25 pp.txt VisitorModeV3DTO）只读 GET，探测到数据才创建）
+PATH_VISITOR_MODE = "/api/app-init/v3/visitor-mode/init-page-info"
 
 # 行车记录仪视频（pds/v1 视频录制/查询）
 PATH_VIDEO_START = "/api/cnxapi-pds/v1/start-video-recording"
@@ -458,6 +465,13 @@ CMD_LIGHT_FIND_OFF = "ZoneLightingOFF"
 # v3.1.9: 删除 CMD_EXTEND_START 旧别名（曾错误指向 TrunkUnlock；App 远程启动延长
 # 的真实规范是 FORD_EXTEND_START，但锐际实测 send-command 网关白名单不含此项，
 # 不支持——见 v3.1.9 实测限制）。
+# v5.8.4: 重新接入 FORD_EXTEND_START（2026-10-25 pp.txt CommandTypeV2 枚举确认
+# App 存在该命令 = 远程启动延时）。⚠️ commandType 字符串为推断值
+# "RemoteStartExtend"（RemoteStart 族命名惯例，逆向仅见枚举名未见图文字符串），
+# 待模拟器 App 抓包校准——抓包后仅改此处。创建由服务端 command_whitelist
+# 门控（白名单含该命令才出现；2026-09-29 服务端枚举 16 命令尚不含它，
+# 若福特云后续开放则自动出现，不会制造假实体）。
+CMD_EXTEND_START = "RemoteStartExtend"
 CMD_CENTRAL_LIGHTING = "CentralZoneLightingON"      # 中央区灯光开（无独立关闭命令）
 CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
 # 鸣笛寻车（v3.0.5 起为 switch）：中国区 send-command 网关白名单不含 Honk（HTTP 400 100502），
