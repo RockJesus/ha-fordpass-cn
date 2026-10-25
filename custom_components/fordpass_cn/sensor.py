@@ -1084,11 +1084,19 @@ class FordPassActiveAlertListSensor(SensorEntity):
 
 
 def _ts_to_local(v):
-    """Unix 秒时间戳 → 本地时间字符串（0/None → None）。"""
+    """Unix 秒时间戳 → 本地时间字符串（0/None/极小占位值 → None）。
+
+    v5.8.6: 增加可信下界——云端未启动/占位时返回 epoch 附近小值
+    （实测远程启动时间显示 1970-01-01 08:00:10 = epoch+10s），
+    早于 2000-01-01（946684800）的时间戳一律视为无效。
+    """
     if not v:
         return None
     try:
-        return datetime.datetime.fromtimestamp(int(v)).strftime("%Y-%m-%d %H:%M:%S")
+        ts = int(v)
+        if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
+            return None
+        return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError, OSError):
         return None
 
@@ -1130,12 +1138,17 @@ def _remote_start_time(v):
 
     此前按 unix 秒解析——若车机返回毫秒时间戳（13 位）会解析失败退化为
     「未启动」（用户实测"时间不对"的根因）。现在毫秒/秒自适应。
+    v5.8.6: 增加可信下界——云端未启动/占位时返回 epoch 附近小值（实测
+    显示 1970-01-01 08:00:10 = epoch+10s），早于 2000-01-01 的时间戳
+    一律视为「未启动」。
     """
     if not v:
         return "未启动"
     try:
         fv = float(v)
         ts = fv / 1000 if fv > 1e12 else fv  # 毫秒/秒自适应
+        if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
+            return "未启动"
         return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError, OSError):
         return "未启动"
