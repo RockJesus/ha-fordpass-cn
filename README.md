@@ -375,6 +375,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.8.5**（2026-10-25）：**修复门锁实体更新超时警告（后台触发刷新，不再阻塞等待）**——HA 2026.10 起 `async_request_refresh` 为协程且会等待整轮全量刷新完成，重启后 data 未就绪的初始窗口叠加系统繁忙/云端慢时（实测伴随 Supervisor API 超时），门锁实体 `async_update` 挂起超过 30s 调度间隔，触发 `Updating fordpass_cn lock took longer than the scheduled update interval` 警告；改为 `hass.async_create_task` 后台调度刷新、实体更新立即返回（coordinator 自带去抖与 30 分钟调度兜底），警告消除且不影响锁状态更新
 - **v5.8.4**（2026-10-25）：**token 刷新容错加固 + 3 项云端能力接入**：
   - **修复「token refresh failed (401/600 after retry)」连发**：实测确认根因是福特云对密集命令/会话敏感端点的**窗口式瞬时拒绝**（命令路径 401/600 时 refresh 端点同步被拒，但同一 access token 后台轮询正常——并非凭据失效）。加固两点：① `refresh_token` 失败按 1s/2s/4s **有限退避重试 3 次**（共 4 次尝试），风控窗口过后自动恢复，不再一次失败就整批命令判死；② **防死锁**——refresh 端点自身返回 401/600 时 `_request` 的递归刷新会二次获取不可重入锁，永久阻塞，现置空临时 `_refresh_token` 使刷新仅由退避循环驱动，锁内安全恢复
   - **接入「延长远程启动」（FORD_EXTEND_START）**：App 命令枚举确认存在（远程启动延时）。⚠️ commandType 字符串为逆向推断值（`RemoteStartExtend`），**待模拟器 App 抓包校准**——抓包后仅改 `const.py` 一处即可激活；按钮由**服务端命令白名单门控创建**（白名单含该命令才出现，不制造假实体；中国区网关当前白名单尚不含它，福特云开放后自动出现）

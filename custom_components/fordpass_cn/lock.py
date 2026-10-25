@@ -130,8 +130,15 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         # than the scheduled update interval" 警告（轮询周期 < 刷新周期时
         # 每次都要等全量刷新完成）。锁操作链路（run_command 内命令状态
         # 轮询 + force_refresh）独立，不受影响。
+        # v5.8.5: HA 2026.10 的 async_request_refresh 为 async def，await 会
+        # 等待整轮全量刷新完成——重启后 data=None 的初始窗口叠加系统忙/
+        # 云端慢时（实测伴随 hassio Supervisor 超时），实体 update 挂起
+        # 超 30s 调度间隔触发警告。改为 hass.async_create_task 后台调度，
+        # 实体 update 立即返回（coordinator 自带去抖 + 30min 调度兜底）。
         if self.coordinator.data is None:
-            await self.coordinator.async_request_refresh()
+            self.hass.async_create_task(
+                self.coordinator.async_request_refresh()
+            )
 
 
 class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
