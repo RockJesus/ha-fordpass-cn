@@ -23,8 +23,33 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import capability
-from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE
+from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
 from .coordinator import FordPassCoordinator
+
+def async_sync_entity_categories(hass: HomeAssistant, domain: str, entities) -> None:
+    """v5.9.3: 把代码声明的 entity_category 同步到已存在的注册表条目。
+
+    Home Assistant 只在实体首次注册时采用集成给出的类目，之后不会自动覆盖
+    已有值（避免盖掉用户在界面里手动切换），因此升级后必须显式补一次。
+    策略是「只补不覆盖」：仅当注册表里为空、且代码确实声明了类目时写入。
+    """
+    registry = er.async_get(hass)
+    updated = 0
+    for entity in entities:
+        unique_id = getattr(entity, "unique_id", None)
+        category = getattr(entity, "entity_category", None)
+        if not unique_id or not category:
+            continue
+        entity_id = registry.async_get_entity_id(domain, DOMAIN, unique_id)
+        if not entity_id:
+            continue
+        reg_entry = registry.async_get(entity_id)
+        if reg_entry is None or reg_entry.entity_category is not None:
+            continue
+        registry.async_update_entity(entity_id, entity_category=category)
+        updated += 1
+    if updated:
+        _LOGGER.info("已同步 %s 个实体的类目（entity_category）", updated)
 
 PARALLEL_UPDATES = 1
 
@@ -151,6 +176,7 @@ async def async_setup_entry(
     for coordinator in coordinators:
         all_sensors.extend(_make_sensors(coordinator))
     async_add_entities(all_sensors)
+    async_sync_entity_categories(hass, "sensor", all_sensors)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
     # 实体 last_updated 每轮刷新（撤销"实体不随轮询刷新"）；失败轮不触发，
