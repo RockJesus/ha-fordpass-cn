@@ -234,6 +234,16 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
         return self._restore_bool(self._state)
 
     async def async_update(self) -> None:
+        # v5.8.7: 与 lock v5.8.5 同源——HA 2026.10 重启/重载初始窗口
+        # （coordinator.data=None）叠加云端慢时，实体 update 挂起会触发
+        # "Updating fordpass_cn switch took longer than the scheduled
+        # update interval 0:00:30" 警告。data 未就绪时后台调度刷新并
+        # 立即返回（coordinator 自带去抖 + 30min 调度兜底）。
+        if self.coordinator.data is None:
+            self.hass.async_create_task(
+                self.coordinator.async_request_refresh()
+            )
+            return
         data = self._probe()
         if not isinstance(data, dict):
             return

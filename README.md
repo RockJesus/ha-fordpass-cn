@@ -375,6 +375,7 @@ content: >-
 <details>
 <summary>最近版本（完整历史见 <a href="https://github.com/RockJesus/ha-fordpass-cn/releases">GitHub Releases</a>）</summary>
 
+- **v5.8.7**（2026-10-27）：**探测缓存（车型能力黑名单）加固 + 选项页重置入口 + 开关实体防挂起**——① 命令失败黑名单条目记录时间戳，**90 天自动过期淘汰**（云端车型能力可能后台变更，永久黑名单会导致新能力永远不出现）；② probe 缓存写盘 **3 秒防抖合并**（连续探测/连续命令失败不再每次全量写盘，HA Store 原生原子写防损坏）；③ 集成选项页新增「**重置车型能力黑名单**」勾选项——清空已记录的“不支持命令”并立即写盘，重启后按车型能力重新创建实体；④ `.gitignore` 仅忽略运行时缓存（`data/probe_cache.json`），**白盒 AES 表目录 `data/` 保持入库发布**（生产必需，勿误解为可忽略）；⑤ **修复开关实体更新超时警告**（与锁 v5.8.5 同源）——重启/重载初始窗口（coordinator.data 未就绪）下开关实体 `async_update` 挂起会触发 `Updating fordpass_cn switch took longer than the scheduled update interval`，改为 `hass.async_create_task` 后台调度刷新、立即返回
 - **v5.8.6**（2026-10-25）：**修复"远程启动时间"显示 1970 占位值**——云端未启动/占位时返回 epoch 附近小时间戳（实测显示 1970-01-01 08:00:10 = epoch+10s），原解析直接当真实时间显示；现对早于 2000-01-01 的时间戳一律判无效：远程启动时间显示「未启动」、通用时间戳（充电时间等）返回空，距离自动熄火倒计时天然归 0 不受影响
 - **v5.8.5**（2026-10-25）：**修复门锁实体更新超时警告（后台触发刷新，不再阻塞等待）**——HA 2026.10 起 `async_request_refresh` 为协程且会等待整轮全量刷新完成，重启后 data 未就绪的初始窗口叠加系统繁忙/云端慢时（实测伴随 Supervisor API 超时），门锁实体 `async_update` 挂起超过 30s 调度间隔，触发 `Updating fordpass_cn lock took longer than the scheduled update interval` 警告；改为 `hass.async_create_task` 后台调度刷新、实体更新立即返回（coordinator 自带去抖与 30 分钟调度兜底），警告消除且不影响锁状态更新
 - **v5.8.4**（2026-10-25）：**token 刷新容错加固 + 3 项云端能力接入**：

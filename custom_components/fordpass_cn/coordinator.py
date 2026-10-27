@@ -234,6 +234,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 hass, 1, f"{DOMAIN}.{entry_id}.{vin[-6:]}.probe_cache"
             )
         self._probe_cache: dict[str, dict[str, Any]] = {}
+        # v5.8.7: probe 缓存写盘 3s 防抖（合并连续探测/命令失败落盘）+ 脏标记
+        self._probe_save_ts: float = 0.0
+        self._probe_save_task: asyncio.Task | None = None
+        # v5.8.7: 命令失败黑名单 TTL——90 天自动过期（云端车型能力可能后台
+        # 变更，永久黑名单会导致新能力永远不出现）
+        self._cmd_fail_ttl_seconds: float = 90 * 86400
         # v3.3.7: 云端 send-command 白名单（探测结果）——平台实体按此动态创建
         self.command_whitelist: list[str] | None = None
         # v3.4.5: 家充桩管理探测结果（None=无该功能/未探测成功）
@@ -354,10 +360,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     store[key] = (time.monotonic() + ttl, None)
                 if not account and persist and self._probe_store is not None:
                     self._probe_cache[key] = {"expire": time.time() + ttl, "value": None}
-                    try:
-                        await self._probe_store.async_save(self._probe_cache)
-                    except Exception as save_exc:  # noqa: BLE001
-                        self.logger.debug("FordPass probe cache save failed: %s", save_exc)
+                    await self._probe_save()
                 return None
             except Exception as exc:  # noqa: BLE001 - best effort，失败不阻塞刷新
                 # v4.0.9: 网络瞬时故障/空响应等异常**不落盘**——下次 reload 重探，
@@ -382,10 +385,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "expire": time.time() + ttl,
                         "value": val,
                     }
-                    try:
-                        await self._probe_store.async_save(self._probe_cache)
-                    except Exception as exc:  # noqa: BLE001 - 落盘失败不影响运行
-                        self.logger.debug("FordPass probe cache save failed: %s", exc)
+                    await self._probe_save()
             return val
 
         if account:
@@ -399,14 +399,70 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return await _do_fetch()
         return await _do_fetch()
 
+    async def _probe_save(self) -> None:
+        """v5.8.7: probe 缓存写盘 3s 防抖（HA Store 原子写）。
+
+        探测结果落盘与命令失败黑名单落盘共用：距上次写盘 ≥3s 立即写，
+        否则标记脏并调度 3s 后合并写——连续探测/连续命令失败不再每次
+        全量 async_save（HA Store 本身原子写：临时文件 + rename，防断电
+        损坏，无需自建 .tmp）。
+        """
+        if self._probe_store is None:
+            return
+        now = time.monotonic()
+        if now - self._probe_save_ts < 3.0:
+            if self._probe_save_task is None or self._probe_save_task.done():
+                self._probe_save_task = asyncio.create_task(
+                    self._probe_save_delayed()
+                )
+            return
+        self._probe_save_ts = now
+        try:
+            await self._probe_store.async_save(self._probe_cache)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass probe cache save failed: %s", exc)
+
+    async def _probe_save_delayed(self) -> None:
+        """防抖延迟写：sleep 3s 后合并写盘（防重复调度由 _probe_save 保证）。"""
+        await asyncio.sleep(3.0)
+        if self._probe_store is None:
+            return
+        self._probe_save_ts = time.monotonic()
+        try:
+            await self._probe_store.async_save(self._probe_cache)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FordPass probe cache save failed (delayed): %s", exc)
+
     async def _load_probe_cache(self) -> None:
-        """v3.8.6: 从 HA Store 读取探测结果持久化缓存（setup 时调用一次）。"""
+        """v3.8.6: 从 HA Store 读取探测结果持久化缓存（setup 时调用一次）。
+
+        v5.8.7: 加载后对命令失败黑名单做 90 天 TTL 淘汰——云端车型能力
+        可能后台变更，永久黑名单会导致新能力永远不出现；旧版无 ts 的
+        历史条目保留（无法判断时间，兼容升级）。
+        """
         if self._probe_store is None:
             return
         try:
             data = await self._probe_store.async_load()
             if isinstance(data, dict):
                 self._probe_cache = data
+                # v5.8.7: cmd_fail TTL 淘汰（条目结构 {"msg":..., "ts":...}）
+                fails = self._probe_cache.get("cmd_fail")
+                if isinstance(fails, dict):
+                    cutoff = time.time() - self._cmd_fail_ttl_seconds
+                    stale = [
+                        k
+                        for k, v in fails.items()
+                        if isinstance(v, dict) and v.get("ts", 0) < cutoff
+                    ]
+                    for k in stale:
+                        fails.pop(k, None)
+                    if stale:
+                        self.logger.info(
+                            "FordPass probe cache: %s 条命令失败黑名单已过期（>%ds）淘汰",
+                            len(stale), int(self._cmd_fail_ttl_seconds),
+                        )
+                        await self._probe_store.async_save(self._probe_cache)
                 self.logger.debug(
                     "FordPass probe cache loaded: %s entries", len(data)
                 )
@@ -715,6 +771,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not isinstance(fails, dict):
             return None
         v = fails.get(command_type)
+        # v5.8.7: 兼容旧版字符串值（无 ts 的历史条目）与新版 {"msg","ts"} 结构
+        if isinstance(v, dict):
+            return str(v.get("msg", v))
         return str(v) if v else None
 
     async def async_record_cmd_fail(
@@ -752,17 +811,38 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not isinstance(fails, dict):
             fails = {}
             self._probe_cache["cmd_fail"] = fails
-        fails[command_type] = str(exc)[:200]
+        fails[command_type] = {
+            "msg": str(exc)[:200],
+            "ts": time.time(),  # v5.8.7: 记录时间戳，供 90 天 TTL 淘汰
+        }
         self.logger.warning(
             "FordPass 命令 %s 被云端拒绝（记录为不支持，下次重启不再创建该实体）: %s",
             command_type, str(exc)[:200],
         )
-        if self._probe_store is None:
+        await self._probe_save()
+
+    async def async_reset_cmd_fail(self) -> None:
+        """v5.8.7: 清空命令失败黑名单（options flow「重置车型能力黑名单」）。
+
+        立即写盘（不等防抖窗口），下次重启该车型全部命令实体按既有能力
+        字段重新创建——云端能力后台变更后可手动恢复。
+        """
+        if not isinstance(self._probe_cache, dict):
             return
-        try:
-            await self._probe_store.async_save(self._probe_cache)
-        except Exception as save_exc:  # noqa: BLE001
-            self.logger.debug("FordPass cmd_fail 持久化失败: %s", save_exc)
+        fails = self._probe_cache.get("cmd_fail")
+        if not isinstance(fails, dict) or not fails:
+            self.logger.info("FordPass 命令失败黑名单已为空，无需重置")
+            return
+        self._probe_cache["cmd_fail"] = {}
+        if self._probe_store is not None:
+            try:
+                await self._probe_store.async_save(self._probe_cache)
+            except Exception as save_exc:  # noqa: BLE001
+                self.logger.debug("FordPass cmd_fail 重置持久化失败: %s", save_exc)
+        self.logger.info(
+            "FordPass 命令失败黑名单已重置（%s 条清空，重启后按车型能力重新创建实体）",
+            len(fails),
+        )
 
     async def run_command(self, command_type: str, wait: bool = True) -> None:
         """Send a remote command and reflect the result immediately (v2.7.7).

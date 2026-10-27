@@ -7,3 +7,9 @@ venv/
 .DS_Store
 Thumbs.db
 .ruff_cache/
+
+# v5.8.7: 运行时探针缓存（HA Store 落盘 .storage，data/ 下若出现 JSON 亦忽略）。
+# 注意：data/ 目录本身**必须入库**——内含白盒 AES 表（wbsk_tables_*.bin +
+# whitebox_keys_for_prod.json），生产必需；仅忽略运行时缓存/临时文件。
+custom_components/fordpass_cn/data/probe_cache.json
+custom_components/fordpass_cn/data/*.tmp

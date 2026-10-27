@@ -77,7 +77,8 @@
         "title": "FordPass China Options",
         "data": {
           "track_location": "Enable vehicle location tracking",
-          "coordinate_system": "Coordinate system (WGS-84: GPS raw coordinates for HA/OSM maps; GCJ-02: GCJ coordinates as-is for AMap/Tencent maps)"
+          "coordinate_system": "Coordinate system (WGS-84: GPS raw coordinates for HA/OSM maps; GCJ-02: GCJ coordinates as-is for AMap/Tencent maps)",
+          "reset_cmd_fail": "Reset vehicle capability blacklist (clear recorded unsupported commands; entities re-created by capability after restart)"
         }
       }
     }

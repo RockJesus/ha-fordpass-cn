@@ -65,6 +65,8 @@ COORDINATE_LABELS = {
 
 # 集成偏好表单（位置跟踪 / 坐标系；v4.9.6 起无刷新间隔）——OptionsFlow 与
 # reconfigure 共用，避免两份 schema 漂移。
+# v5.8.7: 新增「重置车型能力黑名单」一次性动作项（勾选提交即触发重置，
+# 不写入持久 options——见 async_step_init 的 pop 处理）。
 def _preference_schema(defaults: dict) -> vol.Schema:
     return vol.Schema(
         {
@@ -77,6 +79,7 @@ def _preference_schema(defaults: dict) -> vol.Schema:
                     CONF_COORDINATE_SYSTEM, DEFAULT_COORDINATE_SYSTEM
                 ),
             ): vol.In(COORDINATE_LABELS),
+            vol.Optional("reset_cmd_fail", default=False): bool,
         }
     )
 
@@ -629,6 +632,13 @@ class FordPassOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
+            # v5.8.7: 「重置车型能力黑名单」为一次性动作项——勾选提交即触发
+            # 重置并立即写盘，不写入持久 options（避免下次打开选项页仍勾选）。
+            if user_input.pop("reset_cmd_fail", False):
+                payload = getattr(self.config_entry, "runtime_data", None)
+                coordinator = (payload or {}).get("coordinator")
+                if coordinator is not None and hasattr(coordinator, "async_reset_cmd_fail"):
+                    await coordinator.async_reset_cmd_fail()
             return self.async_create_entry(title="", data=user_input)
         return self.async_show_form(
             step_id="init",

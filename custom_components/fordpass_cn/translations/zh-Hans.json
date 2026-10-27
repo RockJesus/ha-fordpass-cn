@@ -77,7 +77,8 @@
         "title": "福特派互联选项",
         "data": {
           "track_location": "启用车辆定位追踪",
-          "coordinate_system": "坐标体系（WGS-84：转为 GPS 原始坐标供官方地图/OSM；GCJ-02：火星坐标原样输出供高德/腾讯地图）"
+          "coordinate_system": "坐标体系（WGS-84：转为 GPS 原始坐标供官方地图/OSM；GCJ-02：火星坐标原样输出供高德/腾讯地图）",
+          "reset_cmd_fail": "重置车型能力黑名单（清空已记录的“不支持命令”；重启后按车型能力重新创建实体）"
         }
       }
     }
