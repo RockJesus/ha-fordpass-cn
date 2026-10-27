@@ -1275,17 +1275,18 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             from homeassistant.helpers import entity_registry as er
             reg = er.async_get(self.hass)
             # v4.7.6: HA 2026.10 已移除 async_entries_for_domain（v3.6.5
-            # sensor.py 同款修复）——改用 reg.entities.values() 过滤
-            # platform==DOMAIN；跳过用户禁用实体（disabled_by）。
-            # P1-7（v5.6.0）：按本 entry 限定——此前只按 platform==DOMAIN
-            # 过滤（v4.7.6 迁移笔误：platform 是 sensor/switch 等平台名而非
-            # 集成 domain，恒为空；应过滤 e.domain==DOMAIN），且多 entry 时
-            # 会给对方全部实体写 logbook 活动、事件量成倍放大。改为
-            # domain==DOMAIN + config_entry_id==本 entry + 未禁用。
+            # sensor.py 同款修复）——改用 reg.entities.values() 过滤。
+            # P1-7（v5.6.0）：按本 entry 限定，避免多账号/多 entry 时给
+            # 对方全部实体写 logbook 活动、事件量成倍放大。
+            # v5.8.8 修正：RegistryEntry 的 domain 是**实体域**（sensor /
+            # switch / lock …），集成域在 platform 字段——此前写成
+            # `e.domain == DOMAIN`（恒不成立，v4.7.6 起列表一直为空，手动
+            # 刷新事件的实体关联从未生效），改为 platform==DOMAIN +
+            # config_entry_id==本 entry + 未禁用。
             return [
                 e.entity_id
                 for e in reg.entities.values()
-                if e.domain == DOMAIN
+                if e.platform == DOMAIN
                 and e.disabled_by is None
                 and e.config_entry_id == self.entry_id
             ]

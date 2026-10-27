@@ -214,6 +214,10 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_SMS]},
             )
         schema = STEP_LOGIN_MODE_SCHEMA
+        # v5.8.8: 描述文案只列**实际可选**的登录方式——林肯分支下方 schema
+        # 仅剩短信验证码一项，此前仍用 LOGIN_MODE_LABELS.values() 拼全部
+        # 两种，表单描述出现「用户名密码登录」却无对应选项，前后矛盾。
+        login_modes_text = "、".join(LOGIN_MODE_LABELS.values())
         if self._brand == BRAND_LINCOLN:
             # P0-4（v5.6.0）：林肯品牌仅提供短信验证码登录（密码登录无
             # 对应 B2C 租户，选择后必失败——隐藏该方式避免死胡同）。
@@ -224,11 +228,12 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                 }
             )
+            login_modes_text = LOGIN_MODE_LABELS[LOGIN_MODE_SMS]
         return self.async_show_form(
             step_id="login_mode",
             data_schema=schema,
             errors=errors,
-            description_placeholders={"login_modes": "、".join(LOGIN_MODE_LABELS.values())},
+            description_placeholders={"login_modes": login_modes_text},
         )
 
     async def async_step_reauth(
