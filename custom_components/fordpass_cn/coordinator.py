@@ -204,7 +204,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # honk_settings（按钮 _settings 依赖 entry_id 取配置实时值）。
         self.entry_id = entry_id
         # v3.1.13: 车辆列表 encryptedCarId（停车影像/行车监控请求参数——
-        # 锐际为 null = 车型无远程影像硬件，影像按钮不创建）
+        # 部分车型为 null = 车型无远程影像硬件，影像按钮不创建）
         self.car_id = car_id
         # v3.1.13: 最近一次鸣笛命令状态（鸣笛开关触发后轮询
         # announcestatus/{commandId} 写入；「鸣笛命令状态」传感器读取）
@@ -704,7 +704,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.debug("FordPass persist last data failed: %s", exc)
     @property
     def vehicle_model(self) -> str:
-        """车型名（如「锐际 Escape」），用于车辆图片实体显示。"""
+        """车型名（如「<车型>」），用于车辆图片实体显示。"""
         return self._vehicle_name
 
     @property

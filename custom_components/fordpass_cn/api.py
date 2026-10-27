@@ -1252,7 +1252,7 @@ class FordPassApi:
 
         v4.2.5 方法对齐 6.16.0 接口行为分析：sendPanicCommand 为 PUT
         （此前误用 POST，网关对支持 panic 的车型会 405）。duration 直接
-        写在路径里。锐际实测 404（云端不支持该通道），调用方应捕获
+        写在路径里。实测返回 404（云端不支持该通道），调用方应捕获
         FordPassApiError(404) 并向用户明确提示车型不支持。
         """
         return await self._v5_verb("PUT", PATH_V5_PANIC.format(vin=vin, duration=duration),
@@ -1762,7 +1762,7 @@ class FordPassApi:
         """POST /api/cnxapi-pds/v1/search-vehicle-parking-image — 停车影像查询。
 
         v3.1.13 对齐：App VehicleManagerEndpoint.searchVehicleParkingImage，
-        请求体含 carId（= 车辆列表 encryptedCarId）。锐际 encryptedCarId=null
+        请求体含 carId（= 车辆列表 encryptedCarId）。部分车型 encryptedCarId=null
         → 集成不创建按钮、不调用。响应含图片记录列表（车型支持时）。
         """
         return await self._request(
@@ -1773,7 +1773,7 @@ class FordPassApi:
         """POST /api/cnxapi-pds/v1/search-vehicle-monitor-traffic — 行车监控查询。
 
         App VehicleManagerEndpoint.searchVehicleMonitorTraffic，与停车影像
-        同组（PDS 网关），请求体含 carId。锐际无该硬件 → 不创建实体。
+        同组（PDS 网关），请求体含 carId。部分车型无该硬件 → 不创建实体。
         """
         return await self._request(
             "POST", PATH_MONITOR_TRAFFIC, {"carId": car_id, "vin": vin}
@@ -2023,7 +2023,7 @@ class FordPassApi:
     async def get_ccfeatures(self, vin: str) -> dict[str, Any]:
         """云端能力+服务信息：GET /api/cnxapi-vds/v2/vehicles/ccfeatures（v3.1.9，200 实测）。
 
-        实测响应（2026-10-02，锐际）：
+        实测响应（2026-10-02，实测）：
           {"status":200,"data":{
              "rsaNumber":"4006501668", "contactNumber":"4009213266",
              "afterSalesNumber":"4000031111",
@@ -2040,7 +2040,7 @@ class FordPassApi:
     async def get_prognostic(self, vin: str) -> dict[str, Any]:
         """预测性诊断：GET /api/cnxapi-cds/prognostic/v1/list（v3.1.9，200 实测）。
 
-        实测响应（2026-10-02，锐际）：
+        实测响应（2026-10-02，实测）：
           {"status":200,"data":{
              "featureType":"OL", "confidenceLevel":2, "shouldShow":false,
              "urgency":"N", "messageDesc":null, "messageCode":null,
@@ -2057,7 +2057,7 @@ class FordPassApi:
     async def get_sim_info(self, vin: str) -> dict[str, Any]:
         """SIM 卡信息：GET /api/cnxapi-cds/v1/vehicle/sim/info（200 实测）。
 
-        v4.3.0: 部分车型（如锐际纯油）该端点确定性业务拒绝
+        v4.3.0: 部分车型（纯油）该端点确定性业务拒绝
         （HTTP 200 但 data.returnSuccess=false / returnErrCode=402
         CONS.SYS.0002）——识别后抛 FordPassProbeRejected，由
         coordinator._cached_fetch 落盘 None，TTL 内不再真拉
@@ -2319,7 +2319,7 @@ class FordPassApi:
         """GET /api/alert/v1/ota/setting-info — OTA 设置状态（v3.1.3）。
 
         实测（2026-10-02）：标准 R3 签名（timestamp+sign+encryptedVin/xjw）
-        返回 HTTP 200；同族的 ota/detail、ota/versions 在锐际上被服务端拒绝
+        返回 HTTP 200；同族的 ota/detail、ota/versions 在实测车型上被服务端拒绝
         （errorCode 206004 "capabilityMmota is false"），故仅此端点接入。
         响应 data 字段：remoteOTAFlag / asuState / activationDayOfWeek /
         activationScheduleTime / toBeVersion / toBeReleaseNote / asIsVersion /

@@ -4,7 +4,7 @@ The pictures (vehicleImageUrl=侧视45view / imageUrl=俯视birdview from
 /v5/vehicles/list，实机样本 2026-10-03 实测) are downloaded once and persisted to
 ``/config/.storage/fordpass_cn/<vin>[.overlook].png`` so they survive restarts
 and never need to be re-downloaded (or lost).  The entity's state shows the
-model name (e.g. 锐际 Escape) for readability — the picture itself is rendered
+model name for readability — the picture itself is rendered
 by the frontend from the image proxy.
 
 v5.2.4: 图片缓存从 /config/www 迁至 /config/.storage 私有目录——www 目录经
@@ -103,7 +103,7 @@ class FordPassVehicleImage(ImageEntity):
 
     @property
     def state(self) -> str:
-        """Show the model name (e.g. 锐际 Escape) instead of an empty value.
+        """Show the model name instead of an empty value.
 
         HA image entities normally have no textual state; returning the model
         name makes the card readable while the picture still renders from the
@@ -163,7 +163,7 @@ class FordPassRemoteImageEntity(ImageEntity):
     """远程影像图（停车影像 / 行车监控，v3.4.4，全车型）。
 
     仅当车辆列表 encryptedCarId 非空时创建（与「停车影像/行车监控」查询
-    按钮同条件；锐际 null = 车型无远程影像硬件，不创建、0 unavailable）。
+    按钮同条件；部分车型 null = 车型无远程影像硬件，不创建、0 unavailable）。
     图片 URL 来自按钮查询响应（coordinator.data["remote_image"]），
     响应结构随车型/云端变化，由 extract_remote_image_url 宽松提取；
     有 URL 则下载并持久化到 .storage/fordpass_cn/{vin}_{kind}.png（保留最后
@@ -377,7 +377,7 @@ async def async_setup_entry(
         if getattr(coordinator, attr, None)
     ]
     # v3.4.4: 远程影像图（停车影像/行车监控）——车辆列表 encryptedCarId 非空
-    # 才创建（锐际 null = 无远程影像硬件，0 unavailable；其他车型自动出现）
+    # 才创建（部分车型 null = 无远程影像硬件，0 unavailable；其他车型自动出现）
     remote_entities = [
         FordPassRemoteImageEntity(hass, coordinator, kind)
         for coordinator in coordinators

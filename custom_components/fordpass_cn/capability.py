@@ -83,7 +83,7 @@ def is_on(status: dict | None, paths: list[list[str]]) -> bool:
 # ---------------------------------------------------------------------------
 # v3.1.20: 云端能力探测（ccfeatures availableFeatures 位图 → VDSFeatureType）
 # 全车型自动创建的关键——每辆车登录后按各自云端能力位图探测开通的服务能力，
-# 位图不同 → 能力集不同 → 实体自动适配（如锐际纯油 03,04,05,06,07,08,10,
+# 位图不同 → 能力集不同 → 实体自动适配（如纯油车型 03,04,05,06,07,08,10,
 # 11,23 = 计划保养服务/指南/道路救援/延保/福特金融/私充服务/我的订阅/我的试驾
 # + 未定义特性 0x23）。
 # VDSFeatureType 枚举（App: mobile_cn_data_adapter vds_type.dart）——整理自
@@ -116,7 +116,7 @@ VDS_FEATURE_NAMES: dict[int, tuple[str, str]] = {
     0x16: ("MyRights", "我的权益"),
     0x17: ("SyncToCarNavigation", "同步到车机导航"),
 }
-# 枚举上限 = 0x17（23）；超过该范围的特性 ID（如锐际的 0x23=35）
+# 枚举上限 = 0x17（23）；超过该范围的特性 ID（如该车型的 0x23=35）
 # 在 App 中无对应枚举成员，checkVDSFeature 会直接忽略。
 
 # 能力 → 集成实体创建映射（全车型自动创建）：位图含该能力时，

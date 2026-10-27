@@ -340,7 +340,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
 
     # ===== D 组：各车型可选字段（纯电/混动/柴油/拖车/车内环境等，v2.9.0） =====
     # 全部 skip_if_missing=True：值无效（null/Not_Supported/...）的实体不创建，
-    # 保证任何车型登录后只看到自己有真实数据的实体（如锐际看不到充电状态）。
+    # 保证任何车型登录后只看到自己有真实数据的实体（如实测车型看不到充电状态）。
     _charge_map = {"Charging": "充电中", "NotCharging": "未充电", "FullyCharged": "已充满",
                    "Complete": "已完成", "Charged": "已充满", "Discharging": "放电中"}
     _plug_map = {"Connected": "已连接", "Disconnected": "未连接", "Unplugged": "未插枪"}
@@ -382,7 +382,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     ]
 
     # v3.3.9: 柴油实体（领裕/撼路者柴油版等）——仅柴油燃料车型（fuelType=D）
-    # 才创建；汽油车即使云端返回 dieselSystemStatus 字段也跳过（锐际曾显示
+    # 才创建；汽油车即使云端返回 dieselSystemStatus 字段也跳过（实测车型曾显示
     # 「柴油系统状态=激活」属误创建）。
     if coordinator.is_diesel:
         sensors += [
@@ -497,14 +497,14 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("mcm_messages_v3", "消息中心", "mcm_messages"),
             ("user_reddot", "红点状态", "user_reddot"),
             # v3.7.2: 车辆授权列表（vehicle-user-auth）+ 公共充电探测
-            # （EVSS/vpoi 纯电插混专属——探测到数据才创建，锐际纯油无数据
+            # （EVSS/vpoi 纯电插混专属——探测到数据才创建，纯油车型无数据
             # 不创建，全车型自动适配）
             ("user_auth_list", "车辆授权列表", "auth_list"),
             ("evss_stations", "公共充电站", "evss_stations"),
             ("evss_orders", "充电订单", "evss_orders"),
             ("vpoi_chargestations", "充电站地图", "vpoi_chargestations"),
             # v3.7.3: 家充桩扩展（分享列表/桩级充电状态/充电信息/充电订单）
-            # ——仅探测到绑定桩+桩级数据才创建（锐际纯油无墙盒不创建）
+            # ——仅探测到绑定桩+桩级数据才创建（纯油车型无墙盒不创建）
             ("wallbox_sharing_query", "家充桩分享列表", "wallbox_sharing"),
             ("wallbox_charge_status", "家充桩充电状态(桩级)", "wallbox_charge_status"),
             ("wallbox_charging", "家充桩充电信息", "wallbox_charging"),
@@ -622,7 +622,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             if _not_ev:
                 sensors.append(FordPassOilLifeSensor(coordinator))
             # v3.3.9: 剩余可行驶里程仅在 remainingKMs 有值时创建
-            # （锐际 prognostic 曾返回无该字段 → 实体恒 unknown，不创建）
+            # （实测车型 prognostic 曾返回无该字段 → 实体恒 unknown，不创建）
             if prog_payload.get("remainingKMs") is not None:
                 sensors.append(FordPassRangeSensor(coordinator))
             sensors.append(FordPassSlowLeakSensor(coordinator))
@@ -1140,7 +1140,7 @@ def _ts_to_local(v):
 def _window_state(v):
     """车窗位置（v3.1.8 + v3.3.3）：字符串枚举→中文；数值→百分比。
 
-    锐际实测云端返回字符串枚举（Fully_Closed / BetFully_10PercentOpen /
+    实测云端返回字符串枚举（Fully_Closed / BetFully_10PercentOpen /
     BetFully_50PercentOpen 等，无纯数字）；部分车型可能返回数值
     （0=关闭、100=全开）。v3.3.3：新增解析枚举内嵌百分比数字——
     BetFully_10PercentOpen →「未关闭 10%」（与数值型显示格式一致）。
@@ -1424,7 +1424,7 @@ class FordPassCloudProbeSensor(SensorEntity):
 
     解析 ccfeatures availableFeatures 位图（VDSFeatureType，实测福特派
     6.16.0 客户端定义的 24 项枚举）→ 该车开通的云端服务能力集。
-    位图不同 → 能力集不同 → 实体自动适配：如锐际纯油
+    位图不同 → 能力集不同 → 实体自动适配：如纯油车型
     03,04,05,06,07,08,10,11,23 = 计划保养服务/指南/道路救援/延保/福特金融/
     私充服务/我的订阅/我的试驾 + 未定义特性 0x23。无位图数据的车型不创建。
     """
@@ -1504,7 +1504,7 @@ def _brand_zh(code) -> str | None:
 
 
 def _vehicle_masterdata_zh(vi: dict | None) -> str | None:
-    """车型主数据中文聚合（v4.6.5/v4.6.6）：锐际 Escape（2020 款 · 汽油 ·
+    """车型主数据中文聚合（v4.6.5/v4.6.6）：<车型>（年款 · 汽油 ·
     长安福特）。车辆信息 dict 无有效字段时返回 None（调用方回退探测数据）。"""
     if not isinstance(vi, dict) or not vi:
         return None
@@ -1919,7 +1919,7 @@ class FordPassSimSensor(_ServiceInfoSensor):
             return "车辆未开通该服务"
         payload = data.get("data") if isinstance(data.get("data"), dict) else {}
         # 服务端业务失败（实测 payload.returnSuccess false / CONS.SYS.0002）：
-        # 锐际纯油车型无车联网 SIM 服务，App 无该功能入口（实机样本全量 1152 条
+        # 纯油车型无车联网 SIM 服务，App 无该功能入口（实机样本全量 1152 条
         # 无 sim/info 请求）——v3.3.0 语义修正为「未开通」而非「查询失败」，
         # 错误码保留在 attributes（_summary 一并带出）。
         if payload.get("returnSuccess") is False:
@@ -1961,7 +1961,7 @@ class FordPassWifiSensor(_ServiceInfoSensor):
         if not isinstance(data, dict):
             return None
         payload = data.get("data") if isinstance(data.get("data"), dict) else {}
-        # v3.3.0: 与 SIM 一致——锐际纯油无车联网热点服务，业务失败（CONS.AUTH.0005
+        # v3.3.0: 与 SIM 一致——纯油车型无车联网热点服务，业务失败（CONS.AUTH.0005
         # 等）语义修正为「未开通」，错误码保留 attributes。
         if payload.get("returnSuccess") is False:
             code = str(payload.get("returnErrCode") or "")

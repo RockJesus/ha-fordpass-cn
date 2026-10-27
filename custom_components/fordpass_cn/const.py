@@ -86,7 +86,7 @@ ANNOUNCE_ENUM_CN = {
 # v3.9.6 与 CHIRP_TO_ANNOUNCE 同步校准——同属 App 枚举体系，实测
 # honk=2/chirpHonk=3）：0=chrip1 / 1=chirp2 / 2=honk / 3=chirpHonk / 4=panic。
 # 注意：4（声光共舞 panic）在部分车型走独立的 /panic/{duration} 端点
-# （灯+喇叭警报），锐际实测 404（云端不支持）；其余 0-3 走 POST /honk。
+# （灯+喇叭警报），实测返回 404（云端不支持）；其余 0-3 走 POST /honk。
 CHIRP_TO_TYPE = {
     "雨落荷叶": 0,
     "急浪拍岸": 1,
@@ -98,7 +98,7 @@ CHIRP_TO_TYPE = {
 CONF_HONK_DURATION = "honk_duration"
 CONF_CHIRP_TYPE = "chirp_type"
 # v3.4.5: 远程空调目标温度（EV/插混 preconditioning 专属，全车型能力驱动）
-# 创建条件=vehicle-status preCondStatusDsply 有值（锐际纯油无 -> 不创建）。
+# 创建条件=vehicle-status preCondStatusDsply 有值（纯油车型无 -> 不创建）。
 # 云端偏好通道候选（与鸣笛设置同构）：组名 RemoteClimateSetting +
 # preferenceType TargetTemp，按 App 命名风格推断（未实测），待电马/插混实机样本校准。
 GROUP_REMOTE_CLIMATE = "RemoteClimateSetting"
@@ -170,7 +170,7 @@ PATH_LWOSB_ORDER_STATUS = "/api/cnxapi-lwosb/v2/app/bookingorderstatus"
 
 # OTA 设置状态（v3.1.3，实测 2026-10-02）：GET /api/alert/v1/ota/setting-info
 # 走标准 R3 签名（timestamp+sign+encryptedVin/xjw）返回 HTTP 200；同族的
-# ota/detail、ota/versions 在锐际上被服务端拒绝（errorCode 206004
+# ota/detail、ota/versions 在实测车型上被服务端拒绝（errorCode 206004
 # "capabilityMmota is false"），故仅 setting-info 接入。
 PATH_OTA_SETTING = "/api/alert/v1/ota/setting-info"
 # 服务信息端点（v3.1.4，实测 2026-10-02）：R3 compute_sign + 修正 headers +
@@ -190,9 +190,9 @@ PATH_WARRANTY = "/api/cnxapi-cds/v1/warranty"
 #         encryptedVin} → data:"success"；重置后 lastReplaceTime 更新为当天。
 #   内部链路：vds 网关转调 BESL /api/besl/maintenance/reminder/ivi/filter/v1/status。
 PATH_AAR_STATUS = "/api/cnxapi-vds/v1/aar/status"
-# v3.1.9: 云端能力+服务信息（200 实测，锐际）
+# v3.1.9: 云端能力+服务信息（200 实测）
 PATH_CCFEATURES = "/api/cnxapi-vds/v2/vehicles/ccfeatures"
-# v3.1.9: 预测性诊断（机油寿命/剩余里程/慢漏气胎，200 实测，锐际）
+# v3.1.9: 预测性诊断（机油寿命/剩余里程/慢漏气胎，200 实测）
 PATH_PROGNOSTIC = "/api/cnxapi-cds/prognostic/v1/list"
 # v3.1.17: 未读消息摘要（实机样本实测 200）：GET /api/cnxapi-message/app/messages/summary
 # ?timestamp=&sign=（无 encryptedVin 参数）→ data.summary.{allRedDotStatus,
@@ -247,7 +247,7 @@ PATH_WALLBOX_TNC_SIGN = "/api/smartwallbox/processor/tnc/sign/v3"
 PATH_WALLBOX_SHARE_SIGN_TNC = "/api/smartwallbox/processor/sharer/signTnc/v3"
 
 # v3.7.2: 车辆授权管理（vds/v1/vehicles/vehicle-user-auth 查询授权列表）与
-# 公共充电探测（纯电/插混车型专属，数据驱动创建，锐际纯油探测无数据不创建）：
+# 公共充电探测（纯电/插混车型专属，数据驱动创建，纯油车型探测无数据不创建）：
 #   evss/stations/v1            公共充电站（位置相关，无参探测失败不创建）
 #   evss/orders/v2              充电订单
 #   vpoi/chargestations/v3      充电站地图（位置相关）
@@ -463,7 +463,7 @@ CMD_TRUNK_UNLOCK = "TrunkUnlock"
 CMD_LIGHT_FIND_ON = "ZoneLightingON"
 CMD_LIGHT_FIND_OFF = "ZoneLightingOFF"
 # v3.1.9: 删除 CMD_EXTEND_START 旧别名（曾错误指向 TrunkUnlock；App 远程启动延长
-# 的真实规范是 FORD_EXTEND_START，但锐际实测 send-command 网关白名单不含此项，
+# 的真实规范是 FORD_EXTEND_START，但实测 send-command 网关白名单不含此项，
 # 不支持——见 v3.1.9 实测限制）。
 # v5.8.4: 重新接入 FORD_EXTEND_START（2026-10-25 接口定义 CommandTypeV2 枚举确认
 # App 存在该命令 = 远程启动延时）。⚠️ commandType 字符串为推断值
@@ -483,7 +483,7 @@ HONK_AUTO_OFF_SECONDS = 30                          # 鸣笛寻车自动复位�
 LIGHT_FIND_AUTO_OFF_SECONDS = 30
 # 声光共舞（panic）端点（v3.1.8）：App 的 FordPanicCommand 走
 # POST /api/vehicles/v5/{vin}/panic/{paniconduration}（灯+喇叭警报）；
-# 锐际实测 404（云端不支持，App 中该类型可能也只在部分车型/蓝牙下可用）。
+# 实测返回 404（云端不支持，App 中该类型可能也只在部分车型/蓝牙下可用）。
 PATH_V5_PANIC = "/api/vehicles/v5/{vin}/panic/{duration}"
 # v3.1.13: 鸣笛命令状态查询（App FordRemoteControlApiService，v5 命令轮询组：
 # statusrefresh/{commandId} / engine/start/{commandId} / doors/lock/{commandId} /
@@ -495,7 +495,7 @@ PATH_V5_ANNOUNCE_STATUS = "/api/vehicles/v5/{vin}/announcestatus/{command_id}/"
 PATH_CVFEATURES = "/api/cnxapi-vds/v4/vehicles/cvfeatures"
 # v3.1.13: 停车影像 / 行车监控（App VehicleManagerEndpoint：searchVehicleParkingImage /
 # searchVehicleMonitorTraffic，PDS 网关；请求体含 carId=车辆列表 encryptedCarId，
-# 锐际 encryptedCarId=null = 车型无远程影像硬件——实体不创建）
+# 部分车型 encryptedCarId=null = 车型无远程影像硬件——实体不创建）
 PATH_PARKING_IMAGE = "/api/cnxapi-pds/v1/search-vehicle-parking-image"
 PATH_MONITOR_TRAFFIC = "/api/cnxapi-pds/v1/search-vehicle-monitor-traffic"
 CMD_TRAILER_CHECK_START = "TrailerLightCheckStart"  # 拖车灯光检测开始（皮卡/拖车）
