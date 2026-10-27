@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -138,6 +139,8 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
 
     _attr_has_entity_name = True
     _attr_assumed_state = True
+    # v5.9.2: 鸣笛/空调温度均为设备设置项，归配置类目。
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
         self,

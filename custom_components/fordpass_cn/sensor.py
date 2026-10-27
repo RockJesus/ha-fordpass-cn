@@ -16,10 +16,9 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfLength, UnitOfPressure, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfLength, UnitOfPressure, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -242,9 +241,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # 成功（业务 200）即创建（空列表显示「无告警」），失败/拒绝不创建。
     if isinstance(coordinator.activealertlist, dict) and coordinator.activealertlist:
         sensors.append(FordPassActiveAlertListSensor(coordinator))
-    sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car"))
-    sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info"))
-    sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier"))
+    # v5.9.2: 身份与静态属性归诊断类目（不占主实体区、不进自动仪表盘）。
+    sensors.append(FordPassVehicleAttrSensor(coordinator, "license_plate", "车牌号", "license_plate", "mdi:car", EntityCategory.DIAGNOSTIC))
+    sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_nickname", "车辆昵称", "nickname", "mdi:car-info", EntityCategory.DIAGNOSTIC))
+    sensors.append(FordPassVehicleAttrSensor(coordinator, "vehicle_vin", "车辆识别码", "vin", "mdi:identifier", EntityCategory.DIAGNOSTIC))
     sensors.append(FordPassLocationSensor(coordinator))
 
     # ===== A 组：车辆状态（车门 / 点火 / 车窗） =====
@@ -286,7 +286,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
 
     # ===== C 组：其他状态 =====
     sensors += [
-        FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", UnitOfTime.MINUTES, None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"]),
+        FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", UnitOfTime.MINUTES, None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"], category=EntityCategory.CONFIG),
         # v2.8.0: 远程启动时间（unix 秒 → 本地时间字符串）与动态"距离自动熄火时间"倒计时
         # v3.0.2: 未启动（值为 0）时显示「未启动」，不再显示 unknown
         FordPassSensor(coordinator, "remote_start_time", "远程启动时间", None, None, "mdi:clock-start",
@@ -299,7 +299,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         # FordPassSensor(coordinator, "authorization", "授权状态", None, None, "mdi:shield-check", ["authorization"],
         #                enum_map={"AUTHORIZED": "已授权", "UNAUTHORIZED": "未授权", "EXPIRED": "已过期"}),
         FordPassSensor(coordinator, "crcc_flag", "远程控车功能", None, None, "mdi:remote", ["crccFlag"],
-                       enum_map={"ON": "已开启", "OFF": "已关闭"}),
+                       enum_map={"ON": "已开启", "OFF": "已关闭"}, category=EntityCategory.DIAGNOSTIC),
         FordPassSensor(coordinator, "life_cycle_mode", "电池生命周期模式", None, None, "mdi:car-battery", ["lifeCycMode"],
                        enum_map={"Normal": "标准模式", "Life_Cycle_Mode": "长寿命模式", "Deep_Discharge": "深度放电"}),
         FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
@@ -346,7 +346,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         FordPassSensor(coordinator, "inner_tailgate", "内尾门", None, None, "mdi:car-back", ["doorStatus", "innerTailgateDoor"], enum_map=_door_map, skip_if_missing=True),
         FordPassSensor(coordinator, "cabin_temp", "车内温度", "°C", SensorDeviceClass.TEMPERATURE, "mdi:thermometer", ["CabnAmbTeActl"], round_value=True, skip_if_missing=True),
         FordPassSensor(coordinator, "deep_sleep", "深度睡眠模式", None, None, "mdi:sleep", ["deepSleepInProgress"], enum_map=_bool_map, skip_if_missing=True),
-        FordPassSensor(coordinator, "firmware_upgrade", "固件升级中", None, None, "mdi:update", ["firmwareUpgInProgress"], enum_map=_bool_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "firmware_upgrade", "固件升级中", None, None, "mdi:update", ["firmwareUpgInProgress"], enum_map=_bool_map, skip_if_missing=True, category=EntityCategory.DIAGNOSTIC),
         # v3.0.1: 天窗（部分车型上报 sunroofPosition；无该字段的车型不创建）
         FordPassSensor(coordinator, "sunroof", "天窗", None, None, "mdi:car-select",
                        [["sunroofPosition"], ["windowPosition", "sunroofPosition"], ["sunroof"]],
@@ -577,10 +577,12 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     # v4.6.3 聚合「车辆服务信息」实体废弃，旧条目由下方清理段自动移除。
     _ccf_payload = ccf.get("data") if isinstance(ccf, dict) else None
     if isinstance(_ccf_payload, dict):
-        for _key, _name, _icon, _path in _SERVICE_INFO_FIELDS:
+        for _key, _name, _icon, _path, _cat in _SERVICE_INFO_FIELDS:
             if _service_field_value(_ccf_payload, _path) not in (None, "", "null"):
                 sensors.append(
-                    FordPassServiceFieldSensor(coordinator, _key, _name, _icon, _path)
+                    FordPassServiceFieldSensor(
+                        coordinator, _key, _name, _icon, _path, _cat
+                    )
                 )
     # v3.1.13: 鸣笛命令状态（最近一次鸣笛的 announcestatus 结果；未触发时
     # 显示「未触发」，永远可用——v3.1.2 规则）
@@ -631,7 +633,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
 class FordPassVehicleAttrSensor(SensorEntity):
     """Reads a fixed attribute stored on the coordinator (e.g. license plate)."""
 
-    def __init__(self, coordinator, key, label, attr, icon=None) -> None:
+    def __init__(self, coordinator, key, label, attr, icon=None, category=None) -> None:
         self.coordinator = coordinator
         self._attr_key = attr
         self._attr_unique_id = f"{coordinator.uid_key}-{key}"
@@ -640,6 +642,8 @@ class FordPassVehicleAttrSensor(SensorEntity):
         self._attr_device_info = coordinator.device_info
         if icon:
             self._attr_icon = icon
+        if category:
+            self._attr_entity_category = category
 
     @property
     def available(self) -> bool:
@@ -663,6 +667,9 @@ class FordPassVehicleAttrSensor(SensorEntity):
 
 class FordPassLocationSensor(SensorEntity):
     """Vehicle location (address / coordinates), best effort."""
+
+    # v5.9.2: 与 device_tracker 保持一致——位置属设备自身信息，归诊断类目。
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
@@ -799,7 +806,8 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
                  multiplier: float | None = None, transform=None,
                  skip_if_missing: bool = False,
                  skip_if_zero: bool = False,
-                 evcc_state: dict | None = None) -> None:
+                 evcc_state: dict | None = None,
+                 category=None) -> None:
         # v5.4.6: EVCC 对接——充电状态等 enum 实体附带数值型 evcc_charge_state
         # 属性（0 未知/1 未充电/2 充电中/3 已充满，EVCC chargeState 语义）
         self._evcc_state = evcc_state
@@ -831,6 +839,8 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
             self._attr_state_class = SensorStateClass.MEASUREMENT
         if device_class:
             self._attr_device_class = device_class
+        if category:
+            self._attr_entity_category = category
 
     @property
     def data_usable(self) -> bool:
@@ -1240,6 +1250,9 @@ class FordPassOtaSettingSensor(SensorEntity):
     OTA 配置（远程 OTA 开关、激活排程、当前/目标版本、状态描述）。
     """
 
+    # v5.9.2: 展示的是车辆 OTA 开关配置，归配置类目。
+    _attr_entity_category = EntityCategory.CONFIG
+
     _OTA_FLAG_MAP: ClassVar[dict[int, str]] = {0: "未开通远程OTA", 1: "已开通", 2: "未知", None: "未知"}
 
     def __init__(self, coordinator) -> None:
@@ -1491,17 +1504,17 @@ def _vehicle_masterdata_zh(vi: dict | None) -> str | None:
 # v4.6.4: ccfeatures 服务信息 7 字段 → 7 个独立实体（用户要求）。
 # 顺序：(unique_id 后缀, 实体名, 图标, 响应 data 取值路径)
 # 路径为 tuple 时逐层下钻（如 ("featureData", "availableFeatures")）。
-_SERVICE_INFO_FIELDS: list[tuple[str, str, str, str | tuple[str, ...]]] = [
-    ("rsa_number", "救援电话", "mdi:phone-alert", "rsaNumber"),
-    ("contact_number", "客服电话", "mdi:phone", "contactNumber"),
-    ("after_sales_number", "售后电话", "mdi:phone-in-talk", "afterSalesNumber"),
-    ("video_manual", "视频说明书", "mdi:book-open-variant", "videoManualUrl"),
+_SERVICE_INFO_FIELDS: list[tuple[str, str, str, str | tuple[str, ...], str]] = [
+    ("rsa_number", "救援电话", "mdi:phone-alert", "rsaNumber", EntityCategory.DIAGNOSTIC),
+    ("contact_number", "客服电话", "mdi:phone", "contactNumber", EntityCategory.DIAGNOSTIC),
+    ("after_sales_number", "售后电话", "mdi:phone-in-talk", "afterSalesNumber", EntityCategory.DIAGNOSTIC),
+    ("video_manual", "视频说明书", "mdi:book-open-variant", "videoManualUrl", EntityCategory.DIAGNOSTIC),
     # v4.6.8: 「可用功能」与「云端能力探测」（同源 availableFeatures 位图、
     # 信息更全）重复，删除本实体；旧条目由 setup 清理段自动移除。
     # v4.6.9: 「已授权功能」（authedFeatures="A4"）——已知信息仅有字段名
     # （客户端字符串表），无编码映射与中文含义，无法中文化 → 删除；旧条目
     # 由 setup 清理段自动移除。
-    ("specified_features", "指定功能", "mdi:star-check", ("featureData", "specifiedFeatures")),
+    ("specified_features", "指定功能", "mdi:star-check", ("featureData", "specifiedFeatures"), EntityCategory.DIAGNOSTIC),
 ]
 
 
@@ -1534,6 +1547,7 @@ class FordPassServiceFieldSensor(SensorEntity):
         name: str,
         icon: str,
         path: str | tuple[str, ...],
+        category: str | None = None,
     ) -> None:
         self.coordinator = coordinator
         self._key = key  # v4.6.7: 用于「可用功能」中文解析分支
@@ -1542,6 +1556,8 @@ class FordPassServiceFieldSensor(SensorEntity):
         self._attr_icon = icon
         self._attr_device_info = coordinator.device_info
         self._path = path
+        if category:
+            self._attr_entity_category = category
 
     @property
     def available(self) -> bool:
@@ -1685,6 +1701,8 @@ class FordPassSlowLeakSensor(_ServiceInfoSensor):
 
 class FordPassDiagnosticSensor(_ServiceInfoSensor):
     """预测性诊断提示（v3.1.9）：prognostic 的 urgency/messageDesc/messageCode。"""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "prognostic", "预测性诊断", "mdi:alert-decagram", uid="prognostic_msg")
@@ -1862,6 +1880,8 @@ class FordPassRecallSensor(_ServiceInfoSensor):
 class FordPassSimSensor(_ServiceInfoSensor):
     """SIM 卡信息（v3.1.4）：GET /api/cnxapi-cds/v1/vehicle/sim/info。"""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "sim_info", "SIM 卡", "mdi:sim")
 
@@ -2003,6 +2023,8 @@ class FordPassChirpCloudSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:cloud-check"
+    # v5.9.2: 云端设置回读镜像，与 select 同属配置类目。
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
@@ -2237,6 +2259,8 @@ class FordPassSyncHealthSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:cloud-sync"
+    # v5.9.2: 集成自身健康度，标准诊断实体。
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
@@ -2653,6 +2677,8 @@ class FordPassProbeSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:update"
+    # v5.9.2: 探测端点原始摘要，属排查用诊断数据。
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, key: str, label: str, kind: str) -> None:
         self.coordinator = coordinator
