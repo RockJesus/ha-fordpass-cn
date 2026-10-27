@@ -51,9 +51,8 @@ async def async_setup_entry(
         # （待实测确认后恢复）。
     async_add_entities(locks)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
-    # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
-    # 实体 last_updated 每轮刷新（撤销"实体不随轮询刷新"）；失败轮不触发，
-    # 保留旧值。
+    # async_write_ha_state；失败轮不触发，保留旧值。v5.10.0 起属性不再
+    # 含每轮变化的 last_poll，值未变的实体不会产生 state_changed。
     try:
 
         def _mk_refresh(ent):

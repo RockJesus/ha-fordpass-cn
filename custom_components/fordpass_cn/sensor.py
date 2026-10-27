@@ -21,6 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 
 from . import capability
 from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
@@ -176,11 +177,9 @@ async def async_setup_entry(
     for coordinator in coordinators:
         all_sensors.extend(_make_sensors(coordinator))
     async_add_entities(all_sensors)
-    async_sync_entity_categories(hass, "sensor", all_sensors)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
-    # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
-    # 实体 last_updated 每轮刷新（撤销"实体不随轮询刷新"）；失败轮不触发，
-    # 保留旧值。
+    # async_write_ha_state；失败轮不触发，保留旧值。v5.10.0 起属性不再
+    # 含每轮变化的 last_poll，值未变的实体不会产生 state_changed。
     try:
 
         def _mk_refresh(ent):
@@ -652,6 +651,9 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                     _pri.append(_s)
                     sensors.remove(_s)
         sensors = _pri + sensors
+    # v5.10.0: last_poll 从全部实体属性收口到唯一的诊断实体（默认停用，
+    # 需要的自动化场景手动启用——启用后它自己每轮变化，但只此一个）
+    sensors.append(FordPassLastPollSensor(coordinator))
     return sensors
 
 
@@ -681,14 +683,10 @@ class FordPassVehicleAttrSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """v2.7.8: last_poll（最后拉取状态）"""
-        return {
-            "last_poll": (
-                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-                if self.coordinator.last_poll
-                else None
-            )
-        }
+        # v5.10.0: 不再随实体携带 last_poll——该值每轮刷新都变，会把值
+        # 未变化的实体也拉进 state_changed（recorder 行数随实体数线性
+        # 增长）。全局唯一权威来源见「云端最后刷新」诊断实体。
+        return {}
 
 
 class FordPassLocationSensor(SensorEntity):
@@ -728,12 +726,6 @@ class FordPassLocationSensor(SensorEntity):
                 "upload_time": loc.get("uploadTime"),
                 "address": loc.get("address"),
             }
-        # v2.7.8: last_poll（最后拉取状态）
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
     @property
@@ -780,10 +772,10 @@ class FordPassRestoreMixin(RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
-        """v4.8.6: 统一提供 last_poll（最后刷新时间，每轮变化）——让
-        lock/switch/select/device_tracker 等控制类实体随轮询刷新（sensor
-        自带 last_poll 的实体自定义 extra_state_attributes 覆盖本属性，
-        不受影响）。v4.8.5 曾漏 @property 导致控制类实体添加报
+        """透传子类属性。v5.10.0: 不再统一注入 last_poll——该值每轮刷新
+        都变，会把值未变化的实体也拉进 state_changed（recorder 行数随
+        实体数线性增长）。全局唯一权威来源见「云端最后刷新」诊断实体。
+        兼容逻辑说明：v4.8.5 曾漏 @property 导致控制类实体添加报
         TypeError: 'method' object is not iterable——@property 必加。"""
         attrs: dict[str, object] = {}
         # v4.8.8: 兼容 HA 2026.10——基类 Entity.extra_state_attributes 是
@@ -798,10 +790,6 @@ class FordPassRestoreMixin(RestoreEntity):
                 attrs.update(parent)
         except (AttributeError, TypeError):
             pass
-        lp = getattr(self, "coordinator", None)
-        attrs["last_poll"] = (
-            f"{lp.last_poll:%Y-%m-%d %H:%M:%S}" if lp and lp.last_poll else None
-        )
         return attrs
 
     def _restore_bool(self, live: bool | None) -> bool | None:
@@ -819,6 +807,42 @@ class FordPassRestoreMixin(RestoreEntity):
         if live is not None:
             return live
         return self._restored
+
+
+class FordPassLastPollSensor(SensorEntity):
+    """云端最后刷新时间（v5.10.0，诊断实体，默认停用）。
+
+    v5.10.0: last_poll 从全部实体属性中移除——该值每轮刷新都变，会把
+    值未变化的实体也拉进 state_changed，recorder 行数随实体数线性增长
+    （实测一次刷新 80 个实体同时写入、每天上万行）。全局唯一权威来源
+    收口到本实体：依赖「最后刷新时间」的自动化迁移到本实体
+    （device_class=TIMESTAMP，前端显示相对时间、可直接做时间比较）。
+
+    本实体默认停用（_attr_entity_registry_enabled_default=False）：
+    启用后它自己每轮变化写 recorder，但只此一个，不再有 80 倍噪音。
+    """
+
+    _attr_should_poll = False  # coordinator listener 驱动
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:cloud-clock"
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: FordPassCoordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-last_poll"
+        self._attr_name = "云端最后刷新"
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_poll is not None
+
+    @property
+    def native_value(self) -> datetime | None:
+        lp = self.coordinator.last_poll
+        return dt_util.as_utc(lp) if lp else None
 
 
 class FordPassSensor(FordPassRestoreMixin, SensorEntity):
@@ -897,18 +921,12 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
             attrs["source_status"] = node.get("status")
         if isinstance(status, dict):
             attrs["vehicle_data_time"] = status.get("lastModifiedDate") or status.get("lastRefresh")
-        # v2.7.8: last_poll（最后拉取状态）——最近一次成功拉取（自动/手动）的本地时间
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         # v5.4.6: EVCC 对接——charging_status 中文 enum -> 数值 chargeState
         # （0 未知/1 未充电/2 充电中/3 已充满，EVCC chargeState 语义）
         if self._evcc_state and self.native_value is not None:
             attrs["evcc_charge_state"] = self._evcc_state.get(self.native_value, 0)
         # v4.9.0: 过滤空值属性（source_status: null 等噪音键）
-        return {k: v for k, v in attrs.items() if k == "last_poll" or v not in (None, "")}
+        return {k: v for k, v in attrs.items() if v not in (None, "")}
 
     @property
     def native_value(self):
@@ -1111,11 +1129,6 @@ class FordPassActiveAlertListSensor(SensorEntity):
                 for key in ("headline", "Headline", "title", "Title", "alertName", "message", "severity", "status", "type"):
                     if a.get(key):
                         attrs[f"alert_{i}_{key}"] = a[key]
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
 
@@ -1237,12 +1250,6 @@ class FordPassAutoOffSensor(SensorEntity):
             "source_status": rss.get("status") or rs.get("status"),
             "timestamp": rss.get("timestamp") or rs.get("timestamp"),
         }
-        # v2.7.8: last_poll（最后拉取状态）
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
     @property
@@ -1309,13 +1316,8 @@ class FordPassOtaSettingSensor(SensorEntity):
             "status_name": ota.get("statusName") or "",
             "status_description": ota.get("statusDescription") or "",
         }
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         # v4.9.0: 过滤空值（未开通 OTA 时的 8 个空串属性噪音）
-        return {k: v for k, v in attrs.items() if k == "last_poll" or v not in (None, "")}
+        return {k: v for k, v in attrs.items() if v not in (None, "")}
 
     @property
     def native_value(self):
@@ -1357,11 +1359,7 @@ class _ServiceInfoSensor(SensorEntity):
         """精简属性（v3.1.5）：只保留摘要级字段，避免 recorder 16384 字节
         上限告警（保养计划原始响应可超 16KB，会整段拒绝存储）。"""
         data = (self.coordinator.data or {}).get(self._data_key) or {}
-        attrs: dict[str, Any] = {"last_poll": (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )}
+        attrs: dict[str, Any] = {}
         if not isinstance(data, dict):
             return attrs
         # 服务端业务状态（returnSuccess/returnErrCode 在 data.data 内，实测层级）
@@ -1460,13 +1458,7 @@ class FordPassCloudProbeSensor(SensorEntity):
         feats = capability.parse_cloud_features(
             (self.coordinator.data or {}).get("ccfeatures")
         )
-        attrs: dict[str, Any] = {
-            "last_poll": (
-                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-                if self.coordinator.last_poll
-                else None
-            )
-        }
+        attrs: dict[str, Any] = {}
         if not feats:
             return attrs
         attrs["capabilities"] = [f"{f['zh']}（{f['en']}）" for f in feats]
@@ -1611,13 +1603,7 @@ class FordPassServiceFieldSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        attrs = {
-            "last_poll": (
-                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-                if self.coordinator.last_poll
-                else None
-            )
-        }
+        attrs: dict = {}
         # v5.0.2: 完整 URL 入属性供前端链接使用
         if self._key == "video_manual":
             url = _service_field_value(self._payload() or {}, self._path)
@@ -2092,13 +2078,7 @@ class FordPassChirpCloudSensor(SensorEntity):
         # vehicleAnnouncement* 重复且新老槽位数值矛盾）——只留解析后
         # 的中文类型与显示时长，与 native_value 一致。
         pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
-        attrs: dict[str, Any] = {
-            "last_poll": (
-                f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-                if self.coordinator.last_poll
-                else None
-            )
-        }
+        attrs: dict[str, Any] = {}
         if isinstance(pref, dict) and pref:
             sound = pref.get("AnnouncementType") or pref.get("vehicleAnnouncementSoundType")
             duration = pref.get("Duration") or pref.get("vehicleAnnouncementDuration")
@@ -2153,11 +2133,6 @@ class FordPassAnnounceStatusSensor(SensorEntity):
     def extra_state_attributes(self) -> dict:
         st = getattr(self.coordinator, "announce_status", None) or {}
         attrs = dict(st) if isinstance(st, dict) else {}
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
 def _swb_find(node, key: str):
@@ -2413,11 +2388,6 @@ class FordPassSmartWallboxSensor(SensorEntity):
         if isinstance(data, dict):
             # v5.2.4: 敏感字段过滤（手机号/用户ID 等不进 attributes）
             attrs = _safe_scalar_attrs(data)
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
 
@@ -2488,11 +2458,6 @@ class FordPassFposbSensor(SensorEntity):
             # v5.2.4: 敏感字段过滤（预约记录可能含手机号/用户ID）
             attrs = _safe_scalar_attrs(books[0], limit=10)
         attrs["count"] = len(books)
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
 
@@ -2572,11 +2537,6 @@ class FordPassEvssSensor(SensorEntity):
         if isinstance(data, dict):
             # v5.2.4: 敏感字段过滤（手机号/用户ID 等不进 attributes）
             attrs = _safe_scalar_attrs(data)
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
 
@@ -3356,10 +3316,5 @@ class FordPassProbeSensor(SensorEntity):
                     entries.append(e)
                 attrs["最近记录"] = entries
                 attrs["记录条数"] = len(lst)
-        attrs["last_poll"] = (
-            f"{self.coordinator.last_poll:%Y-%m-%d %H:%M:%S}"
-            if self.coordinator.last_poll
-            else None
-        )
         return attrs
 
