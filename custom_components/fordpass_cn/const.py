@@ -478,6 +478,9 @@ CMD_AUTO_REFRESH = "AutoRefresh"                    # 自动刷新
 # 走 v5 网关真实通道（DELETE /api/vehicles/v5/{vin}/honk，实测 200 + commandId）
 CMD_HONK = "Honk"
 HONK_AUTO_OFF_SECONDS = 30                          # 鸣笛寻车自动复位秒数（App 鸣笛约 30 秒自动停止）
+# v5.8.10: 灯光寻车自动复位秒数——ZoneLightingON 命令不带时长参数，灯由车机
+# 自行熄灭；此值只决定开关实体的显示复位时间（不下发 OFF 命令，避免打扰）。
+LIGHT_FIND_AUTO_OFF_SECONDS = 30
 # 声光共舞（panic）端点（v3.1.8）：App 的 FordPanicCommand 走
 # POST /api/vehicles/v5/{vin}/panic/{paniconduration}（灯+喇叭警报）；
 # 锐际实测 404（云端不支持，App 中该类型可能也只在部分车型/蓝牙下可用）。

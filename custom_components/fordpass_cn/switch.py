@@ -36,7 +36,10 @@ from .const import (
     CMD_VA_INIT,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
+    DEFAULT_CHIRP_TYPE,
+    DEFAULT_HONK_DURATION,
     HONK_AUTO_OFF_SECONDS,
+    LIGHT_FIND_AUTO_OFF_SECONDS,
 )
 from .coordinator import FordPassCoordinator
 from .sensor import FordPassRestoreMixin
@@ -127,6 +130,135 @@ class FordPassTaskTracker:
         return task
 
 
+class FordPassMomentarySwitch(FordPassTaskTracker):
+    """瞬时命令开关共用基类（v5.8.10）——灯光寻车 / 鸣笛寻车 / 声光寻车。
+
+    三者行为一致：命令是一次性触发（车只响应一小段时间后自行停止），云端
+    不回报「灯正亮着 / 喇叭正响着」这类状态，因此 is_on 只能是乐观值
+    （_attr_assumed_state = True，HA 前端据此渲染成两个闪电按钮而非开关），
+    并在触发后按设定时长自动复位显示。
+
+    v5.8.10 修复两处：
+      1. 灯光寻车此前**没有任何自动复位**——点一次就永久停在「开」，与
+         鸣笛/声光不一致；现统一走 _schedule_auto_off()。
+      2. 声光寻车读的是 entry.options（默认 15 秒），而鸣笛寻车读内存
+         honk_settings（默认 10 秒）。select 自 v4.3.1 起只写内存，options
+         仅作旧版残留兜底 → 用户改了「鸣笛持续时长」后只有鸣笛生效，声光
+         仍按旧值/默认值停。现统一由 _settings() 取同一来源。
+
+    另外 _schedule_auto_off() 会取消上一轮未到点的复位任务——连续点两次时
+    旧计时器不会提前把开关打回「关」。
+    """
+
+    coordinator: FordPassCoordinator
+    _state: bool
+    _auto_off_task: asyncio.Task | None = None
+
+    def _settings(self) -> tuple[int, str]:
+        """(持续时长秒, 鸣笛类型中文名)：内存 honk_settings → options → 默认常量。
+
+        内存是权威来源（select v4.3.1 起只写内存，避免 update_listener 噪音
+        与调度设置被重置）；options 兜底旧版安装的残留值。
+        """
+        settings: dict[str, Any] = {}
+        entry_id = getattr(self.coordinator, "entry_id", None)
+        if entry_id:
+            payload = getattr(self.coordinator.config_entry, "runtime_data", None) or {}
+            settings = payload.get("honk_settings") or {}
+        options: dict[str, Any] = {}
+        if entry_id:
+            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
+            options = entry.options if entry else {}
+        try:
+            duration = int(
+                settings.get(CONF_HONK_DURATION)
+                or options.get(CONF_HONK_DURATION)
+                or DEFAULT_HONK_DURATION
+            )
+        except (TypeError, ValueError):
+            duration = DEFAULT_HONK_DURATION
+        chirp_name = (
+            settings.get(CONF_CHIRP_TYPE)
+            or options.get(CONF_CHIRP_TYPE)
+            or DEFAULT_CHIRP_TYPE
+        )
+        return duration, str(chirp_name)
+
+    def _duration(self) -> int:
+        """本次触发的持续时长（秒）。"""
+        return self._settings()[0]
+
+    def _cancel_auto_off(self) -> None:
+        """取消未到点的自动复位任务（手动关闭或再次触发时调用）。"""
+        task, self._auto_off_task = self._auto_off_task, None
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _schedule_auto_off(self, duration: int | None = None) -> None:
+        """安排自动复位；先取消上一轮的，避免旧计时器提前打断。"""
+        self._cancel_auto_off()
+        self._auto_off_task = self._track_task(self._auto_off(duration))
+
+    async def _auto_off(self, duration: int | None = None) -> None:
+        """按本次触发时长自动复位显示；时长缺失/非法回退 HONK_AUTO_OFF_SECONDS。
+
+        被 _cancel_auto_off() 取消时不复位（取消场景下状态由调用方自己写）。
+        """
+        try:
+            await asyncio.sleep(
+                duration if isinstance(duration, int) and duration > 0 else HONK_AUTO_OFF_SECONDS
+            )
+        finally:
+            # 被取消时 CancelledError 会在此继续抛出，下面的状态复位不会执行
+            if self._auto_off_task is asyncio.current_task():
+                self._auto_off_task = None
+        self._state = False
+        self.async_write_ha_state()
+
+    @staticmethod
+    def _command_id(resp: Any) -> str | None:
+        """从（已解密的）send-command 响应里取 commandId。"""
+        if isinstance(resp, dict):
+            cid = resp.get("commandId")
+            if cid:
+                return str(cid)
+            inner = resp.get("data")
+            if isinstance(inner, dict) and inner.get("commandId"):
+                return str(inner["commandId"])
+        return None
+
+    async def _poll_cmd_status(self, command_type: str, command_id: str) -> None:
+        """轮询 command-execution-status，结果写入「鸣笛命令状态」传感器（尽力而为）。"""
+        self.coordinator.announce_status = {
+            "command_id": command_id, "status": "执行中", "command_type": command_type,
+        }
+        try:
+            done, result = await self.coordinator.api.wait_command_complete(
+                self.coordinator.vin, command_id, command_type
+            )
+            if done and isinstance(result, dict):
+                st = result.get("vehiclestatus", result)
+                st.setdefault("command_id", command_id)
+                st.setdefault("command_type", command_type)
+                self.coordinator.announce_status = st
+            else:
+                self.coordinator.announce_status = {
+                    "command_id": command_id,
+                    "status": "超时或未完成",
+                    "command_type": command_type,
+                    "error": "command-execution-status 轮询超时（命令可能已执行完成）",
+                }
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("FordPass %s 状态轮询失败: %s", command_type, exc)
+            self.coordinator.announce_status = {
+                "command_id": command_id,
+                "status": "查询失败",
+                "command_type": command_type,
+                "error": str(exc),
+            }
+        self.coordinator.async_update_listeners()
+
+
 class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
     """家充桩充电开关（v3.7.2）——开=charging/start/v2、关=charging/stop/v2。
 
@@ -176,26 +308,32 @@ class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         wid = self._wallbox_id()
         if not wid:
+            # v5.8.10: 此前完全静默（点了没反应也无日志），改为留痕
+            _LOGGER.warning("FordPass 家充桩充电（开）跳过：探测结果里没有可用的 wallboxId")
             self._state = False
             self.async_write_ha_state()
             return
         try:
             await self.coordinator.api.wallbox_charge_start(self.coordinator.vin, wid)
             self._state = True
-        except Exception:  # noqa: BLE001 - 网关拒绝时如实提示
+        except Exception as exc:  # noqa: BLE001 - 网关拒绝时如实提示
+            # v5.8.10: 原为纯静默吞掉，用户只看到开关弹回、无任何提示
+            _LOGGER.warning("FordPass 家充桩充电（开）失败: %s", exc)
             self._state = False
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         wid = self._wallbox_id()
         if not wid:
+            _LOGGER.warning("FordPass 家充桩充电（关）跳过：探测结果里没有可用的 wallboxId")
             self._state = False
             self.async_write_ha_state()
             return
         try:
             await self.coordinator.api.wallbox_charge_stop(self.coordinator.vin, wid)
             self._state = False
-        except Exception:  # noqa: BLE001 - 网关拒绝时如实提示
+        except Exception as exc:  # noqa: BLE001 - 网关拒绝时如实提示
+            _LOGGER.warning("FordPass 家充桩充电（关）失败: %s", exc)
             self._state = True
         self.async_write_ha_state()
 
@@ -303,15 +441,15 @@ class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
         await self.coordinator.run_command(CMD_ENGINE_STOP)
 
 
-class FordPassVAswitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity):
+class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEntity):
     """声光寻车开关（v3.3.3）——由「声光寻车触发/取消」两按钮合并。
 
-    HAR 实证（2026-10-03，福特派 6.16.0）：App 的声光寻车（鸣笛+灯光
-    共舞，VAType=4=panic）走 send-command 通道：
-      - 开 = InitialVA  cmdSpec [{VAType:4}, {Duration:<秒>}] → 200+commandId=26
-      - 关 = CancelVA   cmdSpec [{VAType:4}]                → 200+commandId=476
-    触发后车机按 Duration 自动停止，开关同步按设置时长自动复位
-    （v3.3.6: 跟随「鸣笛持续时长」设置，不再固定 30 秒）。
+    App 的声光寻车（鸣笛+灯光共舞，VAType=4=panic）走 send-command 通道：
+      - 开 = InitialVA  cmdSpec [{VAType:4}, {Duration:<秒>}] → commandId=26
+      - 关 = CancelVA   cmdSpec [{VAType:4}]                → commandId=476
+    触发后车机按 Duration 自动停止，开关同步按设置时长自动复位（v5.8.10 起
+    与鸣笛寻车同源读取 honk_settings；此前读 entry.options 默认 15 秒，改
+    设置后声光不跟随）。
     若车型/车机对 CancelVA 无响应（取消无效），命令状态会如实写入
     「鸣笛命令状态」传感器供诊断——为网关/车型行为，非参数错误。
     """
@@ -335,66 +473,6 @@ class FordPassVAswitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity):
     def is_on(self) -> bool:
         return self._restore_bool(self._state)
 
-    def _duration(self) -> int:
-        """读取鸣笛持续时长设置（与鸣笛寻车同源：config entry options）。"""
-        options: dict = {}
-        entry_id = getattr(self.coordinator, "entry_id", None)
-        if entry_id:
-            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
-            options = entry.options if entry else {}
-        try:
-            return int(options.get(CONF_HONK_DURATION, 15) or 15)
-        except (TypeError, ValueError):
-            return 15
-
-    @staticmethod
-    def _command_id(resp: Any) -> str | None:
-        if isinstance(resp, dict):
-            cid = resp.get("commandId")
-            if cid:
-                return str(cid)
-            inner = resp.get("data")
-            if isinstance(inner, dict) and inner.get("commandId"):
-                return str(inner["commandId"])
-        return None
-
-    async def _poll_cmd_status(self, command_type: str, command_id: str) -> None:
-        """send-command 轮询 command-execution-status → 「鸣笛命令状态」传感器。"""
-        self.coordinator.announce_status = {
-            "command_id": command_id, "status": "执行中", "command_type": command_type,
-        }
-        try:
-            done, result = await self.coordinator.api.wait_command_complete(
-                self.coordinator.vin, command_id, command_type
-            )
-            if done and isinstance(result, dict):
-                st = result.get("vehiclestatus", result)
-                st.setdefault("command_id", command_id)
-                st.setdefault("command_type", command_type)
-                self.coordinator.announce_status = st
-            else:
-                self.coordinator.announce_status = {
-                    "command_id": command_id,
-                    "status": "超时或未完成",
-                    "command_type": command_type,
-                    "error": "command-execution-status 轮询超时（命令可能已执行完成）",
-                }
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("FordPass %s 状态轮询失败: %s", command_type, exc)
-            self.coordinator.announce_status = {
-                "command_id": command_id,
-                "status": "查询失败",
-                "command_type": command_type,
-                "error": str(exc),
-            }
-        self.coordinator.async_update_listeners()
-
-    async def _auto_off(self, duration: int | None = None) -> None:
-        """按本次触发时长自动复位；时长缺失/非法时回退 HONK_AUTO_OFF_SECONDS。"""
-        await asyncio.sleep(duration if isinstance(duration, int) and duration > 0 else HONK_AUTO_OFF_SECONDS)
-        self._state = False
-        self.async_write_ha_state()
-
     async def async_turn_on(self, **kwargs: Any) -> None:
         duration = self._duration()
         try:
@@ -410,9 +488,8 @@ class FordPassVAswitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity):
             self._track_task(self._poll_cmd_status(CMD_VA_INIT, cid))
         self._state = True
         self.async_write_ha_state()
-        # v5.3.4/v5.3.5: 任务引用跟踪（coordinator._persist_tasks）——多次快速触发
-        # 产生多个复位任务，跟踪可防卸载/重启竞态下任务被事件循环丢弃
-        self._track_task(self._auto_off(duration))
+        # v5.8.10: 统一走 _schedule_auto_off（内部先取消上一轮计时器）
+        self._schedule_auto_off(duration)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         try:
@@ -426,11 +503,12 @@ class FordPassVAswitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity):
         if cid:
             _LOGGER.info("FordPass 声光寻车已取消 commandId=%s", cid)
             self._track_task(self._poll_cmd_status(CMD_VA_CANCEL, cid))
+        self._cancel_auto_off()
         self._state = False
         self.async_write_ha_state()
 
 
-class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
+class FordPassLightSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEntity):
     """灯光寻车开关（ZoneLightingON / ZoneLightingOFF）。
 
     灯光寻车是瞬时命令、车辆不回报灯光状态，开关状态为记忆值（assumed）。
@@ -439,6 +517,10 @@ class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
     该命令依赖蓝牙 TIMA 通道，云端 send-command 网关仅部分车型支持。
     v3.1.10: 恢复创建（全车型支持策略：登录后按车型能力判断，云端支持的
     车型可用；不支持时按下返回网关明确报错，如实提示）。
+    v5.8.10: 补上缺失的自动复位——此前触发后 _state 永远停在 True（开关
+    长期显示「开」，与鸣笛/声光行为不一致）。ZoneLightingON 不带时长参数，
+    这里按 LIGHT_FIND_AUTO_OFF_SECONDS 复位**显示状态**，不下发 OFF 命令
+    （灯由车机自行熄灭，额外发命令只会打扰）。
     """
 
     _attr_assumed_state = True
@@ -464,26 +546,27 @@ class FordPassLightSwitch(FordPassRestoreMixin, SwitchEntity):
         await self.coordinator.run_command(CMD_LIGHT_FIND_ON)
         self._state = True
         self.async_write_ha_state()
+        self._schedule_auto_off(LIGHT_FIND_AUTO_OFF_SECONDS)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.run_command(CMD_LIGHT_FIND_OFF)
+        self._cancel_auto_off()
         self._state = False
         self.async_write_ha_state()
 
 
-class FordPassHonkSwitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity):
+class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEntity):
     """鸣笛寻车开关（v3.0.7，真实开/关双通道）。
 
-    2026-10-01 静态逆向还原 App 官方协议（libapp.so, blutter）：
-    - 开 = POST /api/vehicles/v5/{vin}/honk（body: ChirpOrHonkDuration/
-      IntervalBetweenRequests/ChirpType，明文 JSON）——FordHonkCommand
-    - 关 = DELETE /api/vehicles/v5/{vin}/honk（无 body）——FordHonkCancelCommand
+    开 = 车辆 v5 鸣笛通道（ChirpOrHonkDuration / IntervalBetweenRequests /
+    ChirpType 参数直达车机）——对应 App 的 FordHonkCommand；
+    关 = 同路径取消（无 body）——对应 App 的 FordHonkCancelCommand。
     开关在触发后按本次「鸣笛持续时长」自动复位（v3.3.6: 跟随设置时长
     而非固定 30 秒；时长缺失时回退 HONK_AUTO_OFF_SECONDS）。
 
-    v3.1.8: ChirpType 改为 App 枚举 0-4（此前 1-5 差一错位——类型设置无效
-    的根因）；「声光共舞」=4 走独立 panic 端点（POST /panic/{duration}，
-    灯+喇叭警报；锐际实测 404，会抛出明确错误提示车型不支持）。
+    ChirpType 为 App 枚举 0-4（v3.1.8 修正，此前 1-5 差一错位——类型设置
+    无效的根因）；「声光共舞」=4 与「声光寻车」同走 send-command 的
+    InitialVA（VAType=4）通道。
     """
 
     _attr_assumed_state = True
@@ -504,95 +587,6 @@ class FordPassHonkSwitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity
     @property
     def is_on(self) -> bool:
         return self._restore_bool(self._state)
-
-    async def _auto_off(self, duration: int | None = None) -> None:
-        """按本次触发时长自动复位；时长缺失/非法时回退 HONK_AUTO_OFF_SECONDS。"""
-        await asyncio.sleep(duration if isinstance(duration, int) and duration > 0 else HONK_AUTO_OFF_SECONDS)
-        self._state = False
-        self.async_write_ha_state()
-
-    def _settings(self) -> tuple[int, str]:
-        """读取当前鸣笛设置（select 持久化于内存 honk_settings——权威来源）。
-
-        v3.1.8: 返回 (持续时长秒, 鸣笛类型中文名)——类型数字由
-        CHIRP_TO_TYPE 统一映射为 App 枚举 0-4。找不到设置时回退默认
-        （时长 10 秒 / 汽笛长鸣 chirpHonk=2），与 App 默认一致。
-        v3.2.3: 改读 entry.options（select 每次选择即写入的持久化值），
-        修复重启后与内存 honk_settings 分裂导致用默认设置鸣笛的问题。
-        v4.3.1: 改回读内存 honk_settings（select._persist v4.3.1 起只写
-        内存，不再写 entry.options——避免 update_listener 噪音与调度
-        设置被重置）——select 与 switch 共用 hass.data 同一份 settings，
-        权威来源统一为福特账户云端（_on_cloud_update 回读恢复），
-        entry.options 仅作旧版残留兜底迁移。
-        """
-        entry_id = getattr(self.coordinator, "entry_id", None)
-        settings: dict = {}
-        if entry_id:
-            payload = getattr(self.coordinator.config_entry, "runtime_data", None) or {}  # v5.3.0
-            settings = payload.get("honk_settings") or {}
-        options: dict = {}
-        if entry_id:
-            entry = self.coordinator.hass.config_entries.async_get_entry(entry_id)
-            options = entry.options if entry else {}
-        try:
-            duration = int(
-                settings.get(CONF_HONK_DURATION)
-                or options.get(CONF_HONK_DURATION)
-                or 10
-            )
-        except (TypeError, ValueError):
-            duration = 10
-        chirp_name = (
-            settings.get(CONF_CHIRP_TYPE)
-            or options.get(CONF_CHIRP_TYPE)
-            or "汽笛长鸣"
-        )
-        return duration, str(chirp_name)
-
-    @staticmethod
-    def _command_id(resp: Any) -> str | None:
-        """Extract commandId from the decrypted send-command response."""
-        if isinstance(resp, dict):
-            cid = resp.get("commandId")
-            if cid:
-                return str(cid)
-            inner = resp.get("data")
-            if isinstance(inner, dict) and inner.get("commandId"):
-                return str(inner["commandId"])
-        return None
-
-    async def _poll_cmd_status(self, command_type: str, command_id: str) -> None:
-        """send-command 轮询 command-execution-status（HAR：InitialVA=26/
-        CancelVA=476）——结果写入 announce_status 传感器，尽力而为。
-        """
-        self.coordinator.announce_status = {
-            "command_id": command_id, "status": "执行中", "command_type": command_type,
-        }
-        try:
-            done, result = await self.coordinator.api.wait_command_complete(
-                self.coordinator.vin, command_id, command_type
-            )
-            if done and isinstance(result, dict):
-                st = result.get("vehiclestatus", result)
-                st.setdefault("command_id", command_id)
-                st.setdefault("command_type", command_type)
-                self.coordinator.announce_status = st
-            else:
-                self.coordinator.announce_status = {
-                    "command_id": command_id,
-                    "status": "超时或未完成",
-                    "command_type": command_type,
-                    "error": "command-execution-status 轮询超时（鸣笛命令可能已执行完成）",
-                }
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("FordPass %s 状态轮询失败: %s", command_type, exc)
-            self.coordinator.announce_status = {
-                "command_id": command_id,
-                "status": "查询失败",
-                "command_type": command_type,
-                "error": str(exc),
-            }
-        self.coordinator.async_update_listeners()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         # v3.0.8: 鸣笛参数来自设置实体——持续时长/鸣笛类型直达车机
@@ -640,7 +634,7 @@ class FordPassHonkSwitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity
         self._state = True
         self.async_write_ha_state()
         # 按本次触发时长自动结束，开关同步复位（v3.3.6: 跟随设置时长而非固定 30s）
-        self._track_task(self._auto_off(duration))
+        self._schedule_auto_off(duration)
 
     async def _poll_announce(self, vin: str, command_id: str) -> None:
         """轮询 v5 announcestatus/{commandId}（2s/5s/10s 三次，尽力而为）。
@@ -669,9 +663,8 @@ class FordPassHonkSwitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity
         self.coordinator.async_update_listeners()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        # 真实停止通道：类型 0-3 = DELETE /api/vehicles/v5/{vin}/honk（与 App
-        # 取消鸣笛一致）；类型 4（声光共舞）= send-command CancelVA（HAR 实证
-        # 200 + commandId=476，App 取消声光寻车即此通道）。
+        # 真实停止通道：类型 0-3 = 车辆 v5 鸣笛取消（与 App 取消鸣笛一致）；
+        # 类型 4（声光共舞）= send-command CancelVA（App 取消声光寻车即此通道）。
         _, chirp_name = self._settings()
         chirp_type = CHIRP_TO_TYPE.get(chirp_name, 2)
         try:
@@ -690,5 +683,6 @@ class FordPassHonkSwitch(FordPassTaskTracker, FordPassRestoreMixin, SwitchEntity
             raise
         if isinstance(resp, dict) and resp.get("commandId"):
             _LOGGER.info("FordPass 鸣笛寻车已停止 commandId=%s", resp["commandId"])
+        self._cancel_auto_off()
         self._state = False
         self.async_write_ha_state()
