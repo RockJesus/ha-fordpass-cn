@@ -166,6 +166,8 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 | `button` | 手动刷新 / 中央区灯光 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 / 标记消息已读 / 行车记录启停 | 均按云端能力创建 |
 | `switch` | 远程启动 / 灯光寻车 / 鸣笛寻车 / 声光寻车 / 预约充电 | 鸣笛寻车类型 0–3 |
 | `select` | 鸣笛持续时长 / 鸣笛类型 | 选择即保存，鸣笛时参数直达车机 |
+| `event` | 车辆告警事件 / 车门开合事件 | 告警按标题去重、出现新条目才触发；车门变动一次发一个事件，`changes` 属性列出全部变化的门位 |
+| `update` | 车机固件 | OTA 回读到版本号才创建，仅展示（固件下发需在车机或 App 确认） |
 | `sensor` | 车况 / 异常警示 / 保养计划 / 召回 / SIM / WiFi / 空调滤芯 / 机油寿命 / 预测性诊断 / 车辆服务信息 / 鸣笛设置 / 在线状态 / 设备信息 / 授权状态 / SRS 档案 / 传感器影子 / 行车记录 / 最新消息 / OTA 提醒 / 车辆清单 / 消息中心 / 共享列表 / 设备列表 | 一次性探测，探测到数据才创建 |
 
 > **实体 ID 前缀不是 VIN**：实体 `unique_id` 与设备标识统一使用 `sha256(VIN)` 前 16 位十六进制（稳定、不可逆），因此实体形如 `sensor.3f9a1c0b7d2e4a58_fuel_level`。找实际 ID 请到「设置 → 设备与服务 → 实体」按中文名搜索，或在开发者工具中按中文名筛选——不要试图从 VIN 推导。
@@ -197,6 +199,32 @@ action:
       message: >
         油量 {{ states('sensor.<前缀>_fuel_level') }}%，续航
         {{ states('sensor.<前缀>_driving_range') }} 公里
+```
+
+</details>
+
+新增告警时推送（`event` 实体出现时才可用）：
+
+<details>
+<summary>新增车辆告警时推送（自动化 YAML）</summary>
+
+```yaml
+alias: 车辆新增告警通知
+trigger:
+  - platform: state
+    entity_id: event.<前缀>_vehicle_alert_event
+    not_to: ["unknown", "unavailable"]
+condition:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'alert' }}"
+action:
+  - service: notify.mobile_app
+    data:
+      title: "{{ trigger.to_state.attributes.headline }}"
+      message: >-
+        等级 {{ trigger.to_state.attributes.severity }}｜
+        {{ trigger.to_state.attributes.body }}（共
+        {{ trigger.to_state.attributes.total_count }} 项告警）
 ```
 
 </details>
