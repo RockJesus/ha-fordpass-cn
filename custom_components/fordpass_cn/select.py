@@ -36,7 +36,7 @@ from .const import (
     REMOTE_CLIMATE_TEMP_OPTIONS,
 )
 from .coordinator import FordPassCoordinator
-from .sensor import FordPassRestoreMixin
+from .sensor import FordPassRestoreMixin, async_sync_entity_categories
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +102,7 @@ async def async_setup_entry(
                 FordPassRemoteTempSelect(hass, entry, coordinator)
             )
     async_add_entities(entities)
+    async_sync_entity_categories(hass, "select", entities)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state，attrs 中 last_poll 每轮变化 → state_changed →
     # 实体 last_updated 每轮刷新（撤销"实体不随轮询刷新"）；失败轮不触发，
