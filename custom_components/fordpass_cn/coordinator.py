@@ -959,11 +959,29 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         alerts = await self._cached_fetch(
             "active_alerts", 3600, lambda: self.api.get_active_alerts(self.vin), force=force_all
         )
-        data["active_alerts"] = alerts if isinstance(alerts, list) else []
+        # v5.9.6: 拉取失败（返回 None）时沿用上一轮列表，不再强制写 []。
+        # 此前 None → []，「拿不到」与「确实没有告警」被混为一谈，导致：
+        # ① 告警事件实体把 [] 判成"告警全部消失"→ 误发 cleared；
+        # ②「车辆异常警示」传感器落到 vehicle-status 兜底 → 误显「无异常」。
+        # 只有云端真的返回空列表才写 []（这才是「无告警」的确证）。
+        if isinstance(alerts, list):
+            data["active_alerts"] = alerts
+        else:
+            prev_alerts = (self.data or {}).get("active_alerts")
+            data["active_alerts"] = prev_alerts if isinstance(prev_alerts, list) else []
+            self.logger.debug("FordPass active_alerts 拉取失败，沿用上一轮列表")
         # OTA 设置状态（6 小时 TTL——OTA 排程配置几乎不变）
-        data["ota_setting"] = await self._cached_fetch(
+        # v5.9.6: 同理保留上一轮字典——失败写 None 会让 update 实体短暂变
+        # unknown（已安装/最新版本都取不到），OTA 传感器也退成「暂无数据」。
+        ota = await self._cached_fetch(
             "ota_setting", 21600, lambda: self.api.get_ota_setting(self.vin), force=force_all
         )
+        if isinstance(ota, dict):
+            data["ota_setting"] = ota
+        else:
+            prev_ota = (self.data or {}).get("ota_setting")
+            data["ota_setting"] = prev_ota if isinstance(prev_ota, dict) else None
+            self.logger.debug("FordPass ota_setting 拉取失败，沿用上一轮数据")
         # 服务信息端点（保养计划 12h / 召回 24h / SIM 6h TTL；WiFi 状态
         # v3.8.8 起跟随状态刷新间隔每轮刷新，不再固定 15 分钟）
         for key, ttl, factory in (

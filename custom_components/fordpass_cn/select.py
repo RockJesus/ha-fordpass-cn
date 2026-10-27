@@ -138,6 +138,9 @@ class _FordPassHonkSettingSelect(FordPassRestoreMixin, SelectEntity):
     entry.options 上传旧值）。
     """
 
+    # v5.9.6: 纯推送实体——选项值来自 coordinator 广播与云端回读，关闭 HA
+    # 每 30 秒的平台默认轮询（没有可轮询的本地状态）。
+    _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_assumed_state = True
     # v5.9.2: 鸣笛/空调温度均为设备设置项，归配置类目。

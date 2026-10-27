@@ -588,7 +588,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 与实体创建保持一致（无效字段/不支持功能不创建实体）。
     for coordinator in coordinators:
         try:
-            _vs = coordinator.data.get("vehiclestatus", {}) or {}
+            _vs = (coordinator.data or {}).get("vehiclestatus", {}) or {}
             _caps = {
                 "vin": coordinator.uid_key,
                 "remote_ctrl": capability.usable(_vs, [["crccFlag"]]),
@@ -743,6 +743,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         e.state == ConfigEntryState.LOADED
         for e in hass.config_entries.async_entries(DOMAIN)
     ):
-        hass.services.async_remove(DOMAIN, SERVICE_REFRESH_STATUS)
-        hass.services.async_remove(DOMAIN, SERVICE_CLEAR_TOKENS)
+        # v5.9.6: 六个服务全部移除。此前只移除前两个，卸载集成后
+        # share_wallbox / create_departure / update_srs / approve_auth
+        # 仍留在服务目录里，调用时报的是「遍历不到 coordinator」而不是
+        # 「服务不存在」，且重新安装前一直占着开发者工具的服务列表。
+        for _service in (
+            SERVICE_REFRESH_STATUS,
+            SERVICE_CLEAR_TOKENS,
+            SERVICE_SHARE_WALLBOX,
+            SERVICE_CREATE_DEPARTURE,
+            SERVICE_UPDATE_SRS,
+            SERVICE_APPROVE_AUTH,
+        ):
+            if hass.services.has_service(DOMAIN, _service):
+                hass.services.async_remove(DOMAIN, _service)
     return unload_ok

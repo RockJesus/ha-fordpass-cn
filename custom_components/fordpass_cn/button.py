@@ -261,6 +261,9 @@ class _FordPassButtonBase(ButtonEntity):
     _attr_state 为空/unknown 一律返回「待命」，按下后 _attr_state=时间戳则
     原样返回——不受恢复时序影响，逻辑必然生效。
     """
+    # v5.9.6: 纯推送实体——状态由 coordinator 刷新广播驱动，关闭 HA 每 30
+    # 秒的平台默认轮询（按钮没有可轮询的远端状态，轮询只是白跑一次空 update）。
+    _attr_should_poll = False
     _attr_state = "待命"
 
     @property
@@ -1220,7 +1223,9 @@ class FordPassImageButton(_FordPassButtonBase):
     async def async_press(self) -> None:
         car_id = getattr(self.coordinator, "car_id", None)
         if not car_id:
-            raise RuntimeError("车辆无远程影像硬件（encryptedCarId 为空），无法查询")
+            raise HomeAssistantError(
+                "车辆无远程影像硬件（encryptedCarId 为空），无法查询"
+            )
         _LOGGER.info("FordPass %s 查询发起 carId=%s", self._kind, car_id)
         try:
             if self._kind == "parking":
@@ -1230,6 +1235,10 @@ class FordPassImageButton(_FordPassButtonBase):
         except Exception as exc:
             _LOGGER.warning("FordPass %s 查询失败: %s", self._kind, exc)
             raise
+        # v5.9.6: data 可能是 None（首次刷新失败 / 重启初始窗口）——直接下标
+        # 赋值抛 TypeError，按钮点了只报「未知错误」。补空字典兜底。
+        if not isinstance(self.coordinator.data, dict):
+            self.coordinator.data = {}
         self.coordinator.data["remote_image"] = {
             "kind": self._kind,
             "car_id": car_id,
