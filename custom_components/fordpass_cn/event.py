@@ -132,11 +132,16 @@ class FordPassAlertEvent(_FordPassEventBase):
         self._attr_unique_id = f"{coordinator.uid_key}-vehicle_alert_event"
         self._seen: set[str] = set()
 
-    def _alerts(self) -> list[dict[str, Any]]:
-        alerts = (self.coordinator.data or {}).get("active_alerts")
-        if not isinstance(alerts, list):
-            return []
-        return [a for a in alerts if isinstance(a, dict)]
+    @staticmethod
+    def _alerts_from(raw: Any) -> list[dict[str, Any]] | None:
+        """把 active_alerts 规整成字典列表；**取不到**时返回 None。
+
+        返回 None 与返回 [] 必须区分：None = 这一轮没拿到（拉取失败/端点
+        不可用），[] = 云端明确回了空列表（确实没有告警）。
+        """
+        if not isinstance(raw, list):
+            return None
+        return [a for a in raw if isinstance(a, dict)]
 
     @staticmethod
     def _title(alert: dict[str, Any]) -> str:
@@ -147,7 +152,11 @@ class FordPassAlertEvent(_FordPassEventBase):
         return ""
 
     def _process(self) -> None:
-        alerts = self._alerts()
+        # v5.9.6: 取不到告警（拉取失败 → active_alerts 非列表）直接跳过，
+        # 不能当成「告警全部消失」——否则一次网络抖动就误发 cleared 通知。
+        alerts = self._alerts_from((self.coordinator.data or {}).get("active_alerts"))
+        if alerts is None:
+            return
         titles = {t for t in (self._title(a) for a in alerts) if t}
 
         if not self._primed:

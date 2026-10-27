@@ -170,7 +170,7 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
         if self._state is not None:
             return self._state
         # 初始/重启后从门锁状态推断：LOCKED → 锁定(True)，UNLOCKED → 解锁(False)
-        status = self.coordinator.data.get("vehiclestatus", {})
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
         lock = capability.leaf(status, "lockStatus")
         if lock == "LOCKED":
             return True

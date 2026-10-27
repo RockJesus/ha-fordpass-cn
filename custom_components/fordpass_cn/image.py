@@ -77,6 +77,10 @@ class FordPassVehicleImage(ImageEntity):
     （imageUrl，unique_id {vin}-vehicle_overlook_image）。
     """
 
+    # v5.9.6: 图片由 async_image 按需返回、URL 变化才重下，关闭 HA 每 30 秒的
+    # 平台默认轮询（轮询不会带来新图，只会反复读同一份缓存）。
+    _attr_should_poll = False
+
     def __init__(self, hass: HomeAssistant, coordinator: FordPassCoordinator, kind: str) -> None:
         super().__init__(hass)
         self.coordinator = coordinator
@@ -169,6 +173,8 @@ class FordPassRemoteImageEntity(ImageEntity):
     有 URL 则下载并持久化到 .storage/fordpass_cn/{vin}_{kind}.png（保留最后
     一张），无 URL 时状态显示「暂无影像」且不丢已下载图片。
     """
+
+    _attr_should_poll = False  # v5.9.6: 同 FordPassVehicleImage——纯推送
 
     def __init__(self, hass: HomeAssistant, coordinator: FordPassCoordinator, kind: str) -> None:
         super().__init__(hass)
@@ -288,6 +294,8 @@ class FordPass3dModelImage(ImageEntity):
     下载后持久化到 .storage（_3d 后缀），重启不重复拉取；无 URL 时显示
     车型名、保留已有图片（v3.1.2 规则，不 unavailable）。
     """
+
+    _attr_should_poll = False  # v5.9.6: 同 FordPassVehicleImage——纯推送
 
     def __init__(self, hass: HomeAssistant, coordinator: FordPassCoordinator) -> None:
         super().__init__(hass)

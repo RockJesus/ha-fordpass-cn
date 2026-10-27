@@ -56,6 +56,10 @@ async def async_setup_entry(
 
 
 class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
+    # v5.9.6: 位置由 coordinator 刷新广播驱动（LBS 每轮拉取），关闭 HA 每 30
+    # 秒的平台默认轮询。
+    _attr_should_poll = False
+
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-tracker"

@@ -6,8 +6,7 @@ from typing import Any
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-
-from .const import DOMAIN
+from homeassistant.helpers import entity_registry as er
 
 # 脱敏字段：任何含这些 key（或子串命中）的配置/选项值在诊断输出中被替换为 ***
 TO_REDACT = {
@@ -49,12 +48,16 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "data_available": bool(getattr(coord, "data", None)),
             }
-        payload["entity_count"] = len(
-            [
-                e
-                for e in hass.states.async_all()
-                if e.entity_id.startswith(f"{DOMAIN}.")
-            ]
+        # v5.9.6: 原实现用 hass.states.async_all() 匹配 "fordpass_cn." 前缀——
+        # entity_id 的域是 sensor/lock/switch…，集成域不会出现，计数恒为 0。
+        # 改为从实体注册表按 entry 取实际涉及的实体域。只列域、不给数量：
+        # 诊断包通常贴在 issue 里公开，实体总数属于个人安装指纹。
+        registry = er.async_get(hass)
+        payload["entity_domains"] = sorted(
+            {
+                item.entity_id.split(".", 1)[0]
+                for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+            }
         )
     except Exception as exc:  # noqa: BLE001 - 诊断接口绝不让异常打断
         payload["error"] = str(exc)
