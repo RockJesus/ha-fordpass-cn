@@ -96,7 +96,7 @@ async def async_setup_entry(
                 FordPassChirpTypeSelect(hass, entry, coordinator, settings)
             )
         # v3.4.5: 远程空调目标温度（EV/插混 preconditioning 专属）——
-        # vehicle-status preCondStatusDsply 有值才创建（锐际纯油无 → 不创建，0 unavailable）
+        # vehicle-status preCondStatusDsply 有值才创建（纯油车型无 → 不创建，0 unavailable）
         if capability.usable(status, [["preCondStatusDsply"]]):
             entities.append(
                 FordPassRemoteTempSelect(hass, entry, coordinator)
@@ -403,7 +403,7 @@ def _cloud_temp(coordinator: FordPassCoordinator) -> int | None:
 class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
     """远程空调目标温度（v3.4.5，EV/插混 preconditioning 专属）。
 
-    创建条件=vehicle-status preCondStatusDsply 有值（锐际纯油无 → 不创建）。
+    创建条件=vehicle-status preCondStatusDsply 有值（纯油车型无 → 不创建）。
     选项 16-30°C（候选范围，默认 24）；选择后即时上传福特账户云端
     （RemoteClimateSetting/TargetTemp 候选偏好通道，与鸣笛设置同构），
     回读云端 preference 更新 remote_climate_cloud，实现 App/HA/云端同步。

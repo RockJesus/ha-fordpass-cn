@@ -50,7 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 #   福特派 InitialVA 带 VAType=4 + Duration=15、CancelVA 带 VAType=4；
 #   不带 cmdSpec 的命令在部分网关/车型下无响应。
 # v3.1.10: 恢复中央区灯光/语音助手初始化/取消/辅助设置/OTA 激活排程（v3.1.8
-# 曾因锐际网关 228205/402 临时移除）——全车型支持策略：登录后按车型能力判断
+# 曾因实测网关 228205/402 临时移除）——全车型支持策略：登录后按车型能力判断
 # 创建，云端不支持的车型按下会返回网关明确报错，如实提示。
 _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, list[dict[str, str]] | None]] = [
     # v3.3.4: 原「手动拉取最新状态」+「请求车机刷新状态」两按钮已合并为
@@ -126,7 +126,7 @@ async def async_setup_entry(
             if isinstance(af_payload, dict) and isinstance(af_payload.get("airFilter"), dict):
                 buttons.append(FordPassAirFilterResetButton(coordinator))
         # v3.1.13: 停车影像 / 行车监控（车辆列表 encryptedCarId 非空才创建——
-        # 锐际 encryptedCarId=null = 车型无远程影像硬件，不创建、0 unavailable）
+        # 部分车型 encryptedCarId=null = 车型无远程影像硬件，不创建、0 unavailable）
         if getattr(coordinator, "car_id", None):
             buttons.append(FordPassImageButton(coordinator, "停车影像", "mdi:car-multiple", "parking"))
             buttons.append(FordPassImageButton(coordinator, "行车监控", "mdi:cctv", "traffic"))
@@ -1194,7 +1194,7 @@ class FordPassFposbCancelButton(_FordPassButtonBase):
 class FordPassImageButton(_FordPassButtonBase):
     """停车影像 / 行车监控查询按钮（v3.1.13）。
 
-    仅当车辆列表 encryptedCarId 非空时创建（锐际 null = 车型无远程影像
+    仅当车辆列表 encryptedCarId 非空时创建（部分车型 null = 车型无远程影像
     硬件，不创建）。按下调用 App 的 VehicleManagerEndpoint：
     - parking:  POST /api/cnxapi-pds/v1/search-vehicle-parking-image
     - traffic:  POST /api/cnxapi-pds/v1/search-vehicle-monitor-traffic

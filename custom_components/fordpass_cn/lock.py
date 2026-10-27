@@ -2,7 +2,7 @@
 
 门锁：DoorLock / DoorUnlock。
 后备箱锁（v3.1.10 恢复）：解锁 = TrunkUnlock（后备箱弹开可开启），锁定 =
-DoorLock（全车上锁，网关无独立后备箱锁命令，后备箱随全车锁定）。锐际实测
+DoorLock（全车上锁，网关无独立后备箱锁命令，后备箱随全车锁定）。实测
 TrunkUnlock 被网关 228205「cmdSpec can not empty」拒绝（App 端该命令依赖
 蓝牙 TIMA），但其他车型云端可能支持——全车型支持策略：登录后按车辆能力
 （尾门/内尾门字段）判断创建，云端不支持的车型按下会返回网关明确报错。
@@ -37,7 +37,7 @@ async def async_setup_entry(
         locks.append(FordPassLock(coordinator))
         # 后备箱锁：有尾门 / 内尾门字段（支持后备箱解锁的车型）才创建
         # v5.8.3: 按车型创建——TrunkUnlock 曾被云端确定性拒绝（实测失败，
-        # 如锐际 228205 依赖蓝牙 TIMA）的车型不再创建，无记录车型按字段创建
+        # 如部分车型 228205 依赖蓝牙 TIMA）的车型不再创建，无记录车型按字段创建
         status = (coordinator.data or {}).get("vehiclestatus", {}) or {}
         if (
             capability.usable(

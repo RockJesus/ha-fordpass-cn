@@ -1,6 +1,6 @@
 """Switch platform: remote engine start + 鸣笛寻车。
 
-v2.10.0: 灯光寻车开关（ZoneLightingON/OFF）——v3.1.8 移除：锐际实测
+v2.10.0: 灯光寻车开关（ZoneLightingON/OFF）——v3.1.8 移除：实测
 send-command 网关返回 228205「cmdSpec can not empty」（该车型无此命令
 规范），实体已删除，避免制造无反应的假实体。
 v3.0.1: 后备箱锁已从 switch 迁移为 lock 实体（见 lock.py），此处仅保留远程启动与鸣笛寻车。
@@ -12,7 +12,7 @@ v3.0.8: 鸣笛开关开启时读取「鸣笛持续时长 / 鸣笛类型」设置
 config entry options），POST 参数直达车机——设置即生效（等效上传车机）。
 v3.1.8: ChirpType 改为 App 枚举 0-4（此前 1-5 差一错位，类型设置无效的
 根因）；「声光共舞」=4 走独立 panic 端点（POST /panic/{duration}，灯+喇叭
-警报，锐际 404 会明确报错）；其余 0-3 走 POST /honk。
+警报，实测车型 404 会明确报错）；其余 0-3 走 POST /honk。
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ async def async_setup_entry(
             switches.append(FordPassEngineSwitch(coordinator))
         # 远程控车能力 crccFlag 有效才创建寻车类开关
         if capability.usable(status, [["crccFlag"]]):
-            # v3.1.10: 恢复灯光寻车（v3.1.8 曾因锐际网关 228205 移除；
+            # v3.1.10: 恢复灯光寻车（v3.1.8 曾因实测网关 228205 移除；
             # 其他车型云端可能支持——登录后按能力创建）
             # v5.8.3: 按车型创建——灯光寻车命令被云端确定性拒绝（实测
             # 失败）的车型不再创建，无记录车型按能力创建
@@ -513,7 +513,7 @@ class FordPassLightSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchE
 
     灯光寻车是瞬时命令、车辆不回报灯光状态，开关状态为记忆值（assumed）。
     v3.0.5: 初始状态默认关闭（False），避免实体显示 unknown。
-    v3.1.8: 曾因锐际网关 228205「cmdSpec can not empty」临时移除——App 端
+    v3.1.8: 曾因实测网关 228205「cmdSpec can not empty」临时移除——App 端
     该命令依赖蓝牙 TIMA 通道，云端 send-command 网关仅部分车型支持。
     v3.1.10: 恢复创建（全车型支持策略：登录后按车型能力判断，云端支持的
     车型可用；不支持时按下返回网关明确报错，如实提示）。
@@ -596,7 +596,7 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEn
             if chirp_type == 4:
                 # v3.2.1: 声光共舞改走 send-command InitialVA（实机样本实证 200 +
                 # commandId=26）——App 的「鸣笛寻车」即此通道（VAType=4=panic
-                # 灯+喇叭）；V5 /panic 端点锐际实测 404，不再使用。
+                # 灯+喇叭）；V5 /panic 端点实测返回 404，不再使用。
                 _LOGGER.info(
                     "FordPass 声光共舞（InitialVA VAType=4）触发 duration=%ss", duration,
                 )
