@@ -312,7 +312,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
 
     # ===== C 组：其他状态 =====
     sensors += [
-        FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", UnitOfTime.MINUTES, None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"], category=EntityCategory.CONFIG),
+        FordPassSensor(coordinator, "remote_start_duration", "远程启动时长", UnitOfTime.MINUTES, None, "mdi:clock-outline", ["remoteStart", "remoteStartDuration"], category=EntityCategory.DIAGNOSTIC),
         # v2.8.0: 远程启动时间（unix 秒 → 本地时间字符串）与动态"距离自动熄火时间"倒计时
         # v3.0.2: 未启动（值为 0）时显示「未启动」，不再显示 unknown
         FordPassSensor(coordinator, "remote_start_time", "远程启动时间", None, None, "mdi:clock-start",
@@ -1276,8 +1276,9 @@ class FordPassOtaSettingSensor(SensorEntity):
     OTA 配置（远程 OTA 开关、激活排程、当前/目标版本、状态描述）。
     """
 
-    # v5.9.2: 展示的是车辆 OTA 开关配置，归配置类目。
-    _attr_entity_category = EntityCategory.CONFIG
+    # v5.9.4: 只读传感器不能声明为配置类目（HA 会拒绝添加该实体），
+    # 车辆 OTA 配置的回读值按诊断信息归类。
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     _OTA_FLAG_MAP: ClassVar[dict[int, str]] = {0: "未开通远程OTA", 1: "已开通", 2: "未知", None: "未知"}
 
@@ -2049,8 +2050,8 @@ class FordPassChirpCloudSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:cloud-check"
-    # v5.9.2: 云端设置回读镜像，与 select 同属配置类目。
-    _attr_entity_category = EntityCategory.CONFIG
+    # v5.9.4: 同上——只读回读值归诊断类目，可写的配置项在 select 平台。
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
