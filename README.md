@@ -25,7 +25,7 @@ Home Assistant 自定义集成，接入**福特派互联（长安福特）**与*
 <details>
 <summary><b>English summary</b></summary>
 
-Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Lincoln Way (China)** cloud services. Unofficial, reverse-engineered from the official mobile app.
+Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Lincoln Way (China)** cloud services. Unofficial community project, interoperating with the same cloud services the official mobile apps use.
 
 - **Remote control** — lock / unlock / remote start / stop / horn / lights / manual refresh
 - **Vehicle status** — fuel & range, odometer, tyre pressure, doors & windows, ignition, alerts
@@ -69,7 +69,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 - 车辆图片 / 3D 车型图、行车记录视频录制启停（带记录仪硬件的车型）
 
 **🧩 能力自适应**
-- 实体全部数据驱动：登录后按本车云端能力与车辆数据判断，探测到数据才创建，**不制造静默无效实体**
+- 实体全部数据驱动：登录后按本车云端能力与车辆数据判断，拿到有效数据才创建，**不制造静默无效实体**
 - 不支持的命令按下即返回网关明确报错；刷新失败保留最后已知状态
 - 命令失败黑名单带 90 天自动过期，云端后续放开的能力会自动补建实体，选项页可一键重置
 
@@ -148,7 +148,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 |---|:---:|:---:|:---:|---|
 | 远程控车（锁 / 解锁 / 启动 / 熄火 / 鸣笛·声光·灯光寻车 / 刷新） | ✔ | ✔ | ✔ | 按云端命令白名单创建 |
 | 拖车灯光检测 | 皮卡 ✔ | — | — | 按车型 |
-| 预约出发 / 预约充电 | ✘ | ✔ | ✔ | cevs 域 |
+| 预约出发 / 预约充电 | ✘ | ✔ | ✔ | 充电域 |
 | 立即充电 / 停止充电 / 充电枪锁 | ✘ | ✔ | ✔ | |
 | 家充桩 BLE 自动认证 | ✘ | ✔ | ✔ | 授权后插枪即自动配对 |
 | 燃油 / 续航 | ✔ / ✔ | ✔ / ✔ | ✘ / 电池续航 | 油量与电量实体独立 |
@@ -161,10 +161,10 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 | 平台 | 实体 | 说明 |
 |---|---|---|
 | `device_tracker` | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
-| `image` | 车辆图片 / 3D 车型图 | 探测到 `modelUrl` 才创建 |
+| `image` | 车辆图片 / 3D 车型图 | 云端返回图片地址才创建 |
 | `lock` | 车门锁 / 后备箱锁 | 后备箱锁按尾门能力创建 |
 | `button` | 手动刷新 / 中央区灯光 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 / 标记消息已读 / 行车记录启停 | 均按云端能力创建 |
-| `switch` | 远程启动 / 灯光寻车 / 鸣笛寻车 / 声光寻车 / 预约充电 | 鸣笛寻车类型 0–3；声光共舞走 App 官方通道 `InitialVA` |
+| `switch` | 远程启动 / 灯光寻车 / 鸣笛寻车 / 声光寻车 / 预约充电 | 鸣笛寻车类型 0–3 |
 | `select` | 鸣笛持续时长 / 鸣笛类型 | 选择即保存，鸣笛时参数直达车机 |
 | `sensor` | 车况 / 异常警示 / 保养计划 / 召回 / SIM / WiFi / 空调滤芯 / 机油寿命 / 预测性诊断 / 车辆服务信息 / 鸣笛设置 / 在线状态 / 设备信息 / 授权状态 / SRS 档案 / 传感器影子 / 行车记录 / 最新消息 / OTA 提醒 / 车辆清单 / 消息中心 / 共享列表 / 设备列表 | 一次性探测，探测到数据才创建 |
 
@@ -174,11 +174,15 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 
 - **长期统计**：油量、电量、总里程、续航里程、纯电续航、机油寿命等均为数值传感器（`measurement` + `distance`/`battery` 分类），在「开发者工具 → 统计」中可直接看趋势图。
 - **可进趋势图的分类**：燃油量 / 动力电池电量 / 尿素液位（%）、总里程 / 续航 / 纯电续航 / 尿素续航（km）、四轮胎压 + 推荐胎压（kPa）、蓄电池电压（V）、车内温度（°C）、机油寿命（%）、上次充电电量（%）、自动熄火剩余时间（分钟）。
-- **云端同步状态**：每辆车都有一个诊断传感器，复用每轮刷新的结果（**零额外请求**）。连续失败自动转「异常」，属性带最后成功/失败时间、连续失败次数与失败摘要（限流 / WAF 拦截 / 网关 / 业务错误已分级），可接自动化告警。
+- **云端同步状态**：每辆车都有一个诊断传感器，复用每轮刷新的结果（**零额外请求**）。连续失败自动转「异常」，属性带最后成功/失败时间、连续失败次数与失败摘要（限流 / 风控拦截 / 网关 / 业务错误已分级），可接自动化告警。
 
 ## 🤖 自动化示例
 
-**出门前检查车辆状态**
+出门前检查车辆状态：
+
+<details>
+<summary>出门前检查车辆状态（自动化 YAML）</summary>
+
 ```yaml
 alias: 出门前检查车辆
 trigger:
@@ -195,7 +199,13 @@ action:
         {{ states('sensor.<前缀>_driving_range') }} 公里
 ```
 
-**夜间忘锁车提醒**
+</details>
+
+夜间忘锁车提醒：
+
+<details>
+<summary>夜间忘锁车提醒（自动化 YAML）</summary>
+
 ```yaml
 alias: 夜间锁车提醒
 trigger:
@@ -211,7 +221,13 @@ action:
       message: 车门未锁，请确认
 ```
 
-**云端同步异常监控**（后端接口变更 / 风控拦截第一时间发现）
+</details>
+
+云端同步异常监控（后端接口变更 / 风控拦截第一时间发现）：
+
+<details>
+<summary>云端同步异常监控（自动化 YAML）</summary>
+
 ```yaml
 alias: 福特云端同步异常提醒
 trigger:
@@ -226,9 +242,15 @@ action:
         云端同步连续失败，请检查福特服务器 / 账号状态。
         失败摘要：{{ state_attr('sensor.<前缀>_sync_health', 'last_failure') }}
 ```
+
+</details>
 > 恢复后自动回到「正常」，无需人工复位。
 
-**胎压告警通知**
+胎压告警通知：
+
+<details>
+<summary>胎压告警通知（自动化 YAML）</summary>
+
 ```yaml
 alias: 胎压告警提醒
 trigger:
@@ -245,7 +267,13 @@ action:
         右后 {{ states('sensor.<前缀>_rr_tire') }} kPa
 ```
 
-**保养到期提醒**
+</details>
+
+保养到期提醒：
+
+<details>
+<summary>保养到期提醒（自动化 YAML）</summary>
+
 ```yaml
 alias: 保养到期提醒
 trigger:
@@ -261,11 +289,16 @@ action:
       message: "{{ states('sensor.<前缀>_maintenance_plan') }}"
 ```
 
+</details>
+
 > 示例中的 `<前缀>` 是本车 VIN 的 sha256 前 16 位（见上文「实体 ID 前缀」说明），实际取值请在「设置 → 设备与服务 → 实体」中按中文名复制。
 
 ## 🎛 仪表盘卡片示例
 
 推荐搭配 **Vehicle Status Card**（HACS → Frontend 搜索安装）把实体拼成车况面板。在仪表盘「原始配置编辑器」中添加：
+
+<details>
+<summary>Vehicle Status Card 卡片配置（YAML）</summary>
 
 ```yaml
 type: custom:vehicle-status-card
@@ -292,6 +325,8 @@ map:
   entity: device_tracker.<前缀>_location    # 车辆定位
 ```
 
+</details>
+
 > 不同车型可用按钮不同，在开发者工具按 `button.` 前缀查询实际实体；定位实体需在集成选项中开启「车辆定位追踪」。卡片字段以 Vehicle Status Card 官方文档为准。
 
 ## ⚡ 与 EVCC 联动
@@ -309,6 +344,9 @@ map:
 | `switch.<前缀>_wallbox_charge` | 开关 | 家充桩充电控制（仅绑定桩车型） |
 
 EVCC 侧示例（`evcc.yaml`，按你的 EVCC 版本微调）：
+
+<details>
+<summary>EVCC 车辆配置（evcc.yaml）</summary>
 
 ```yaml
 vehicles:
@@ -330,7 +368,9 @@ vehicles:
     enable: switch.<前缀>_wallbox_charge
 ```
 
-> `evcc_charge_state` 语义与 EVCC 一致。家充桩充电开关仅在探测到绑定桩的车型出现。
+</details>
+
+> `evcc_charge_state` 语义与 EVCC 一致。家充桩充电开关仅在绑定桩的车型出现。
 
 ## 🛠 故障排查
 
@@ -343,19 +383,24 @@ vehicles:
 
 | 现象 | 处理 |
 |---|---|
-| 密码登录失败 / 被拦截（`AADB2C: An exception has occurred`、567） | 福特登录页（login.ford.com.cn）前置腾讯云 EdgeOne 安全防护，按 TLS / 行为指纹拦截纯 HTTP 客户端。**密码登录必须走浏览器辅助**：按向导第 2 步在浏览器打开登录链接完成登录，复制地址栏 `?code=xxx` 粘贴回集成（一次性有效）。被拦截或不便时**改用短信验证码登录**，登录后令牌自动续期 |
-| 某车型实体没有创建 | 集成按云端能力 / 车型字段判断，**探测端点返回 200 ≠ 车型支持**；不支持的功能不创建假实体，属正常设计 |
+| 密码登录失败 / 被拦截 | 官方登录页对纯 HTTP 客户端有安全防护，**密码登录需走浏览器辅助**：按向导第 2 步在浏览器打开登录链接完成登录，把地址栏的授权码参数粘贴回集成（一次性有效）。被拦截或不便时**改用短信验证码登录**，登录后令牌自动续期 |
+| 某车型实体没有创建 | 集成按云端能力 / 车型字段判断，**接口返回正常 ≠ 车型支持**；不支持的功能不创建假实体，属正常设计 |
 | 重新加载弹「Setup ... cancelled」 | setup 首次刷新有 20 秒短超时，超时转 `ConfigEntryNotReady` 自动重试 |
-| 密钥轮换后无法登录 / 加密失败 | 福特轮换密钥后需发布新版本适配，请关注 Releases |
+| 升级后无法登录 / 认证失败 | 云端接口调整后需发布新版本适配，请关注 Releases |
 | 实体状态长期不变 | 后台刷新固定 30 分钟；可点「手动刷新车辆状态」按钮强制车机上报 |
 | 日志出现 `took longer than scheduled update interval` | 重启 / 重载初始窗口的瞬时现象，锁与开关实体已改为后台调度刷新、立即返回，若仍出现请附日志提 issue |
 | 视频说明书网址太长 / 想点击打开 | 状态显示「查看视频说明书」，完整 URL 在属性 `manual_url`。sensor 状态文字本身不可点击（HA 平台限制），用下面的 Markdown 卡片实现点击跳转 |
+
+<details>
+<summary>视频说明书可点击卡片（YAML）</summary>
 
 ```yaml
 type: markdown
 content: >-
   [📖 打开视频说明书]({{ state_attr('sensor.<你的视频说明书实体>', 'manual_url') }})
 ```
+
+</details>
 
 替换 `<你的视频说明书实体>`：**设置 → 设备与服务 → 福特派 → 实体 → 找到「视频说明书」→ 复制实体 ID**。添加方式：仪表盘右上角编辑 → 添加卡片 → 手动 / YAML 模式 → 粘贴 → 保存。
 
@@ -370,7 +415,23 @@ content: >-
 - **仓库自带审计脚本**：`docs/privacy_audit.py` 覆盖全 git 可达历史、commit message、Releases body、codeload 归档与 dangling commit，输出 PASS 方可发布。
 - **数据本地**：车辆数据仅保存在你自己的 Home Assistant 中，集成除福特 / 林肯官方服务端外不向任何第三方传输。
 
-> 提醒：本集成会把车牌、街道级地址、VIN 等作为实体状态 / 属性写入 HA 数据库。若你不希望这些进入历史记录，可在 `configuration.yaml` 的 `recorder` 中排除对应实体。
+> **建议把隐私实体排除出历史库**：集成保证这三个实体不写 logbook 活动，但它们的**状态与属性仍会进入 HA 数据库**（recorder）。若不希望车牌、VIN、定位坐标留在历史记录里，在 `configuration.yaml` 中追加下面的配置：
+
+<details>
+<summary>recorder 隐私排除配置（YAML）</summary>
+
+```yaml
+recorder:
+  exclude:
+    entity_globs:
+      - sensor.<前缀>_vehicle_vin        # 车辆识别码
+      - sensor.<前缀>_license_plate      # 车牌号
+      - device_tracker.<前缀>_location   # 车辆定位（经纬度在属性中）
+```
+
+`<前缀>` 是本车 VIN 的 sha256 前 16 位，在「设置 → 设备与服务 → 实体」中复制实际实体 ID 更稳妥。修改 recorder 配置后需**重启** Home Assistant；已产生的历史不会自动清除，可用 `recorder.purge_entities` 服务手动清理。
+
+</details>
 
 ## 🗑 移除集成
 
@@ -386,7 +447,7 @@ content: >-
 - 全部版本与变更说明 → [Releases](https://github.com/RockJesus/ha-fordpass-cn/releases)
 - 当前版本 → 见顶部版本徽章，或 HACS「已下载」列表
 - 升级方式 → HACS → 福特派互联 → **更新**（或「重新下载」）→ 重启 Home Assistant
-- 密钥轮换等**必须升级**的变更会在 Release 标题中标注
+- 需要强制升级的接口变更会在 Release 标题中标注
 
 ## ⚠️ 免责声明
 

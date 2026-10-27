@@ -7,9 +7,9 @@ refresh_status:
   fields:
     vin:
       name: VIN
-      description: 车辆识别码（16 位）。缺省时刷新账号下全部车辆；指定时仅刷新该车。
+      description: 车辆识别码（17 位）。缺省时刷新账号下全部车辆；指定时仅刷新该车。
       required: false
-      example: "XXXXXXXXXXXXXXXX"
+      example: "LVSHFAKE000000001"
       selector:
         text:
           type: text
@@ -38,7 +38,7 @@ share_wallbox:
       name: VIN
       description: 车辆识别码（可选；缺省作用于账号下第一辆车）。
       required: false
-      example: "XXXXXXXXXXXXXXXX"
+      example: "LVSHFAKE000000001"
       selector:
         text:
           type: text
@@ -58,7 +58,7 @@ create_departure:
       name: VIN
       description: 车辆识别码（可选；缺省作用于账号下第一辆车）。
       required: false
-      example: "XXXXXXXXXXXXXXXX"
+      example: "LVSHFAKE000000001"
       selector:
         text:
           type: text
@@ -77,7 +77,7 @@ update_srs:
       name: VIN
       description: 车辆识别码（可选；缺省作用于账号下第一辆车）。
       required: false
-      example: "XXXXXXXXXXXXXXXX"
+      example: "LVSHFAKE000000001"
       selector:
         text:
           type: text
@@ -97,7 +97,7 @@ approve_auth:
       name: VIN
       description: 车辆识别码（可选；缺省作用于账号下第一辆车）。
       required: false
-      example: "XXXXXXXXXXXXXXXX"
+      example: "LVSHFAKE000000001"
       selector:
         text:
           type: text

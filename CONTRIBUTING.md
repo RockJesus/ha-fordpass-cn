@@ -15,21 +15,21 @@
 
 ## 开发环境
 
-- 代码基线：`custom_components/fordpass_cn/`（多平台 + 加密库）
-- 依赖：`requests` / `aiohttp`（运行时依赖为空——**集成零依赖**，白盒 AES 为纯 Python 实现）
+- 代码基线：`custom_components/fordpass_cn/`（多平台 + 纯 Python 加密实现）
+- 依赖：`requests` / `aiohttp`（运行时依赖为空——**集成零依赖**，加解密为纯 Python 实现）
 - 编译校验：`python3 -X utf8 -m py_compile custom_components/fordpass_cn/*.py`
 - 质量：`python3 -X utf8 -m py_compile` 全量通过（项目不含测试套件，隐私最小化）
 
 ## 提交 PR 流程
 
-1. **先开 Issue**：描述你要修的问题/加的功能；涉及新端点时附抓包证据（HAR 脱敏后）
+1. **先开 Issue**：描述你要修的问题 / 要加的功能；涉及车辆新能力时，附脱敏后的实测结果（截图打码、日志去 VIN）
 2. 从最新 `main` 建分支，改动聚焦单一主题
 3. 代码要求：
    - 新增/修改实体必须**按车型能力创建**（纯油车不创建充电域实体等），参考 `sensor.py` 现有 `skip_if_missing` / `fuelType` 判断模式
    - 实体 `unique_id` 稳定不变（升级不丢实体）
    - 所有网络请求走 `await`（aiohttp），阻塞 IO 用 `asyncio.to_thread`，禁 `requests.get` 裸调
-   - 云端端点按「分层 TTL 缓存 + 失败退避 + 保留最后已知状态」处理（防风控限流）
-4. 更新 `README.md` 版本日志（新条目置顶、折叠旧日志）与 `manifest.json` 版本号（十进制逐位 +1）
+   - 云端请求按「分层 TTL 缓存 + 失败退避 + 保留最后已知状态」处理（防风控限流）
+4. 变更说明写进**本次 Release 说明**（README 不再维护更新日志），并更新 `manifest.json` 版本号（十进制逐位 +1）
 5. `py_compile` 通过后提交 PR，描述里附实测结果（HA 版本 / 车型 / 功能验证）
 
 ## 版本规则
@@ -39,6 +39,6 @@
 
 ## 行为规范
 
-- 不承诺"再试几次就好"——云端风控/WAF 拦截属外部限制，如实说明
+- 不承诺"再试几次就好"——云端风控拦截属外部限制，如实说明
 - 不向任何第三方转发用户数据；所有数据处理在用户自己的 HA 实例内完成
-- 涉及福特派 App 协议逆向的内容仅用于本集成功能实现，不公开 App 密钥/签名细节
+- 本仓库不包含官方 App 的密钥、签名或证书材料；相关适配仅用于实现与本集成的功能对接
