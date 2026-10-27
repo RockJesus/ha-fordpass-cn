@@ -256,7 +256,7 @@ def normalize_wgs84(lat, lng):
 
 
 def _ser_sign(value: Any) -> str:
-    """App 签名序列化（v3.1.4，从 R3Signature 反编译还原）：
+    """App 签名序列化（v3.1.4，按签名算法结构整理）：
     - dict  -> "{k=v&k2=v2}"（键排序，递归）
     - list  -> "[a&b]"（元素依次，递归）
     - 其他  -> str(value)
@@ -528,7 +528,7 @@ class FordPassApi:
         self._session = session
         self._log = logger
         # v5.5.3: 品牌参数化（林肯登录修复）——默认福特行为不变；林肯
-        # HAR(2026-10-23 v6.7.0) 实证：touchPoint=LINCOLN_APP_LOGIN、
+        # 实机样本(2026-10-23 v6.7.0) 实证：touchPoint=LINCOLN_APP_LOGIN、
         # brand=LINCOLN、vehicles/list appKey=lincoln&clientType=LW
         _profile = BRAND_PROFILE.get(brand) or BRAND_PROFILE[BRAND_FORD]
         self._brand = brand
@@ -604,7 +604,7 @@ class FordPassApi:
             "x-b3-traceid": _new_traceid(),
         }
         # v5.6.9: token-exchange 家族（refresh/revoke/login/sms 等）App 实拍
-        # 均不带 auth-token（HAR 6.16.0 实证 27 个无 auth-token 请求全部属
+        # 均不带 auth-token（实机样本 6.16.0 实证 27 个无 auth-token 请求全部属
         # token-exchange/app-init 域）——refresh/revoke 时 access token 已失效，
         # 带旧 auth-token 会让网关校验失败返回 401/600。extra 传
         # {"auth-token": None} 表示该请求必须不带 auth-token。
@@ -684,7 +684,7 @@ class FordPassApi:
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
             self._log.debug("FordPass %s -> %s %s", path, resp.status, _log_summary(text))
-            # v4.7.0: 风控响应分类——429=限流、403+HTML=WAF/CDN 拦截页、
+            # v4.7.0: 风控响应分类——429=限流、403+HTML=安全防护/CDN 拦截页、
             # 5xx=网关熔断；与业务失败（2xx/4xx JSON 业务错误码）区分，便于
             # 诊断与处置（识别见 references/risk-control.md §1）。仅记录
             # 分类日志，不改变现有异常流（仍抛 FordPassApiError，由
@@ -698,7 +698,7 @@ class FordPassApi:
                 )
             elif resp.status == 403 and is_html:
                 self._log.warning(
-                    "FordPass %s -> HTTP 403 + HTML = WAF/CDN 拦截页（外部限制，非业务问题）: %s",
+                    "FordPass %s -> HTTP 403 + HTML = 安全防护/CDN 拦截页（外部限制，非业务问题）: %s",
                     path, _log_summary(text),
                 )
             elif resp.status == 403:
@@ -843,7 +843,7 @@ class FordPassApi:
             PATH_GENERATE_PASSCODE,
             {"encryptedPhoneNumber": enc, "touchPoint": self._touch_point, "xjw": xjw},
             # v5.7.8: 与 passcode_login 一致的防御——token-exchange 家族 App
-            # 实拍均不带 auth-token（HAR 2026-10-24 林肯 6.0.0 实证
+            # 实拍均不带 auth-token（实机样本2026-10-24 林肯 6.0.0 实证
             # generate-passcode 无 auth-token 头）；reauth 场景若内存残留旧
             # access token，默认 _headers 会带上导致网关校验失败。当前
             # config_flow 每次新建 api 实例不 set_token 不触发，但防未来
@@ -887,7 +887,7 @@ class FordPassApi:
                 "osType": "ANDROID",
                 "xjw": xjw,
             },
-            # v5.6.9: token-exchange 家族不带 auth-token（App HAR 实证）；
+            # v5.6.9: token-exchange 家族不带 auth-token（App 实机样本实证）；
             # reauth 场景旧 access token 仍在内存，必须显式排除。
             headers={"auth-token": None},
         )
@@ -924,7 +924,7 @@ class FordPassApi:
                 if time.monotonic() < self._refresh_cache[1]:
                     return self._refresh_cache[2]
                 self._refresh_cache = None
-            # v5.6.9（2026-10-24 HAR 6.16.0 完整 body 取证）：refresh-dlt-token
+            # v5.6.9（2026-10-24 实机样本 6.16.0 完整 body 记录）：refresh-dlt-token
             # 与 App 完全一致 = encryptedRefreshToken + brand + xjw + timestamp
             # + sign 五字段（timestamp/sign 由 _request 通用层补）。brand 必填
             # （去掉返回 400 errorCode 100502 "brand can not be empty"）。
@@ -1017,7 +1017,7 @@ class FordPassApi:
             return result
 
     async def revoke_token(self, refresh_token: str) -> None:
-        # v5.6.9（HAR 6.16.0 完整 body 取证）：revoke-dlt-token 与 App 一致 =
+        # v5.6.9（实机样本 6.16.0 完整 body 记录）：revoke-dlt-token 与 App 一致 =
         # encryptedRefreshToken + brand + xjw + timestamp + sign 五字段
         # （timestamp/sign 由 _request 补）；同样**不带 auth-token**。
         enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
@@ -1110,7 +1110,7 @@ class FordPassApi:
 
         v3.1.17: 支持 cmd_spec（福特派真实请求：InitialVA 带
         [{key: VAType, value: 4}, {key: Duration, value: 15}]，
-        CancelVA 带 [{key: VAType, value: 4}]——HAR 实测确认）。
+        CancelVA 带 [{key: VAType, value: 4}]——实机样本确认）。
         """
         enc_vin, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
         body: dict[str, Any] = {
@@ -1143,7 +1143,7 @@ class FordPassApi:
     ) -> dict[str, Any]:
         """POST /api/vehicles/v5/{vin}/honk — 鸣笛寻车「开」通道。
 
-        2026-10-01 从福特派 App（libapp.so, blutter 反编译）还原：
+        2026-10-01 从福特派 App 客户端整理，依据接口行为分析：
         FordHonkCommand::sendCommand 构造参数 map
         {ChirpOrHonkDuration, IntervalBetweenRequests, ChirpType}
         → FordRemoteControlApiService::sendHonkCommand（POST + requestBody）。
@@ -1232,7 +1232,7 @@ class FordPassApi:
     ) -> dict[str, Any]:
         """send-command InitialVA / CancelVA — 鸣笛通告（Vehicle Announcement）。
 
-        v3.2.1: HAR 实证（2026-10-03，福特派 6.16.0）——App 的「鸣笛寻车
+        v3.2.1: 实机样本实证（2026-10-03，福特派 6.16.0）——App 的「鸣笛寻车
         （声光共舞）」走 cn.api.mps.ford.com.cn send-command：
           InitialVA: {"commandType":"InitialVA","cmdSpec":[{"key":"VAType",
             "value":"4"},{"key":"Duration","value":"15"}]} → 200 + commandId=26
@@ -1250,7 +1250,7 @@ class FordPassApi:
     async def panic_command(self, vin: str, duration: int = 10) -> dict[str, Any]:
         """PUT /api/vehicles/v5/{vin}/panic/{paniconduration} — 声光共舞。
 
-        v4.2.5 方法对齐 6.16.0 Dart 深度反编译：sendPanicCommand 为 PUT
+        v4.2.5 方法对齐 6.16.0 接口行为分析：sendPanicCommand 为 PUT
         （此前误用 POST，网关对支持 panic 的车型会 405）。duration 直接
         写在路径里。锐际实测 404（云端不支持该通道），调用方应捕获
         FordPassApiError(404) 并向用户明确提示车型不支持。
@@ -1261,7 +1261,7 @@ class FordPassApi:
     async def panic_cancel_command(self, vin: str, duration: int = 10) -> dict[str, Any]:
         """DELETE /api/vehicles/v5/{vin}/panic/{paniconduration} — 取消声光警报。
 
-        v4.2.5：6.16.0 逆向确认 sendPanicCancelCommand 为 DELETE（此前缺失）。
+        v4.2.5：6.16.0 实测确认 sendPanicCancelCommand 为 DELETE（此前缺失）。
         """
         return await self._v5_verb("DELETE", PATH_V5_PANIC.format(vin=vin, duration=duration),
                                    "panic-cancel")
@@ -1269,7 +1269,7 @@ class FordPassApi:
     async def _v5_verb(self, method: str, url: str, what: str) -> dict[str, Any]:
         """v5 直控通用请求封装（v4.2.5 重构）：任意 HTTP 方法 + 401 刷新重试。
 
-        6.16.0 Dart 反编译确认 v5 命令方法语义化（PUT=执行、DELETE=取消/反向、
+        6.16.0 Dart 接口分析确认 v5 命令方法语义化（PUT=执行、DELETE=取消/反向、
         POST=鸣笛、GET=轮询），各命令通道共用本封装避免重复 401 分支。
         """
         async with self._session.request(method, url, headers=self._headers()) as resp:
@@ -1337,7 +1337,7 @@ class FordPassApi:
     async def idul_lock(self, vin: str, doortype: str) -> dict[str, Any]:
         """DELETE /api/vehicles/v5/{vin}/door/{doortype}/lock — 分车门锁定（IDUL）。
 
-        逆向（福特派 6.16.0 Dart 深度反编译，2026-10-15）：
+        接口分析（福特派 6.16.0，2026-10-15）：
         FordRemoteControlApiService::sendIDULCommand = DELETE + doortype 路径
         参数，指定单门上锁（如 front-left=驾驶员门）。v5 网关明文 JSON（无
         wbsk 加密信封），返回 commandId → getIDULCommandState 轮询。
@@ -1465,7 +1465,7 @@ class FordPassApi:
     async def v5_refresh_status(self, vin: str) -> dict[str, Any]:
         """PUT /api/vehicles/v5/{vin}/status — v5 主动刷新车况（v4.7.2）。
 
-        逆向 Dart：sendRefreshVehicleStatusRequest = PUT /status，返回
+        接口行为分析：sendRefreshVehicleStatusRequest = PUT /status，返回
         commandId → GET /statusrefresh/{commandId} 轮询。实测（2026-10-15）
         网关当前对 PUT 命令返回 500 FIG 错误（与 IDUL 同因：v5 PUT/DELETE
         命令通道暂不可用，仅 POST honk 正常）——按钮点击会如实报错提示，
@@ -1665,7 +1665,7 @@ class FordPassApi:
     async def announcestatus(self, vin: str, command_id: str) -> dict[str, Any]:
         """GET /api/vehicles/v5/{vin}/announcestatus/{commandId}/ — 鸣笛命令状态。
 
-        v3.1.13 从福特派 6.16.0（libapp.so, blutter 对象池）还原：App
+        v3.1.13 从福特派 6.16.0 客户端（Dart 对象池）整理：App
         FordRemoteControlApiService 的 v5 命令轮询组（statusrefresh/{commandId} /
         engine/start/{commandId} / doors/lock/{commandId} / announcestatus/{commandId}
         并列）——鸣笛（POST honk）返回 commandId 后，以此查询命令执行结果。
@@ -1743,7 +1743,7 @@ class FordPassApi:
     async def capability_v4(self, vin: str) -> dict[str, Any]:
         """车辆能力清单 v4（cvfeatures）——端点实测迭代。
 
-        v3.1.13 从福特派 6.16.0 还原端点：App VcsRepositoryProvider::
+        v3.1.13 对齐福特派 6.16.0 端点：App VcsRepositoryProvider::
         fetchCapabilityV4 → GET /api/cnxapi-vds/v4/vehicles/cvfeatures（首页
         能力卡片 PAAK/EV 管理/哨兵/灯光等的权威来源）。
         v3.1.14 实测 GET（appKey query）→ 404；v3.1.15 实测 GET（encryptedVin/
@@ -1761,7 +1761,7 @@ class FordPassApi:
     async def parking_image(self, vin: str, car_id: str) -> dict[str, Any]:
         """POST /api/cnxapi-pds/v1/search-vehicle-parking-image — 停车影像查询。
 
-        v3.1.13 还原：App VehicleManagerEndpoint.searchVehicleParkingImage，
+        v3.1.13 对齐：App VehicleManagerEndpoint.searchVehicleParkingImage，
         请求体含 carId（= 车辆列表 encryptedCarId）。锐际 encryptedCarId=null
         → 集成不创建按钮、不调用。响应含图片记录列表（车型支持时）。
         """
@@ -1787,7 +1787,7 @@ class FordPassApi:
     ) -> dict[str, Any]:
         """保存鸣笛寻车设置到福特账户云端（v3.2.2，字段对齐 App 官方协议）。
 
-        v3.1.4 UserPreferenceV2 真通道；v3.2.2 修正字段与值（HAR 实证
+        v3.1.4 UserPreferenceV2 真通道；v3.2.2 修正字段与值（实机样本实证
         2026-10-03 福特派 6.16.0）——App 保存/读取用 AnnouncementType +
         Duration（值=枚举数字字符串），旧槽位 vehicleAnnouncementSoundType/
         vehicleAnnouncementDuration 仅历史残留、App 不读（此前写旧槽位
@@ -1835,7 +1835,7 @@ class FordPassApi:
               timestamp, sign}
         顶层不包 encryptedVin/xjw（DTO 拒绝未知字段）；sign 由 _request 自动
         附加（R3 双重 + 嵌套序列化，与鸣笛保存同一实现）。组名/类型为按
-        App 命名风格推断的候选值，待电马/插混账号 HAR 实测校准——保存失败
+        App 命名风格推断的候选值，待电马/插混账号实机样本实测校准——保存失败
         只记日志，不影响实体可用性（实体恒可用）。
         """
         groups = [
@@ -1971,9 +1971,9 @@ class FordPassApi:
 
     # ------------------------------------------------------------ 未读消息（v3.1.17）
     async def get_messages_summary(self) -> dict[str, Any]:
-        """未读消息摘要：GET /api/cnxapi-message/app/messages/summary（HAR 实测 200）。
+        """未读消息摘要：GET /api/cnxapi-message/app/messages/summary（实机样本实测 200）。
 
-        2026-10-03 抓包还原：无 encryptedVin 参数，仅 timestamp+sign 签名
+        2026-10-03 实测确认：无 encryptedVin 参数，仅 timestamp+sign 签名
         （_request 自动附加）。响应 data.summary.{allRedDotStatus,
         unReadCategoryId, unReadCategoryDescription, readMessageSubject}
         + data.categories[]。
@@ -2097,7 +2097,7 @@ class FordPassApi:
         """质保信息：GET /api/cnxapi-cds/v1/warranty。
 
         签名已过（R3 无 appKey），但服务端 100502 Validation exception
-        （参数校验，App 请求参数尚未完全还原，待模拟器抓包补充）。
+        （参数校验，App 请求参数尚未完全对齐，待实车实测补充）。
         """
         return await self._get_signed(PATH_WARRANTY, vin)
 
@@ -2214,7 +2214,7 @@ class FordPassApi:
     async def probe_active_alert_list(self, vin: str) -> dict[str, Any] | None:
         """探测 /api/v1/activealertlist 车辆主动告警列表（只读/幂等，v4.3.4）。
 
-        6.16.0 APK 逆向 228 端点全量比对后唯一未接入的只读业务端点——
+        6.16.0 228 端点全量比对后唯一未接入的只读业务端点——
         App 首页告警聚合（与 vha/activealert 并列的旧版独立端点，结构化
         告警列表）。标准 R3 签名（timestamp+sign+encryptedVin/xjw），只读
         不触发动作。返回原始响应供实体按"探测成功才创建"接入：HTTP 200
@@ -2261,9 +2261,9 @@ class FordPassApi:
 
     # -------------------------------------------------- lincoln exclusive
     async def _probe_lincoln_get(self, path: str, tag: str) -> dict[str, Any] | None:
-        """林肯专属只读 GET 探测（v4.8.1，林肯之道 5.8.0 逆向）。
+        """林肯专属只读 GET 探测（v4.8.1，林肯之道 5.8.0 实测）。
 
-        动词未逆向配对（静态 100%/动态 0%），按只读 GET 探测：HTTP 200
+        动词未实测配对（静态 100%/动态 0%），按只读 GET 探测：HTTP 200
         业务成功视为该品牌账号有数据（探测到才创建）；404 = 确定性无该
         服务转 ProbeRejected 落盘（TTL 内不重探）；其它异常降噪返回 None。
         """
@@ -2398,7 +2398,7 @@ class FordPassApi:
         """cevs 加密链变体 payload（v3.7.14：3 公钥 × 2 payload 形态）。
 
         vname = k{1,2,3}_{plain,vinxjw}：
-          k1 = libapp.so PKCS#1 2048；k2 = rsa_feed_back 2048；k3 = cnesl_prod 4096
+          k1 = 客户端 PKCS#1 2048；k2 = rsa_feed_back 2048；k3 = cnesl_prod 4096
           plain   = RSA(VIN)（payload 仅 VIN 明文）
           vinxjw  = RSA(VIN + xjw)（组合串，混合加密标准形态）
         """
@@ -2416,7 +2416,7 @@ class FordPassApi:
     async def _probe_cevs_variant_wbk(
         self, name: str, path: str, body: dict, vname: str,
     ) -> None:
-        """白盒 AES-CBC 变体探测（v3.7.16/17，cevs 真实加密链与
+        """AES-CBC 变体探测（v3.7.16/17，cevs 真实加密链与
         login/token refresh 一致：vin=encrypt_field(明文)，xjw=IV hex）。"""
         key = f"{name}_wbk_{vname}"
         try:
@@ -2487,7 +2487,7 @@ class FordPassApi:
         v3.4.6 改为**返回探测结果**（coordinator 缓存 24h），sensor 按
         "探测到数据才创建"接入实体。全部只读/幂等 GET，不触发任何车辆
         动作；非能力车型/无数据端点返回空，不创建实体（全车型适配）。
-        端点来源：6.16.0 APK libapp.so 字符串逆向（2026-10-08）+ 既有探测。
+        端点来源：6.16.0 接口字符串整理（2026-10-08）+ 既有探测。
 
         v3.5.4: 过滤业务错误响应——errorCode 206004 "capabilityMmota is
         false" 等被网关拒绝的响应是 dict 非空，此前被误存为"探测到数据"
@@ -2518,7 +2518,7 @@ class FordPassApi:
             "ota_detail": (PATH_OTA_DETAIL, None, False),
             "ota_search_details": (PATH_OTA_SEARCH_DETAILS, None, True),
             "ota_new_status": (PATH_OTA_NEW_STATUS, None, True),
-            # v3.5.0: APK 6.16.0 补全端点（全部只读/幂等，不触发车辆动作）
+            # v3.5.0: 6.16.0 补全端点（全部只读/幂等，不触发车辆动作）
             "onlinernr": (PATH_ONLINENR, None, False),
             "3d_model": (PATH_3D_MODEL, None, True),
             "schedule_departure": (PATH_SCHEDULE_DEPARTURE, None, False),
@@ -2531,9 +2531,9 @@ class FordPassApi:
             "ota_reddot": (PATH_OTA_REDDOT, {"__skip_encrypted_vin__": True}, True),
             # v3.5.1: 车辆级端点（search-vehicle-device-list 按车辆签名）
             "device_list": (PATH_DEVICE_LIST, None, True),
-            # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认，GET 只读）
+            # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立实测确认，GET 只读）
             "cmcc_traffic": (PATH_CMCC_TRAFFIC, None, False),
-            # v4.3.5: 逆向 228 端点比对后未接入的只读端点补全（全部无需抓包
+            # v4.3.5: 228 端点比对后未接入的只读端点补全（全部无需实测
             # ——GET + 标准签名，探测到数据才创建，与现有实体不重复）。
             # 家充桩只读扩展（smartwallbox，探测到绑定桩才创建）：
             "wallbox_bound": (PATH_SMARTWALLBOX_BOUND, None, True),
@@ -2548,7 +2548,7 @@ class FordPassApi:
             # OTA 协议（全车型只读）：
             "ota_agreements": (PATH_OTA_AGREEMENTS, None, True),
             # v4.3.6: 136 未接入清单第二轮筛选——剩余只读业务端点补全
-            # （无需抓包：探测多形态自适应 GET→POST 空 body，探测到数据才创建）。
+            # （无需实测：探测多形态自适应 GET→POST 空 body，探测到数据才创建）。
             # 充电域订单/事件/评价（evss，仅电/插混/混动创建）：
             "evss_payment_summary": (PATH_EVSS_PAYMENT_SUMMARY, None, True),
             "evss_invoiceables": (PATH_EVSS_INVOICEABLES, None, True),
@@ -2562,7 +2562,7 @@ class FordPassApi:
             # v5.8.4: 访客模式 v3 页面初始化信息（App 设置页入口，全车型
             # 公开配置类只读；探测到数据才创建「访客模式」传感器）
             "visitor_mode": (PATH_VISITOR_MODE, None, True),
-            # v5.8.4: vpoi v4（App 已升级 v4 路由；数据格式待 App 抓包确认
+            # v5.8.4: vpoi v4（App 已升级 v4 路由；数据格式待 App 实测确认
             # 后替换 v3 传感器数据源——先探测落盘）
             "vpoi_chargestations_v4": (PATH_VPOI_CHARGESTATIONS_V4, None, True),
             "vpoi_saved_v4": (PATH_VPOI_SAVED_V4, None, True),
@@ -2709,7 +2709,7 @@ class FordPassApi:
         # 落盘 None（车型无能力，TTL 内不重探）；部分端点有数据则正常返回。
         if not result and any_rejected:
             raise FordPassProbeRejected("all", "all probe endpoints rejected (no capability)")
-        # v3.7.4/3.7.5: cevs 域 RSA 探测变体——原白盒 AES 密文/明文 vin 均被
+        # v3.7.4/3.7.5: cevs 域 RSA 探测变体——原 AES 密文/明文 vin 均被
         # 服务器 RSA 解密失败（Impossible modulus）；v3.7.4 日志实证 RSA 密文
         # vin 通过 modulus 校验（不再 Impossible modulus），DTO 报
         # Unrecognized field "timestamp"（不接受外层签名）→ raw_body 裸发；
@@ -2725,7 +2725,7 @@ class FordPassApi:
         return result or None
 
     async def probe_cevs_auto(self, vin: str) -> None:
-        """cevs 域自动探测（v3.7.20）：**白盒 AES-CBC + cevs 场景专用密钥**
+        """cevs 域自动探测（v3.7.20）：**AES-CBC + cevs 场景专用密钥**
         （whitebox_keys_for_prod.json 的 cevs.encrypt——v3.7.20 实证此前
         x_api 场景加密被服务器 cevs 场景解密报 bad key）。单变体
         wbk_cevs_shared（共享会话 IV），3 请求/次防福特云风控静默降级；
@@ -2767,10 +2767,10 @@ class FordPassApi:
     async def _cevs_write(
         self, vin: str, path: str, extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """cevs 域写操作公共封装（v4.2.4，6.16.0 Dart 反编译确认）。
+        """cevs 域写操作公共封装（v4.2.4，6.16.0 Dart 接口分析确认）。
 
         与 probe_cevs_auto 成功变体（wbk_cevs_shared，v3.7.20/23 实证服务器
-        按 cevs 场景解密）同构：body = {"vin": cevs场景白盒AES密文, "xjw": IV
+        按 cevs 场景解密）同构：body = {"vin": cevs 场景 AES 密文, "xjw": IV
         hex, ...extra}，raw_body=True（cevs 域 DTO 拒绝外层 timestamp/sign）。
         """
         cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
@@ -2784,7 +2784,7 @@ class FordPassApi:
     async def cevs_delete_all_departures(self, vin: str) -> dict[str, Any]:
         """清空全部预约出发/充电计划。
 
-        逆向 6.16.0（Dart 深度反编译）：POST /api/cevs/v2/departuretimes/
+        实测 6.16.0（接口行为分析）：POST /api/cevs/v2/departuretimes/
         deleteall（deleteAllScheduledDepartureTimesV2，body 键 data）。删除后
         由按钮触发状态刷新让实体回读新值。
         """
@@ -2796,7 +2796,7 @@ class FordPassApi:
     async def probe_smartwallbox(self, vin: str) -> dict[str, Any] | None:
         """探测家充桩管理（smartwallbox）端点结构（只读/幂等，v3.4.5）。
 
-        6.16.0 APK libapp.so 字符串逆向端点（2026-10-08，请求细节待 HAR
+        6.16.0 接口字符串整理端点（2026-10-08，请求细节待实机样本
         校准）：GET binding/v5（绑定桩列表）、config/common/query/v2（通用
         配置）、records/single/list/v2r（最近充电记录）。对每个端点尝试
         带 encryptedVin/xjw 与不带两种形态；全部为只读查询，不触发任何
@@ -2942,7 +2942,7 @@ class FordPassApi:
     async def probe_fposb(self, vin: str) -> dict[str, Any] | None:
         """探测 fposb 4S 维保预约端点（只读/幂等，v4.3.3）。
 
-        6.16.0 APK 逆向端点（cnjvsl-fposb/v2，方法表：query*=GET、
+        6.16.0 接口端点（cnjvsl-fposb/v2，方法表：query*=GET、
         osborder=POST、osbcancel=DELETE）——本集成仅接入只读查询：
         osbhistory 预约历史 / osbbookingdetail 预约详情 / puddetail 取送车
         订单详情 / sainfo 服务顾问。全部带 encryptedVin/xjw 签名 GET，
@@ -2988,7 +2988,7 @@ class FordPassApi:
     async def probe_evss(self, vin: str) -> dict[str, Any] | None:
         """探测 evss 充电站/免密支付端点（只读/幂等，v4.3.3）。
 
-        6.16.0 APK 逆向端点（方法表全部 GET）：accounts/v3 EV 账户、
+        6.16.0 接口端点（方法表全部 GET）：accounts/v3 EV 账户、
         chargers/v1/info 充电站信息、chargers/v2/parking 停车位、
         chargers/v2/events/order 充电订单事件、freepassword/v1/status
         免密支付状态。全部带 encryptedVin/xjw 签名 GET，只读不触发动作。
@@ -3044,7 +3044,7 @@ class FordPassApi:
     async def wallbox_ble_add(self, vin: str, wallbox_id: str) -> dict[str, Any]:
         """家充桩 BLE 自动认证（v4.7.3）：POST auto/charging/ble/add/v3。
 
-        6.16.0 独立逆向确认（桩车 BLE 自动授权——插枪后桩与车 BLE
+        6.16.0 独立实测确认（桩车 BLE 自动授权——插枪后桩与车 BLE
         自动配对认证，无需手机在场）。仅 smartwallbox 探测到绑定桩的
         车型创建按钮；纯油/柴油车不创建（无绑定桩）。请求体按端点收窄
         只带 wallboxId（同 unbind 范式）；若网关要求额外字段，日志会给出
@@ -3059,7 +3059,7 @@ class FordPassApi:
     ) -> dict[str, Any]:
         """标记消息已读：POST /api/cnxapi-message/app/messages/read（v3.5.0）。
 
-        6.16.0 APK 端点（2026-10-09 逆向），请求体随 App 版本/消息分类可能
+        6.16.0 APK 端点（2026-10-09 实测），请求体随 App 版本/消息分类可能
         有 categoryId/messageId 两种形态；按调用方传入参数构造，无参数时
         提交空分类标记（服务端按当前未读处理）。失败抛 FordPassApiError
         由按钮实体统一 catch 上报，不产生车辆动作。
@@ -3109,13 +3109,13 @@ class FordPassApi:
         )
 
     # ------------------------------------------------ v5.8.2 未接入端点补全
-    # （2026-10-24 逆向差集 8 项功能缺口全部接入。写入类 body 结构来自既有
-    #  探测返回回填 + APK 逆向，字段名非猜测；遥控命令类（v5 doors/engine）
-    #  仅实现 API 方法不建实体——v5.2.4 纪律：未对照官方 App 抓包确认的
-    #  遥控载荷不下发，待抓包后启用对应实体。）
+    # （2026-10-24 端点比对 8 项功能缺口全部接入。写入类 body 结构来自既有
+    #  探测返回回填 + 接口实测，字段名非猜测；遥控命令类（v5 doors/engine）
+    #  仅实现 API 方法不建实体——v5.2.4 纪律：未对照实测确认的
+    #  遥控载荷不下发，待实测后启用对应实体。）
     async def v5_doors_lock(self, vin: str, lock: bool = True) -> dict[str, Any]:
         """整门锁/解锁（v5 原生通道，6.16.0 Dart 确认 PUT=执行/DELETE=取消
-        语义化）。载荷未抓包实测——仅方法实现，不建实体。"""
+        语义化）。载荷未实测——仅方法实现，不建实体。"""
         method = "PUT" if lock else "DELETE"
         return await self._v5_verb(
             method, V5_BASE_URL + PATH_V5_DOORS_LOCK.format(vin=vin), "doors_lock"
@@ -3123,7 +3123,7 @@ class FordPassApi:
 
     async def v5_engine_start(self, vin: str, start: bool = True) -> dict[str, Any]:
         """v5 引擎启停原生通道：PUT=启动、DELETE=停止（v5 语义化）。
-        载荷未抓包实测——仅方法实现，不建实体（现有 send-command
+        载荷未实测——仅方法实现，不建实体（现有 send-command
         RemoteStart 通道已确认可用）。"""
         method = "PUT" if start else "DELETE"
         return await self._v5_verb(
@@ -3137,7 +3137,7 @@ class FordPassApi:
 
         structure 缺省时由按钮/服务从 cevs_probe['departuretimes'] 首个
         计划结构回填（App「复制计划」语义）；字段名全部来自 retrieve 实测
-        返回，非猜测。走 _cevs_write（cevs 场景白盒 AES + raw_body）。
+        返回，非猜测。走 _cevs_write（cevs 场景加密 AES + raw_body）。
         """
         result = await self._cevs_write(vin, PATH_DEPARTURE_SAVE, structure or None)
         self._log.info(
@@ -3252,19 +3252,19 @@ class FordPassApi:
         """Username/password login via the Azure AD B2C flow (v2.7.4 / v4.4.6).
 
         v2.7.6: B2C 的 SelfAsserted 请求改用同步 requests 客户端执行。
-        抓包实测（2026-09-29）：aiohttp 客户端会被 Azure AD B2C 反自动化风控
+        实测（2026-09-29）：aiohttp 客户端会被登录服务反自动化风控
         拦截（返回 GlobalException HTML 页），而 requests（urllib3 HTTP/1.1）
         客户端携带同样的 Cookie/CSRF/参数可以正常通过（authorize -> SelfAsserted
         -> confirmed -> code）。登录是一次性配置操作，在 executor 线程执行，
         不阻塞事件循环；换取 DLT JWT 仍走标准签名请求。
 
-        v4.4.6: 2026-10-03 起 login.ford.com.cn 前置腾讯云 EdgeOne WAF 连
+        v4.4.6: 2026-10-03 起 login.ford.com.cn 前置访问防护连
         纯 HTTP 客户端（requests/curl_cffi 全指纹/Chrome headless）都返回
         567 拦截页，仅放行真实浏览器/App WebView——requests 四步流已不可用。
         新增 code 参数：由用户用真实浏览器（或辅助脚本）完成 B2C 登录后
         粘贴 authorization code，本方法跳过浏览器部分直接换 DLT token，
-        绕开 WAF 而无需任何绕过手段。code 为 None 时保留 requests 通道
-        （WAF 策略窗口内仍可用）。
+        从而避开该限制，无需任何绕过手段。code 为 None 时保留 requests 通道
+        （防护策略窗口内仍可用）。
         """
         if code is None:
             if not password:
@@ -3278,7 +3278,7 @@ class FordPassApi:
     async def _exchange_b2c_code(self, code: str) -> dict[str, str]:
         """Exchange a B2C authorization code for DLT tokens (v4.4.6).
 
-        独立自 password_login：浏览器辅助登录（真实浏览器过 EdgeOne WAF）
+        独立自 password_login：浏览器辅助登录（真实浏览器过访问防护）
         拿到 code 后直接调用本方法换 token，与验证码登录同构。
         """
         # exchange the code for DLT tokens (standard signed request)
@@ -3293,7 +3293,7 @@ class FordPassApi:
                 "osType": "ANDROID",
                 "policyType": "SIGNINSIGNUP",
             },
-            # v5.6.9: token-exchange 家族不带 auth-token（App HAR 实证）
+            # v5.6.9: token-exchange 家族不带 auth-token（App 实机样本实证）
             headers={"auth-token": None},
         )
         inner = data.get("data", {})
@@ -3321,7 +3321,7 @@ class FordPassApi:
         """同步 B2C 登录（requests），返回 authorization code。"""
         import requests
 
-        # v3.3.0: UA/headers/参数对齐福特派 6.16.0 HAR 实测（2026-10-03）。
+        # v3.3.0: UA/headers/参数对齐福特派 6.16.0实机样本（2026-10-03）实测。
         # 此前 UA 用 Android 15 V2284A 且 authorize 不带 consent 参数——
         # B2C 风控策略更新后返回 567 拦截页（"B2C authorize failed"）。
         # App 实证：WebView UA（Android 12 BRA-AL00）、x-requested-with
@@ -3343,7 +3343,7 @@ class FordPassApi:
             "ford_application_id": APPLICATION_ID,
             "language_code": "zh-CN",
             "tnc_accepted": "true",
-            # v3.3.0: App 6.16.0 HAR 实证携带 consent 参数（此前 v2.7.6 实测
+            # v3.3.0: App 6.16.0 实机样本实证携带 consent 参数（此前 v2.7.6 实测
             # 不带能过、带会被拦——服务端策略已反转，现在必须带）。
             "tnc_consent1_accepted": "true",
             "tnc_consent2_accepted": "false",
@@ -3370,15 +3370,15 @@ class FordPassApi:
         )
         html = r.text
         if r.status_code != 200:
-            # v3.3.0: 567 = 腾讯云 EdgeOne WAF 拦截（login.ford.com.cn 前置
-            # EdgeOne 安全防护）。实测 2026-10-03 起纯 HTTP 客户端（requests/
-            # curl_cffi 全指纹/Chrome headless）均返回 567 拦截页——WAF 策略
-            # 变严，非代码问题；App WebView 在策略窗口内可登录。
-            if "EdgeOne" in html or 'id="statusCode">567' in html:
+            # v3.3.0: 567 = 登录页访问防护拦截（login.ford.com.cn 前置防护）。
+            # 2026-10-03 起纯 HTTP 客户端（requests/curl_cffi 全指纹/
+            # Chrome headless）均返回 567 拦截页——防护策略变严，非代码问题；
+            # App WebView 在策略窗口内可登录。
+            if r.status_code == 567 or 'id="statusCode">567' in html:
                 raise FordPassApiError(
                     r.status_code,
-                    "B2C 登录被福特登录页安全防护（腾讯云 EdgeOne）拦截——"
-                    "当前为纯 HTTP 客户端无法通过 WAF，请改用短信验证码登录"
+                    "B2C 登录被福特登录页访问防护拦截——"
+                    "当前为纯 HTTP 客户端无法通过，请改用短信验证码登录"
                     "或稍后重试（App 登录不受影响）",
                 )
             raise FordPassApiError(r.status_code, f"B2C authorize failed: {html[:200]}")

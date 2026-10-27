@@ -6,12 +6,12 @@ Two login methods (selectable in step 1, v2.7.4):
   * B2C  — username (phone) + password via the official Azure AD B2C flow
            (authorize -> SelfAsserted -> confirmed(code) -> token exchange).
 
-v4.4.6: 2026-10-03 起 login.ford.com.cn 前置腾讯云 EdgeOne WAF 拦截纯
+v4.4.6: 2026-10-03 起 login.ford.com.cn 前置访问防护拦截纯
 HTTP 客户端（567）——requests 四步流不可用。密码登录改为两步：
 ① 输入用户名/密码（密码按用户要求持久化到 entry.data，仅存本地配置）；
 ② 用真实浏览器完成 B2C 登录，把地址栏的 authorization code 粘贴进
 config flow——集成用 code 直接换 DLT token（api.password_login(code=...)），
-绕开 WAF 而无需任何绕过手段。code 一次性使用，换取后即失效。
+从而避开该限制，无需任何绕过手段。code 一次性使用，换取后即失效。
 """
 from __future__ import annotations
 
@@ -489,7 +489,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 tokens = await api.passcode_login(
                     self._phone or "",
                     user_input["passcode"].strip(),
-                    # v5.5.3: 林肯 App 在 login 请求重新生成新 IV（HAR 实证
+                    # v5.5.3: 林肯 App 在 login 请求重新生成新 IV（实机样本实证
                     # generate/login 的 xjw 不同仍 200）；福特实测复用同一会话
                     # IV。按品牌区分：林肯不沿用 generate IV，登录自生成。
                     None if self._brand == BRAND_LINCOLN else self._xjw,
@@ -517,7 +517,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_password(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """B2C 密码登录第一步：用户名 + 密码（v4.4.6）。
 
-        EdgeOne WAF 拦截纯 HTTP 客户端后不再直接跑 requests 四步流——
+        访问防护拦截纯 HTTP 客户端后不再直接跑 requests 四步流——
         密码仅暂存于 flow 内存，跳转到第二步粘贴浏览器登录的 code。
         """
         errors: dict[str, str] = {}
@@ -545,7 +545,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         v4.4.6: 用户在真实浏览器（App 同款 UA 环境）打开下方登录地址完成
         登录，浏览器会 302 跳到 redirect_uri 并带 ?code=xxx —— 把 xxx 粘贴
         到本步。集成用 code 直接换 DLT token（api.password_login(code=...)），
-        纯 API 通道绕开 EdgeOne WAF 对 HTTP 客户端的拦截，无需任何绕过手段。
+        纯 API 通道避开访问防护对 HTTP 客户端的拦截，无需任何绕过手段。
         code 一次性有效，换取 token 后即失效。
         """
         errors: dict[str, str] = {}

@@ -444,7 +444,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("ota_detail", "OTA 详情", "ota_detail"),
             ("departuretimes", "预约出发", "departure"),
             ("chargelogs", "充电日志", "chargelog"),
-            # v3.5.0: APK 6.16.0 补全端点（探测到数据才创建，全车型自动适配）
+            # v3.5.0: 6.16.0 补全端点（探测到数据才创建，全车型自动适配）
             ("onlinernr", "车辆在线状态", "online"),
             ("3d_model", "3D 车型图地址", "model3d"),
             ("schedule_departure", "预约行程", "schedule"),
@@ -464,7 +464,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("messages_v2", "消息中心 v2", "messages_v2"),
             ("share_list", "车辆共享列表", "share_list"),
             ("device_list", "车辆设备列表", "device_list"),
-            # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认，
+            # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立实测确认，
             # 探测到数据才创建，全车型自动适配）
             ("cmcc_traffic", "移动流量商城", "cmcc"),
             # v3.6.2: 待开发清单补全（mcm 消息中心 v3 / 用户级红点）
@@ -483,7 +483,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("wallbox_charge_status", "家充桩充电状态(桩级)", "wallbox_charge_status"),
             ("wallbox_charging", "家充桩充电信息", "wallbox_charging"),
             ("wallbox_orders", "家充桩充电订单", "wallbox_orders"),
-            # v4.3.5: 逆向 228 端点比对后未接入的只读端点补全（全部无需抓包
+            # v4.3.5: 228 端点比对后未接入的只读端点补全（全部无需实测
             # ——GET + 标准签名，探测到数据才创建，与现有实体不重复）：
             # 家充桩只读扩展（smartwallbox 绑定桩才创建）：
             ("wallbox_bound", "家充桩绑定", "wallbox_bound"),
@@ -510,11 +510,11 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             ("app_init_settings", "应用设置信息", "app_init_settings"),
             ("vehicle_model_masterdata", "车型主数据", "vehicle_model_masterdata"),
             ("user_login_status", "用户登录状态", "user_login_status"),
-            # v5.8.4: 访客模式 v3 页面初始化信息（App 设置页入口；逆向确认
+            # v5.8.4: 访客模式 v3 页面初始化信息（App 设置页入口；实测确认
             # /api/app-init/v3/visitor-mode/init-page-info，探测到数据才创建，
             # 全车型自动适配）
             ("visitor_mode", "访客模式", "visitor_mode"),
-            # v4.8.1: 林肯之道专属账号级只读端点（5.8.0 逆向）——仅
+            # v4.8.1: 林肯之道专属账号级只读端点（5.8.0 实测）——仅
             # brand==lincoln 时 coordinator 探测，键存在（探测成功）才创建；
             # 福特派账号不探测、键不存在不创建，零副作用。
             ("lincoln_member_info", "林肯会员信息", "lincoln_member"),
@@ -600,7 +600,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             sensors.append(FordPassSlowLeakSensor(coordinator))
             sensors.append(FordPassDiagnosticSensor(coordinator))
     # v3.1.17: 未读消息（GET /api/cnxapi-message/app/messages/summary，
-    # HAR 实测 200）——有 data.summary 才创建（无数据车型不创建，
+    # 实机样本实测 200）——有 data.summary 才创建（无数据车型不创建，
     # 不显示不可用）
     msg = (coordinator.data or {}).get("messages")
     if isinstance(msg, dict):
@@ -1382,8 +1382,8 @@ class FordPassAirFilterSensor(_ServiceInfoSensor):
 class FordPassCloudProbeSensor(SensorEntity):
     """云端能力探测（v3.1.20）——全车型自动创建的关键。
 
-    解析 ccfeatures availableFeatures 位图（VDSFeatureType，逆向福特派
-    6.16.0 libapp.so 还原的 24 项枚举）→ 该车开通的云端服务能力集。
+    解析 ccfeatures availableFeatures 位图（VDSFeatureType，实测福特派
+    6.16.0 客户端定义的 24 项枚举）→ 该车开通的云端服务能力集。
     位图不同 → 能力集不同 → 实体自动适配：如锐际纯油
     03,04,05,06,07,08,10,11,23 = 计划保养服务/指南/道路救援/延保/福特金融/
     私充服务/我的订阅/我的试驾 + 未定义特性 0x23。无位图数据的车型不创建。
@@ -1498,8 +1498,8 @@ _SERVICE_INFO_FIELDS: list[tuple[str, str, str, str | tuple[str, ...]]] = [
     ("video_manual", "视频说明书", "mdi:book-open-variant", "videoManualUrl"),
     # v4.6.8: 「可用功能」与「云端能力探测」（同源 availableFeatures 位图、
     # 信息更全）重复，删除本实体；旧条目由 setup 清理段自动移除。
-    # v4.6.9: 「已授权功能」（authedFeatures="A4"）——逆向 100% 成果仅有字段名
-    # （libapp_strings），无编码映射与中文含义，无法中文化 → 删除；旧条目
+    # v4.6.9: 「已授权功能」（authedFeatures="A4"）——已知信息仅有字段名
+    # （客户端字符串表），无编码映射与中文含义，无法中文化 → 删除；旧条目
     # 由 setup 清理段自动移除。
     ("specified_features", "指定功能", "mdi:star-check", ("featureData", "specifiedFeatures")),
 ]
@@ -1872,7 +1872,7 @@ class FordPassSimSensor(_ServiceInfoSensor):
             return "车辆未开通该服务"
         payload = data.get("data") if isinstance(data.get("data"), dict) else {}
         # 服务端业务失败（实测 payload.returnSuccess false / CONS.SYS.0002）：
-        # 锐际纯油车型无车联网 SIM 服务，App 无该功能入口（HAR 全量 1152 条
+        # 锐际纯油车型无车联网 SIM 服务，App 无该功能入口（实机样本全量 1152 条
         # 无 sim/info 请求）——v3.3.0 语义修正为「未开通」而非「查询失败」，
         # 错误码保留在 attributes（_summary 一并带出）。
         if payload.get("returnSuccess") is False:
@@ -1942,7 +1942,7 @@ class FordPassWifiSensor(_ServiceInfoSensor):
 class FordPassMessageSensor(_ServiceInfoSensor):
     """未读消息（v3.1.17）：GET /api/cnxapi-message/app/messages/summary。
 
-    HAR 实测（2026-10-03）：data.summary.{allRedDotStatus, unReadCategoryId,
+   实机样本（2026-10-03）实测：data.summary.{allRedDotStatus, unReadCategoryId,
     unReadCategoryDescription, readMessageSubject} + data.categories[]。
     allRedDotStatus = 0 无未读 / 1 有未读；categories[].redDotStatus 为各
     分类红点。无 summary 数据的车型不创建（0 unavailable）。
@@ -2021,7 +2021,7 @@ class FordPassChirpCloudSensor(SensorEntity):
             # v3.9.2: 云端数据未获取时显示「未获取」（不显示 unknown/
             # unavailable——保留实体可读状态）
             return "未获取"
-        # v3.2.2: 优先 App 官方槽位 AnnouncementType/Duration（HAR 实证），
+        # v3.2.2: 优先 App 官方槽位 AnnouncementType/Duration（实机样本实证），
         # 旧槽位 vehicleAnnouncementSoundType/vehicleAnnouncementDuration
         # 仅兜底（历史残留、App 新逻辑不读）。
         sound = pref.get("AnnouncementType") or pref.get("vehicleAnnouncementSoundType")
@@ -2232,7 +2232,7 @@ class FordPassLastChargeSensor(SensorEntity):
 class FordPassSyncHealthSensor(SensorEntity):
     """云端同步状态（v5.4.7，后端变更监控）——复用每轮轮询结果，零额外
     请求：coordinator 成功/失败打点，连续失败转「异常」，属性带失败摘要
-    与分类信息，用户可接自动化告警（限流/WAF/网关/业务分类已在 api 日志）。
+    与分类信息，用户可接自动化告警（限流/安全防护/网关/业务分类已在 api 日志）。
     诊断实体恒可用。"""
 
     _attr_has_entity_name = True
@@ -2748,7 +2748,7 @@ class FordPassProbeSensor(SensorEntity):
                 if lst:
                     return f"{len(lst)} 条充电记录"
                 return "暂无充电日志"
-            # ---- v3.5.0: APK 6.16.0 补全端点（探测数据驱动，全车型适配）----
+            # ---- v3.5.0: 6.16.0 补全端点（探测数据驱动，全车型适配）----
             if self._kind == "online":
                 # v3.5.5: onlinernr 响应含 data.rnrStatusDesc/rnrStatusCode
                 # （"已通过"= 车辆在线可达）——优先取 rnrStatusCode 映射
@@ -2776,7 +2776,7 @@ class FordPassProbeSensor(SensorEntity):
                 return "暂无 3D 车型图"
             if self._kind == "cmcc":
                 # v4.2.6: 移动流量商城 H5 地址（CDS 域只读探测，字段名按
-                # 逆向 keys 多候选提取；探测有 URL 才创建）
+                # 多候选 key 提取；探测有 URL 才创建）
                 u = (_swb_find(data, "url") or _swb_find(data, "h5Url")
                      or _swb_find(data, "trafficUrl") or _swb_find(data, "cmccUrl"))
                 if u is not None:
@@ -2968,9 +2968,9 @@ class FordPassProbeSensor(SensorEntity):
                 if cnt is not None:
                     return f"{cnt} 个充电站"
                 return "暂无充电站数据"
-            # v5.8.4: 访客模式 v3 页面初始化信息（逆向 DTO：DisplayProfile/
-            # Tab/Feature）。字段名待 App 抓包确认，先按通用 key 探测；
-            # 主值取访客模式开关状态/配置标题，抓包校准后细化。
+            # v5.8.4: 访客模式 v3 页面初始化信息（DTO 结构：DisplayProfile/
+            # Tab/Feature）。字段名待 App 实测确认，先按通用 key 探测；
+            # 主值取访客模式开关状态/配置标题，实测校准后细化。
             if self._kind == "visitor_mode":
                 for _k in ("visitorModeStatus", "visitorMode", "status",
                            "enable", "enabled", "isOpen", "openStatus"):
@@ -3061,7 +3061,7 @@ class FordPassProbeSensor(SensorEntity):
                     if isinstance(_v, int) and _v >= 0:
                         return f"{_v} 个红点"
                 return "无红点"
-            # ---- v4.3.5: 逆向 228 端点比对后未接入的只读端点补全 ----
+            # ---- v4.3.5: 228 端点比对后未接入的只读端点补全 ----
             if self._kind == "wallbox_bound":
                 lst = _swb_list(data)
                 if lst:

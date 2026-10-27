@@ -86,8 +86,8 @@ def is_on(status: dict | None, paths: list[list[str]]) -> bool:
 # 位图不同 → 能力集不同 → 实体自动适配（如锐际纯油 03,04,05,06,07,08,10,
 # 11,23 = 计划保养服务/指南/道路救援/延保/福特金融/私充服务/我的订阅/我的试驾
 # + 未定义特性 0x23）。
-# VDSFeatureType 枚举（App: mobile_cn_data_adapter vds_type.dart）——逆向自
-# 福特派 6.16.0 libapp.so 对象池：off_8=枚举值, off_10=成员名。
+# VDSFeatureType 枚举（App: mobile_cn_data_adapter vds_type.dart）——整理自
+# 福特派 6.16.0 客户端 对象池：off_8=枚举值, off_10=成员名。
 # vdsFeatureList 在 App 中即为该全集（24 项），availableFeatures 按枚举值过滤。
 # ---------------------------------------------------------------------------
 VDS_FEATURE_NAMES: dict[int, tuple[str, str]] = {

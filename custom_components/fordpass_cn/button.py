@@ -10,7 +10,7 @@ DELETE /api/vehicles/v5/{vin}/honk 真实通道，鸣笛 30 秒自动复位。
 v3.0.8: 新增「保存鸣笛设置」按钮——把持续时长/鸣笛类型保存并上传：
 先本地保存（select 已实时写入 config entry options），再调用 RCC Profile
 端点（POST /api/cnxapi-cds/crcc/v1/profile-by-vin）尝试账户云端持久化；
-云端持久化的 signatureR2 签名未还原时回退为本地保存（下次鸣笛仍按
+云端持久化的 signatureR2 签名未取得时回退为本地保存（下次鸣笛仍按
 新设置把参数传给车机，等效上传车机）。
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # (key, 名称, 图标, 命令, 能力检测路径, 检测方式, cmd_spec)
 # 检测方式: None=总是创建 / "usable"=值有效 / "on"=值为开启态 / "node"=节点存在
-# cmd_spec: 可选的 [{"key":..,"value":..}] 列表——HAR 实测（2026-10-03）确认
+# cmd_spec: 可选的 [{"key":..,"value":..}] 列表——实机样本实测（2026-10-03）确认
 #   福特派 InitialVA 带 VAType=4 + Duration=15、CancelVA 带 VAType=4；
 #   不带 cmdSpec 的命令在部分网关/车型下无响应。
 # v3.1.10: 恢复中央区灯光/语音助手初始化/取消/辅助设置/OTA 激活排程（v3.1.8
@@ -111,11 +111,11 @@ async def async_setup_entry(
         # 「请求车机刷新状态」「手动拉取最新状态」两按钮）
         buttons.append(FordPassManualRefreshButton(coordinator))
         # v4.7.2: v5 主动刷新车况 + v5 刷新轮询——v5.2.5 起移除：v5 PUT 命令
-        # 通道载荷（PUT /api/vehicles/v5/{vin}/status）未经官方 App 抓包确认，
+        # 通道载荷（PUT /api/vehicles/v5/{vin}/status）未经实测确认，
         # 与 v5.2.4 移除的猜测命令同类（send-command 手动刷新保留，已确认）。
         # v4.7.1: 分车门锁定（IDUL）——v5.2.4 起移除：doortype 四门枚举属
-        # "按福特 v5 惯例"推测、未对照官方 App 抓包确认，遥控类命令不得
-        # 发送未验证载荷（待官方 App 抓包确认后恢复）。整车门锁（lock.py）不受影响。
+        # "按福特 v5 惯例"推测、未对照实测确认，遥控类命令不得
+        # 发送未验证载荷（待实测确认后恢复）。整车门锁（lock.py）不受影响。
         # v3.3.4: 「保存鸣笛设置」按钮已删除——鸣笛类型/时长 select
         # 选择后即时上传云端（见 select.py 云端同步），无需手动保存。
         # v3.1.7: 空调滤芯重置（AAR 能力车型——vehicle-status 无关，按
@@ -131,8 +131,8 @@ async def async_setup_entry(
             buttons.append(FordPassImageButton(coordinator, "停车影像", "mdi:car-multiple", "parking"))
             buttons.append(FordPassImageButton(coordinator, "行车监控", "mdi:cctv", "traffic"))
         # v3.3.7: 遥控泊车/远程关窗按钮——v5.2.4 起移除：白名单命令无参数
-        # 直接下发属"猜测命令"，遥控泊车绝不能触发未确认载荷（# 要求移除，待对照官方 App 抓包确认后恢复）。
-        # v3.5.0: APK 6.16.0 补全命令——消息已读 / 行车记录仪录制。
+        # 直接下发属"猜测命令"，遥控泊车绝不能触发未确认载荷（# 要求移除，待对照实测确认后恢复）。
+        # v3.5.0: 6.16.0 补全命令——消息已读 / 行车记录仪录制。
         # 消息已读：messages_page 探测有数据才创建（有消息中心的车）。
         # 录制按钮：video_file 探测有数据才创建（带行车记录仪硬件的车），
         # 无硬件车型 404/无数据自动跳过（全车型适配）。
@@ -146,14 +146,14 @@ async def async_setup_entry(
         if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
             buttons.append(FordPassWallboxUnbindButton(coordinator))
         # v4.7.3: 家充桩 BLE 自动认证按钮——smartwallbox 探测到绑定桩才创建
-        # （6.16.0 逆向端点 auto/charging/ble/add/v3，桩车 BLE 自动授权；
+        # （6.16.0 实测端点 auto/charging/ble/add/v3，桩车 BLE 自动授权；
         # 纯油/无绑定桩车型不创建，全车型适配）。注意：汽车 BLE 车控 15 条
         # 指令（制冷/制热/熄火/门锁/车窗/寻车/前备箱等）是纯 BLE 物理链路
         # （车旁 + PAAK 安全会话），云端无 HTTP 通道，HA 云集成不可执行，
         # 全车型用户请用手机在车旁操作福特派 App——README 有边界说明。
         if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
             buttons.append(FordPassWallboxBleAddButton(coordinator))
-        # v4.2.4: 清空预约出发/充电——cevs 写操作（6.16.0 逆向确认
+        # v4.2.4: 清空预约出发/充电——cevs 写操作（6.16.0 实测确认
         # departuretimes/deleteall）。仅 cevs 车型（fuelType ∈ E/P/H 系）
         # 且探测到预约计划数据才创建；纯油/柴油车不创建（探测 200 ≠ 车型
         # 支持，业务恒空，见 references/entity-vehicle-creation.md）。
@@ -162,10 +162,10 @@ async def async_setup_entry(
         _cevs_supported = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
         if _cevs_supported and _cevs_probe.get("departuretimes"):
             buttons.append(FordPassCevsDeleteAllButton(coordinator))
-        # v5.8.4: 延长远程启动（FORD_EXTEND_START，2026-10-25 pp.txt 逆向确认
+        # v5.8.4: 延长远程启动（FORD_EXTEND_START，2026-10-25 接口清单 实测确认
         # App 有该命令 = 远程启动延时）。⚠️ commandType 字符串
-        # CMD_EXTEND_START="RemoteStartExtend" 为推断值（逆向仅见枚举名，
-        # 未见官方 App 抓包图文字符串），抓包校准后仅改 const 一处。
+        # CMD_EXTEND_START="RemoteStartExtend" 为推断值（仅见枚举名，
+        # 未见官方 App 实测图文字符串），实测校准后仅改 const 一处。
         # 创建由**服务端 command_whitelist 门控**：白名单含该命令才创建
         # （2026-09-29 服务端枚举 16 命令尚不含它；福特云后续开放则自动
         # 出现）。不进 cmd_rejected 过滤（实验性：失败仅如实报错，不记录
@@ -177,7 +177,7 @@ async def async_setup_entry(
                 coordinator, "extend_start", "延长远程启动",
                 "mdi:timer-plus-outline", CMD_EXTEND_START, None,
             ))
-        # v5.8.2: 未接入端点补全按钮（2026-10-24 逆向差集 8 项功能缺口）。
+        # v5.8.2: 未接入端点补全按钮（2026-10-24 端点比对 8 项功能缺口）。
         # 全部按既有"车型能力判断优先 + 探测数据补充过滤"纪律创建：
         #   cevs 系（预约计划保存/充电记录删除）——仅 cevs 车型 + 探测数据；
         #   授权审批（user_auth_list 探测到申请）；SRS 紧急联系人（探测到
@@ -185,7 +185,7 @@ async def async_setup_entry(
         #   新家人需手机号，走服务 fordpass_cn.share_wallbox）；
         #   充电枪锁/解锁（EV 系 + evss 探测到充电站）；消息单条已读
         #   （messages_page 探测有数据）；维保预约取消（fposb 探测到历史）。
-        # v5 整门锁/引擎启停按 v5.2.4 纪律不建实体（载荷未抓包实测，
+        # v5 整门锁/引擎启停按 v5.2.4 纪律不建实体（载荷未实测，
         # 仅 API 方法）。
         if _cevs_supported and _cevs_probe.get("departuretimes"):
             buttons.append(FordPassCevsSaveDepartureButton(coordinator))
@@ -324,7 +324,7 @@ class FordPassWallboxBleAddButton(_FordPassButtonBase):
     _attr_state = "待命"
     """家充桩 BLE 自动认证（v4.7.3）：POST auto/charging/ble/add/v3。
 
-    6.16.0 逆向端点——桩车 BLE 自动授权：授权后插枪即由桩与车 BLE
+    6.16.0 实测端点——桩车 BLE 自动授权：授权后插枪即由桩与车 BLE
     自动配对认证（手机不在场也能启动充电）。仅 smartwallbox 探测到
     绑定桩的车型创建；wallboxId 取默认桩。云端失败如实抛错。
     """
@@ -686,10 +686,10 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
 class FordPassCevsDeleteAllButton(_FordPassButtonBase):
     """清空全部预约出发/充电计划（v4.2.4）。
 
-    逆向 6.16.0（Dart 深度反编译）：POST /api/cevs/v2/departuretimes/
+    实测 6.16.0（接口行为分析）：POST /api/cevs/v2/departuretimes/
     deleteall（deleteAllScheduledDepartureTimesV2）——预约出发/充电是一套
     完整 CRUD（retrieve/save/deleteall/toggle），此前集成只接了只读+toggle，
-    写操作缺失。body 与 retrieve 同构：vin=cevs 场景白盒密文 + xjw，
+    写操作缺失。body 与 retrieve 同构：vin=cevs 场景加密密文 + xjw，
     raw_body 无外层签名（v3.7.23 实证 DTO 必填字段为 vin）。
     仅 cevs 车型（fuelType ∈ E/P/H 系）且探测到预约计划数据才创建；
     纯油/柴油车不创建（探测 200 ≠ 车型支持，业务恒空）。

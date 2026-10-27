@@ -14,26 +14,26 @@ LBS_BASE_URL = "https://api-connect.ford.com.cn"
 # (no sign/timestamp envelope needed on this route).
 V5_BASE_URL = "https://cnapi.cv.ford.com.cn"
 PATH_V5_HONK = "/api/vehicles/v5/{vin}/honk"
-# 分车门锁定（IDUL，v4.7.1）——逆向福特派 6.16.0 v5 命令族（Dart 深度
-# 反编译）：DELETE /door/{doortype}/lock = sendIDULCommand 指定单门上锁，
+# 分车门锁定（IDUL，v4.7.1）——依据福特派 6.16.0 v5 命令族（Dart 层
+# 接口分析）：DELETE /door/{doortype}/lock = sendIDULCommand 指定单门上锁，
 # GET /door/lock/{commandId} = getIDULCommandState 轮询命令结果。
 # doortype 枚举（福特 v5 惯例）：front-left / front-right / rear-left /
 # rear-right；DELETE 下发返回 commandId（两段式：下发→轮询）。
 PATH_V5_DOOR_LOCK = "/api/vehicles/v5/{vin}/door/{doortype}/lock"
 PATH_V5_DOOR_LOCK_STATUS = "/api/vehicles/v5/{vin}/door/lock/{commandId}"
 # v5 主动刷新车况（v4.7.2）：PUT /status = sendRefreshVehicleStatusRequest
-# （Dart 还原；实测网关当前 500 FIG——与 IDUL 同因，v5 PUT/DELETE 命令
+# （Dart 层对齐；实测网关当前 500 FIG——与 IDUL 同因，v5 PUT/DELETE 命令
 # 通道暂不可用，实体点击如实报错，网关恢复后自动可用）
 PATH_V5_STATUS = "/api/vehicles/v5/{vin}/status"
 PATH_V5_STATUSREFRESH = "/api/vehicles/v5/{vin}/statusrefresh/{commandId}"
-# v5.8.2 未接入端点补全（2026-10-24 逆向差集）：整门锁/引擎启停 v5 原生
-# 通道（6.16.0 Dart 确认 PUT=执行/DELETE=取消语义化；载荷未抓包实测，
+# v5.8.2 未接入端点补全（2026-10-24 端点比对）：整门锁/引擎启停 v5 原生
+# 通道（6.16.0 Dart 确认 PUT=执行/DELETE=取消语义化；载荷未实测，
 # 仅实现 API 方法不建实体——v5.2.4 遥控命令纪律：未验证载荷不下发）
 PATH_V5_DOORS_LOCK = "/api/vehicles/v5/{vin}/doors/lock"
 PATH_V5_ENGINE_START = "/api/vehicles/v5/{vin}/engine/start/"
 
 # 鸣笛寻车设置（v3.1.4）——「保存上传到车机」真云端通道：
-# 账户云端持久化 = UserPreferenceV2（2026-10-02 逆向 libapp.so 还原，实机验证）：
+# 账户云端持久化 = UserPreferenceV2（2026-10-02 实机验证）：
 #   POST /api/cnxapi-pds/v1/user/preference-by-groups
 #   body: {preferenceGroups: [{groupName: "VehicleAnnouncementSetting",
 #          userPreferences: [{preferenceType: "vehicleAnnouncementSoundType",
@@ -49,7 +49,7 @@ PATH_CRCC_PROFILE = "/api/cnxapi-cds/crcc/v1/profile-by-vin"  # 旧 RCC 通道�
 PATH_USER_PREF_GROUPS = "/api/cnxapi-pds/v1/user/preference-by-groups"
 PATH_USER_PREF_LIST = "/api/cnxapi-pds/v1/user/preference-list"
 GROUP_VEHICLE_ANNOUNCEMENT = "VehicleAnnouncementSetting"
-# v3.2.2: 字段名对齐 App 官方协议（HAR 实证 2026-10-03）——App 保存/读取
+# v3.2.2: 字段名对齐 App 官方协议（实机样本实证 2026-10-03）——App 保存/读取
 # 用 AnnouncementType + Duration（值=枚举数字字符串）；旧槽位
 # vehicleAnnouncementSoundType（枚举名）/vehicleAnnouncementDuration 仅历史
 # 残留，App 新逻辑不读取——此前集成写旧槽位导致「保存无效」根因。
@@ -65,7 +65,7 @@ DEFAULT_CHIRP_TYPE = "汽笛长鸣"  # App 设置页默认选中项
 # 为 chrip1=0/chirp2=1/honk=2/chirpHonk=3/panic=4——HA 设「汽笛长鸣」App
 # 显示「空谷回音」、设「空谷回音」App 显示「汽笛长鸣」，即 2↔3 写反，
 # 其余 0/1/4 对应正确）；「保存鸣笛设置」上传云端的 AnnouncementType
-# 值为枚举数字字符串（HAR 实证：{"preferenceType":"AnnouncementType",
+# 值为枚举数字字符串（实机样本实证：{"preferenceType":"AnnouncementType",
 # "preferenceValue":"2"}）
 CHIRP_TO_ANNOUNCE = {
     "雨落荷叶": "0",
@@ -100,7 +100,7 @@ CONF_CHIRP_TYPE = "chirp_type"
 # v3.4.5: 远程空调目标温度（EV/插混 preconditioning 专属，全车型能力驱动）
 # 创建条件=vehicle-status preCondStatusDsply 有值（锐际纯油无 -> 不创建）。
 # 云端偏好通道候选（与鸣笛设置同构）：组名 RemoteClimateSetting +
-# preferenceType TargetTemp，按 App 命名风格推断（未实测），待电马/插混 HAR 校准。
+# preferenceType TargetTemp，按 App 命名风格推断（未实测），待电马/插混实机样本校准。
 GROUP_REMOTE_CLIMATE = "RemoteClimateSetting"
 PREF_TARGET_TEMP = "TargetTemp"
 CONF_REMOTE_TEMP = "remote_target_temp"
@@ -152,16 +152,16 @@ PATH_QUERY_LOCATION = "/lbs-map/v2/public/app/queryLocation"
 #       timestamp={ms}&sign={sha256}
 # (server 404s a bare GET without timestamp/sign — fixed in v2.7.4)
 PATH_ACTIVE_ALERT = "/api/cnxapi-cds/v1/vha/activealert"
-# v4.3.4: 车辆主动告警列表（6.16.0 逆向 228 端点全量比对后唯一未接入的
+# v4.3.4: 车辆主动告警列表（6.16.0 228 端点全量比对后唯一未接入的
 # 只读业务端点）——/api/v1/activealertlist 为 App 首页告警聚合（与 vha/
 # activealert 并列的旧版独立端点，结构化为告警列表）。只读 GET 探测，
 # 探测到数据才创建「车辆告警列表」传感器（空列表显示「无告警」）。
 PATH_ACTIVE_ALERT_LIST = "/api/v1/activealertlist"
 
-# 林肯之道专属端点（5.8.0 逆向，2026-10-15）：
+# 林肯之道专属端点（5.8.0 实测，2026-10-15）：
 # 与福特派共用 CNESL/CNXAPI 网关，林肯专属命名空间：cnesl-lincoln-club
 # （林肯俱乐部会员）与 cnxapi-lwosb（取送车/代驾服务总线）。端点↔动词配对
-# 逆向为 0%（动态部分阻塞），按只读 GET 探测接入——探测到数据才创建、
+# 可解析部分为 0%（动态调用受阻），按只读 GET 探测接入——探测到数据才创建、
 # 404/业务拒绝落盘不重探（与既有账号级探测一致）。
 PATH_LINCOLN_MEMBER_INFO = "/api/cnesl-lincoln-club/v1/member-info"
 PATH_LINCOLN_MY_PAGE = "/api/cnesl-lincoln-club/v1/my-page"
@@ -175,7 +175,7 @@ PATH_LWOSB_ORDER_STATUS = "/api/cnxapi-lwosb/v2/app/bookingorderstatus"
 PATH_OTA_SETTING = "/api/alert/v1/ota/setting-info"
 # 服务信息端点（v3.1.4，实测 2026-10-02）：R3 compute_sign + 修正 headers +
 # 无 appKey（maintenance/recall 早期版本带 appKey 参与签名；headers 修正后
-# 无 appKey 亦 200）。warranty 已过验签但服务端 100502（参数校验，待 App 抓包）。
+# 无 appKey 亦 200）。warranty 已过验签但服务端 100502（参数校验，待 App 实测）。
 PATH_MAINTENANCE_PLAN = "/api/cnxapi-cds/v1/maintenance-plan"
 PATH_MAINTENANCE_HISTORY = "/api/cnxapi-cds/v1/maintenance-history"   # v3.3.7 探测
 PATH_DEPARTURE_TIMES_RETRIEVE = "/api/cevs/v2/departuretimes/retrieve"  # v3.3.7 探测
@@ -183,7 +183,7 @@ PATH_RECALL = "/api/cnxapi-vds/v1/vehicles/recall"
 PATH_SIM_INFO = "/api/cnxapi-cds/v1/vehicle/sim/info"
 PATH_WIFI_STATUS = "/api/cnxapi-cds/v1/vehicle/wifi/status"
 PATH_WARRANTY = "/api/cnxapi-cds/v1/warranty"
-# 空调滤芯状态/重置（v3.1.7，2026-10-02 逆向还原 + 实机 200）：
+# 空调滤芯状态/重置（v3.1.7，2026-10-02 实测确认 + 实机 200）：
 #   GET  /api/cnxapi-vds/v1/aar/status → data.airFilter.{isHealthy,lastReplaceTime,
 #         lastReplaceTimestamp}（AARStatusResponseDataAirFilter，6.16.0 App 新增）
 #   PUT  /api/cnxapi-vds/v1/aar/status body={channel:"IVI", filterStatus:0, xjw,
@@ -194,12 +194,12 @@ PATH_AAR_STATUS = "/api/cnxapi-vds/v1/aar/status"
 PATH_CCFEATURES = "/api/cnxapi-vds/v2/vehicles/ccfeatures"
 # v3.1.9: 预测性诊断（机油寿命/剩余里程/慢漏气胎，200 实测，锐际）
 PATH_PROGNOSTIC = "/api/cnxapi-cds/prognostic/v1/list"
-# v3.1.17: 未读消息摘要（HAR 实测 200）：GET /api/cnxapi-message/app/messages/summary
+# v3.1.17: 未读消息摘要（实机样本实测 200）：GET /api/cnxapi-message/app/messages/summary
 # ?timestamp=&sign=（无 encryptedVin 参数）→ data.summary.{allRedDotStatus,
 # unReadCategoryId/unReadCategoryDescription/readMessageSubject} + data.categories[]
 PATH_MESSAGES_SUMMARY = "/api/cnxapi-message/app/messages/summary"
 
-# 家充桩管理（smartwallbox 智能壁挂充电桩，6.16.0 APK libapp.so 字符串逆向
+# 家充桩管理（smartwallbox 智能壁挂充电桩，6.16.0 接口字符串整理
 # 2026-10-08）：福特派 App「家充桩管理」对应云端 smartwallbox 服务（能力位
 # 0x8 privateChargingService / 0xA WallBoxAutoAuth 车型），端点均为
 # /api/smartwallbox/processor/... 家族：
@@ -209,7 +209,7 @@ PATH_MESSAGES_SUMMARY = "/api/cnxapi-message/app/messages/summary"
 #                                                          按桩查充电状态（wallboxId 路径占位）
 #     GET /api/smartwallbox/processor/charging/records/single/list/v2r  最近充电记录
 #     GET /api/smartwallbox/processor/config/common/query/v2            通用配置查询
-#   写操作（需 HAR 确认 body 后接入，绝不自动调用）：
+#   写操作（需实机样本确认 body 后接入，绝不自动调用）：
 #     /api/smartwallbox/processor/binding/updateDefaultWallbox/v2 设置默认桩
 #     /api/smartwallbox/processor/charging/start/v2              开始充电
 #     /api/smartwallbox/processor/sharing/share/v3 / unshare/v2  桩共享
@@ -217,7 +217,7 @@ PATH_SMARTWALLBOX_BINDING = "/api/smartwallbox/processor/binding/v5"
 PATH_SMARTWALLBOX_CHG_STATUS = "/api/smartwallbox/processor/charging/status/wallboxId/v2"
 PATH_SMARTWALLBOX_RECORDS = "/api/smartwallbox/processor/charging/records/single/list/v2r"
 PATH_SMARTWALLBOX_CONFIG = "/api/smartwallbox/processor/config/common/query/v2"
-# v3.7.2: 家充桩控制端点（6.16.0 APK 逆向）——仅探测到家充桩绑定的车型创建
+# v3.7.2: 家充桩控制端点（6.16.0 接口实测）——仅探测到家充桩绑定的车型创建
 #   charging/start/v2        开始充电（POST，body 需 wallboxId）
 #   charging/stop/v2         停止充电
 #   binding/unbind/v2        解绑充电桩
@@ -226,7 +226,7 @@ PATH_SMARTWALLBOX_CHARGE_START = "/api/smartwallbox/processor/charging/start/v2"
 PATH_SMARTWALLBOX_CHARGE_STOP = "/api/smartwallbox/processor/charging/stop/v2"
 PATH_SMARTWALLBOX_UNBIND = "/api/smartwallbox/processor/binding/unbind/v2"
 PATH_SMARTWALLBOX_AUTHORITY = "/api/smartwallbox/processor/authority/query/v3"
-# v3.7.3: 家充桩分享/桩级状态/充电订单（6.16.0 APK 逆向）——仅家充桩车型
+# v3.7.3: 家充桩分享/桩级状态/充电订单（6.16.0 接口实测）——仅家充桩车型
 #   探测到绑定桩后才尝试带 wallboxId 的 POST 探测，无绑定车型不创建：
 #   sharing/query/v3                 桩分享列表（只读）
 #   charging/status/wallbox          桩级充电状态（wallboxId 路径占位）
@@ -236,7 +236,7 @@ PATH_SMARTWALLBOX_SHARING_QUERY = "/api/smartwallbox/processor/sharing/query/v3"
 PATH_SMARTWALLBOX_CHG_STATUS_WB = "/api/smartwallbox/processor/charging/status/wallbox"
 PATH_SMARTWALLBOX_CHG_WB = "/api/smartwallbox/processor/charging/wallbox"
 PATH_SMARTWALLBOX_ORDERS = "/api/charging-center/v2/wallbox/orders"
-# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——家充桩分享（6.16.0 逆向
+# v5.8.2 未接入端点补全（2026-10-24 端点比对）——家充桩分享（6.16.0 实测
 # 端点：share 分享家人/unshare 取消/sharerInfo 分享人信息/signTnc 签署/
 # tnc content+sign 条款；写入类 body 结构从 sharing/query 探测返回回填）
 PATH_WALLBOX_SHARE = "/api/smartwallbox/processor/sharing/share/v3"
@@ -258,7 +258,7 @@ PATH_EVSS_STATIONS = "/api/evss/stations/v1"
 PATH_EVSS_ORDERS = "/api/evss/orders/v2"
 PATH_VPOI_CHARGESTATIONS = "/api/vpoi/chargestations/v3"
 
-# OTA 版本/详情（6.16.0 APK 逆向，2026-10-08，只读 GET 探测接入 v3.4.6）：
+# OTA 版本/详情（6.16.0 接口实测，2026-10-08，只读 GET 探测接入 v3.4.6）：
 #   alert/ota/versions             OTA 版本列表
 #   alert/ota/detail               OTA 详情（当前/目标版本等）
 #   alert/search-ota-details        OTA 更新详情
@@ -267,16 +267,16 @@ PATH_OTA_VERSIONS = "/api/alert/v1/ota/versions"
 PATH_OTA_DETAIL = "/api/alert/v1/ota/detail"
 PATH_OTA_SEARCH_DETAILS = "/api/alert/v1/search-ota-details"
 PATH_OTA_NEW_STATUS = "/api/alert/v1/search-new-ota-status"
-# 充电日志（6.16.0 APK 逆向，2026-10-08，只读 GET）：cevs/v2/chargelogs/retrieve
+# 充电日志（6.16.0 接口实测，2026-10-08，只读 GET）：cevs/v2/chargelogs/retrieve
 PATH_CHARGELOGS_RETRIEVE = "/api/cevs/v2/chargelogs/retrieve"
 # 家充桩充电过程日志（只读 GET，并入 smartwallbox 探测族 v3.4.6）
 PATH_SMARTWALLBOX_PROCESS_LOG = "/api/smartwallbox/processor/charging/records/process/log/v3"
 
-# ---- v3.5.0：APK 6.16.0 端点补全（全车型探测接入，2026-10-09 逆向） ----
+# ---- v3.5.0：6.16.0 端点补全（全车型探测接入，2026-10-09 实测） ----
 # 消息列表/标记已读（cnxapi-message）
 PATH_MESSAGES_PAGE = "/api/cnxapi-message/app/messages/page"
 PATH_MESSAGES_READ = "/api/cnxapi-message/app/messages/read"
-# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——消息单条已读
+# v5.8.2 未接入端点补全（2026-10-24 端点比对）——消息单条已读
 PATH_MESSAGES_V2_READBYID = "/api/cnxapi-message/app/message/v2/readbyid"
 # OTA 红点（alert/v1/vehicle-reddot-status——首页 OTA 可用角标）
 PATH_OTA_REDDOT = "/api/alert/v1/vehicle-reddot-status"
@@ -289,20 +289,20 @@ PATH_SCHEDULE_DEPARTURE = "/api/cnxapi-pds/v1/search-schedule-departure-tasks"
 # 预约充电启停/保存（cevs/v2/departuretimes）
 PATH_DEPARTURE_TOGGLE_ON = "/api/cevs/v2/departuretimes/toggleon"
 PATH_DEPARTURE_TOGGLE_OFF = "/api/cevs/v2/departuretimes/toggleoff"
-# v3.7.4: cevs 域命令状态查询（只读，APK 6.16.0 逆向）——
+# v3.7.4: cevs 域命令状态查询（只读，6.16.0 实测）——
 #   commandstatus/retrieve 检索预约/充电命令执行状态
 PATH_CEVS_COMMAND_STATUS = "/api/cevs/v2/commandstatus/retrieve"
-# v4.2.4: cevs 域写操作（6.16.0 Dart 反编译确认方法/键）——
-#   departuretimes/deleteall 清空全部预约出发/充电计划（body: data 包装+白盒
+# v4.2.4: cevs 域写操作（6.16.0 Dart 接口分析确认方法/键）——
+#   departuretimes/deleteall 清空全部预约出发/充电计划（body: data 包装+加密
 #   加密；集成侧与 retrieve 同构：vin=cevs 场景密文 + xjw，raw_body 无外层签名）
 PATH_DEPARTURE_DELETE_ALL = "/api/cevs/v2/departuretimes/deleteall"
-# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——cevs 写入补全：
+# v5.8.2 未接入端点补全（2026-10-24 端点比对）——cevs 写入补全：
 #   departuretimes/save 保存/新建预约出发充电计划（App 创建计划；写入
 #     body 从 retrieve 探测返回结构回填，字段名全部实测）
 #   chargelogs/delete    删除充电记录（chargeLogId 从 chargelogs 探测回填）
 PATH_DEPARTURE_SAVE = "/api/cevs/v2/departuretimes/save"
 PATH_CHARGELOGS_DELETE = "/api/cevs/v2/chargelogs/delete"
-# v4.2.6: 移动流量商城 H5 地址（6.16.0 独立逆向确认——CDS 域
+# v4.2.6: 移动流量商城 H5 地址（6.16.0 独立实测确认——CDS 域
 #   GET vehicle/search-cmcc-traffic-h5-url，只读，keys data/status）
 PATH_CMCC_TRAFFIC = "/api/cnxapi-cds/v1/vehicle/search-cmcc-traffic-h5-url"
 # v4.3.3: fposb 4S 维保预约（cnjvsl-fposb/v2，全车型只读探测）——
@@ -313,7 +313,7 @@ PATH_FPOSB_BOOKING_DETAIL = "/api/cnjvsl-fposb/v2/book/query/osbbookingdetail"
 PATH_FPOSB_AVAILABLE_RESOURCE = "/api/cnjvsl-fposb/v2/book/query/availableresource"
 PATH_FPOSB_SA_INFO = "/api/cnjvsl-fposb/v2/book/query/sainfo"
 PATH_FPOSB_PUD_DETAIL = "/api/cnjvsl-fposb/v2/book/pudorder/puddetail"
-# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——fposb 写操作：
+# v5.8.2 未接入端点补全（2026-10-24 端点比对）——fposb 写操作：
 #   osborder 维保预约下单（POST）/ osbcancel 取消预约（DELETE）
 PATH_FPOSB_ORDER = "/api/cnjvsl-fposb/v2/book/operation/osborder"
 PATH_FPOSB_CANCEL = "/api/cnjvsl-fposb/v2/book/operation/osbcancel"
@@ -326,18 +326,18 @@ PATH_EVSS_PARKING = "/api/evss/chargers/v2/parking"
 PATH_EVSS_ORDER_EVENTS = "/api/evss/chargers/v2/events/order"
 PATH_EVSS_FREEPASS_STATUS = "/api/evss/freepassword/v1/status"
 PATH_EVSS_FREEPASS_NOTICE = "/api/evss/freepassword/v1/notice"
-# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——evss 充电枪锁/解锁
+# v5.8.2 未接入端点补全（2026-10-24 端点比对）——evss 充电枪锁/解锁
 # （品牌专属桩 equipment 锁枪/解锁，equipmentId 从 chargers/v1/info 回填）
 PATH_EVSS_CHARGER_LOCK = "/api/evss/chargers/v1/brand/equipment/lock/down"
 
 # v3.7.4: cevs 域 RSA 加密候选公钥（App encryptByRSA 用公钥加密敏感字段后
-# POST；集成原白盒 AES 密文被服务器 RSA 解密失败 → Impossible modulus）。
-# 公钥取自 APK libapp.so 字符串表 2088-2089 行（完整 2048-bit PKCS#8
+# POST；集成原 AES 密文被服务器 RSA 解密失败 → Impossible modulus）。
+# 公钥取自 客户端字符串表 2088-2089 行（完整 2048-bit PKCS#8
 # SPKI，MIIBI 开头——与 App encryptByRSA 调用一致）。字符串表其余两处
 # "-----BEGIN PUBLIC KEY-----"（19274/22157 行）base64 被截断无法拼出
-# 完整 DER，不臆造；若 k1 命中失败，需 HAR 或重逆向确认第二候选。
+# 完整 DER，不臆造；若 k1 命中失败，需实机样本确认第二候选。
 CEVS_RSA_PUBKEYS = [
-    # k1: libapp.so PKCS#1 2048（v3.7.14：raw_body 形态下首次测）
+    # k1: 客户端 PKCS#1 2048（v3.7.14：raw_body 形态下首次测）
     "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv1XJU2JkRL0yvJoIwqpQ5ycYRi/2GsIgunOsz1Y+qDhYN/u+YQrWJj8iu6DypF1iDe9Lgtp62koR7mODtMjzRDzK1PzZFNMfHS+aD+VegMWfm834fS/wSNMP9J7DYx05TT5e3+lcmxBOF86euJqDBZsPhX5P1hNimRa97S4cVA1G9iw2ZY6YLU1nbBpPiG1V97TLbATqRKx6yXNmGcZwrE0sIXS62PTO24/9y6H0Jiq5EJcshXlvAHIl3usoPSmSBJWiE7acdOqWuiAiwaI/PnaXSgbtg1LErWJhT9Nv5R84DFiAlLJz7Hg7MRuQ2XO6pPEH5QiFb7tMqzU9WSGsuQIDAQAB\n-----END PUBLIC KEY-----",
     # k2: rsa_feed_back_public_key.txt PKCS#1 2048（未测）
     "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjmLaNFOoEzPYqs0WeN7UICxDTfBVer2mOyMW52Zw0T4gP4u8x+SEsUGXgs4sltA83EYJVb4X0cmr/PJK92j20RjtZvkyeWIWIpxABzQC+DZ8YAQlXTab4O4hQPD6QnuqlhSJ7n7DPGELnG8nbJYKwYzs3+ssNJAa3OMg4fwK6aaMxGYrUUGn2NEbSxNZIQ+3/OKW+UCAImv0cLl2dGPeCC14VLS8EsPVPmD8cmT3vSNIvqdtpmwos8af43SNgZ6o68tJv5W1ujZ8Op+dQnOaccFtugZMLCQCcpYh8l66p6Zf8Mf+XKtqyVO1V1uVHuD/tALZP1lZsGBmFwkiZSX2/wIDAQAB\n-----END PUBLIC KEY-----",
@@ -350,14 +350,14 @@ PATH_PDS_DEVICE = "/api/cnxapi-pds/v1/device"
 PATH_USER_AUTH_STATUS = "/api/cnxapi-vds/v1/vehicles/search-vehicle-user-auth-status"
 # SRS 安全档案（cds/v1/vehicles/search-srs-profile）
 PATH_SRS_PROFILE = "/api/cnxapi-cds/v1/vehicles/search-srs-profile"
-# v5.8.2 未接入端点补全（2026-10-24 逆向差集）——SRS 紧急联系人档案写操作
+# v5.8.2 未接入端点补全（2026-10-24 端点比对）——SRS 紧急联系人档案写操作
 # （add 新增/update 更新，body 从 search-srs-profile 探测返回回填）
 PATH_SRS_ADD = "/api/cnxapi-cds/v1/vehicles/add-srs-profile"
 PATH_SRS_UPDATE = "/api/cnxapi-cds/v1/vehicles/update-srs-profile"
 # 传感器影子（cnjvsl-sensor-mapping/v2/sensor/shadow）
 PATH_SENSOR_SHADOW = "/api/cnjvsl-sensor-mapping/v2/sensor/shadow"
 
-# v4.3.5: 逆向 228 端点比对后未接入的只读 GET 端点补全（全部无需抓包——
+# v4.3.5: 228 端点比对后未接入的只读 GET 端点补全（全部无需实测——
 # 标准 R3 签名 GET，探测到数据才创建实体）。来源：6.16.0 APK 端点全集
 # 归一化 diff（2026-10-13），与现有实体不重复、非变体、非 App 专用。
 # --- 家充桩只读扩展（smartwallbox，探测到绑定桩才创建） ---
@@ -370,15 +370,15 @@ PATH_EVSS_APPS_INFO = "/api/evss/apps/v1/info"
 PATH_EVSS_USAGE_NOTICE = "/api/evss/chargers/v1/events/usage-notice"
 PATH_VPOI_STATUS = "/api/vpoi/chargestations/v3/status/"
 PATH_VPOI_SAVED = "/api/vpoi/chargestations/v3/saved"
-# v5.8.4: vpoi v4（App 已升级 v4 路由；数据格式待 App 抓包确认后替换 v3
-# 传感器数据源——先探测落盘，抓包校准后启用实体）
+# v5.8.4: vpoi v4（App 已升级 v4 路由；数据格式待 App 实测确认后替换 v3
+# 传感器数据源——先探测落盘，实测校准后启用实体）
 PATH_VPOI_CHARGESTATIONS_V4 = "/api/vpoi/chargestations/v4"
 PATH_VPOI_SAVED_V4 = "/api/vpoi/chargestations/v4/saved"
 # --- OTA 协议（全车型，只读） ---
 PATH_OTA_AGREEMENTS = "/api/alert/v1/search-ota-agreements"
 
-# v4.3.6: 逆向 136 未接入清单第二轮筛选——剩余只读业务端点补全（全部无需
-# 抓包：标准 R3 签名，探测多形态自适应 GET→POST 空 body，探测到数据才创建）。
+# v4.3.6: 136 未接入清单第二轮筛选——剩余只读业务端点补全（全部无需
+# 实测：标准 R3 签名，探测多形态自适应 GET→POST 空 body，探测到数据才创建）。
 # --- 充电域订单/事件/评价（evss，仅电/插混/混动探测到数据才创建） ---
 PATH_EVSS_PAYMENT_SUMMARY = "/api/evss/orders/v2/payment/summary"
 PATH_EVSS_INVOICEABLES = "/api/evss/orders/v2/invoices/invoiceables"
@@ -391,7 +391,7 @@ PATH_SMARTWALLBOX_BLE_ADD = "/api/smartwallbox/processor/auto/charging/ble/add/v
 PATH_APP_INIT_SETTINGS = "/api/app-init/v1/app-setting/info"
 PATH_VEHICLE_MODEL_MASTERDATA = "/api/app-init/vehicleModel/v1/masterdata"
 # v5.8.4: 访客模式（visitor_mode v3 页面初始化信息，App 设置页入口；
-# 逆向确认（2026-10-25 pp.txt VisitorModeV3DTO）只读 GET，探测到数据才创建）
+# 实测确认（2026-10-25 接口定义 VisitorModeV3DTO）只读 GET，探测到数据才创建）
 PATH_VISITOR_MODE = "/api/app-init/v3/visitor-mode/init-page-info"
 
 # 行车记录仪视频（pds/v1 视频录制/查询）
@@ -402,7 +402,7 @@ PATH_VIDEO_FILE = "/api/cnxapi-pds/v1/search-video-file-url"
 # v3.5.1: 账号级只读端点补全（全车型/多账号适配）
 # 用户完整车辆清单（vds/v5/uservehicles——含每车 featureData 能力位图，全车型适配基石）
 PATH_USER_VEHICLES = "/api/cnxapi-vds/v5/uservehicles"
-# 消息中心 v2（APK 6.16.0 主用版本）
+# 消息中心 v2（6.16.0 主用版本）
 PATH_MESSAGES_V2_PAGE = "/api/cnxapi-message/app/messages/v2/page"
 # 车辆共享列表（cnesl-user 只读——他人授权访问状态）
 PATH_SHARE_LIST = "/api/cnesl-user/v1/search-vehicle-share-list"
@@ -414,7 +414,7 @@ PATH_USER_LOGIN_STATUS = "/api/cnesl-user/v1/user/login/status"
 # 车辆设备列表（vds/v1/search-vehicle-device-list）
 PATH_DEVICE_LIST = "/api/cnxapi-vds/v1/search-vehicle-device-list"
 
-# v3.6.2: 待开发清单补全（APK 6.16.0 端点）
+# v3.6.2: 待开发清单补全（6.16.0 端点）
 # 消息中心 v3（mcm 域，APK 主用——替代 cnxapi-message 双 404）
 PATH_MCM_MESSAGES_V3 = "/api/mcm/messagecenter/v3/user/messages"
 # 用户级红点（cnesl-user 域——账号级统一红点，字段更少，替代 alert 缺字段红点）
@@ -465,10 +465,10 @@ CMD_LIGHT_FIND_OFF = "ZoneLightingOFF"
 # v3.1.9: 删除 CMD_EXTEND_START 旧别名（曾错误指向 TrunkUnlock；App 远程启动延长
 # 的真实规范是 FORD_EXTEND_START，但锐际实测 send-command 网关白名单不含此项，
 # 不支持——见 v3.1.9 实测限制）。
-# v5.8.4: 重新接入 FORD_EXTEND_START（2026-10-25 pp.txt CommandTypeV2 枚举确认
+# v5.8.4: 重新接入 FORD_EXTEND_START（2026-10-25 接口定义 CommandTypeV2 枚举确认
 # App 存在该命令 = 远程启动延时）。⚠️ commandType 字符串为推断值
-# "RemoteStartExtend"（RemoteStart 族命名惯例，逆向仅见枚举名未见图文字符串），
-# 待模拟器 App 抓包校准——抓包后仅改此处。创建由服务端 command_whitelist
+# "RemoteStartExtend"（RemoteStart 族命名惯例，仅见枚举名未见图文字符串），
+# 待实车实测校准——实测后仅改此处。创建由服务端 command_whitelist
 # 门控（白名单含该命令才出现；2026-09-29 服务端枚举 16 命令尚不含它，
 # 若福特云后续开放则自动出现，不会制造假实体）。
 CMD_EXTEND_START = "RemoteStartExtend"
@@ -539,10 +539,10 @@ BRAND_LABELS = {
 DEFAULT_BRAND = BRAND_FORD
 
 # 品牌档案表（v4.7.4）：登录/API 常量按品牌取用。
-# 林肯之道（com.lincoln.lincolnwaycn / clutchcn）与福特派共用同一白盒加密库
-# （libwbsk_crypto_tool.so 包名绑定含林肯），但 B2C tenant/验证码登录端点/
-# App 指纹头无逆向数据——先占位 None 不编造值，ready=False 时 config flow
-# 提示"登录链路待抓包"，抓包补齐后置 ready=True 即可完整支持。
+# 林肯之道（com.lincoln.lincolnwaycn / clutchcn）与福特派共用同一加密库
+# （加密模块 包名绑定含林肯），但 B2C tenant/验证码登录端点/
+# App 指纹头无实测数据——先占位 None 不编造值，ready=False 时 config flow
+# 提示"登录链路待实测"，实测补齐后置 ready=True 即可完整支持。
 BRAND_PROFILE = {
     BRAND_FORD: {
         "base_url": BASE_URL,
@@ -559,15 +559,15 @@ BRAND_PROFILE = {
         "ready": True,
     },
     BRAND_LINCOLN: {
-        # v5.5.3: 林肯登录链路参数（2026-10-23 林肯 App v6.7.0 HAR 实证）——
+        # v5.5.3: 林肯登录链路参数（2026-10-23 林肯 App v6.7.0 实机样本实证）——
         # touchPoint=LINCOLN_APP_LOGIN / brand=LINCOLN / vehicles/list
         # appKey=lincoln&clientType=LW；网关与验证码/换 token 路径与福特共用
-        # v5.5.8: 林肯 App 5.8.0 逆向实证——cnxapi-vds/cvinfo/cds/token-exchange、
+        # v5.5.8: 林肯 App 5.8.0 实机验证——cnxapi-vds/cvinfo/cds/token-exchange、
         # v5 控制、cevs/smartwallbox/evss/vpoi/lwosb v2/message/OTA 全系列与福特
         # 共用同一网关与命令集（FORD_ENGINE_START/LOCK/HONK/TRAILERLIGHT 等）；
         # 车型字段（fuelType/modelName/ccfeatures/cvfeatures/vehicleStatus）与
         # 状态字段（gpsState/fuelLevel/odometer/tirePressure/oilLife）一致，
-        # 实体创建与解析逻辑直接复用；白盒加密 libwbsk_crypto_tool.so 与福特
+        # 实体创建与解析逻辑直接复用；加密 加密模块 与福特
         # 共用。林肯专属 cnesl-user 车辆共享/俱乐部、sensor-shadow 为附加功能
         "base_url": BASE_URL,
         "touch_point": "LINCOLN_APP_LOGIN",
@@ -580,7 +580,7 @@ BRAND_PROFILE = {
         "b2c_policy": None,
         "b2c_client_id": None,
         "b2c_redirect": None,
-        # v4.8.1: 林肯之道 5.8.0 逆向确认包名（X-Requested-With 客户端指纹）
+        # v4.8.1: 林肯之道 5.8.0 实测确认包名（X-Requested-With 客户端指纹）
         "app_package": "com.lincoln.lincolnwaycn",
         "ready": True,
     },

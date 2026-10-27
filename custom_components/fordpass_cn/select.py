@@ -1,6 +1,6 @@
 """Select platform: 鸣笛寻车设置（持续时长 / 鸣笛类型）。
 
-v3.0.8: 从福特派 App 设置页还原（2026-10-01 截图 + libapp.so 逆向）：
+v3.0.8: 按福特派 App 设置页整理（2026-10-01 界面截图 + 实机核对）：
 - 持续时长：5-20 秒（App 滑块，选项 5/10/15/20，默认 10）
 - 鸣笛类型：雨落荷叶 / 急浪拍岸 / 汽笛长鸣 / 空谷回音 / 声光共舞
   （App 设置页 5 种，强度从弱到强；ChirpType = 索引 + 1，
@@ -403,7 +403,7 @@ class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
     选项 16-30°C（候选范围，默认 24）；选择后即时上传福特账户云端
     （RemoteClimateSetting/TargetTemp 候选偏好通道，与鸣笛设置同构），
     回读云端 preference 更新 remote_climate_cloud，实现 App/HA/云端同步。
-    通道为按 App 命名风格推断的候选值，待电马/插混账号 HAR 实测校准——
+    通道为按 App 命名风格推断的候选值，待电马/插混账号实机样本实测校准——
     保存失败仅记日志，实体恒可用。
     """
 

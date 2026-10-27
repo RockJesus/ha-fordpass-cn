@@ -457,8 +457,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "账号下未发现车辆——请先在福特派/林肯之道 App 中确认已绑定车辆"
         )
 
-    # v4.2.7: 预热白盒密码学单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
-    # 查表实现（v4.2.7 起不再加载 ELF/.so/Unicorn）。表加载与 key 文件读取
+    # v4.2.7: 预热加密模块单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
+    # 查表实现（v4.2.7 起不再依赖原生库）。表加载与 key 文件读取
     # 仍统一放在线程中完成，双保险防止未来新增未包裹 to_thread 的调用路径
     # 造成 blocking call 回归。
     for scene in ("x_api", "cevs", "lbs_p2c"):
@@ -526,11 +526,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         nickname = vehicle.get("encryptedNickName") or vehicle.get("nickName") or None
         # v3.3.9: 拆开两张车型图——vehicleImageUrl=侧视（45view）、imageUrl=俯视
-        # （birdview，HAR 2026-10-03 实测字段；两字段各自独立创建图片实体）
+        # （birdview，实机样本2026-10-03 实测字段；两字段各自独立创建图片实体）
         vehicle_image_url = vehicle.get("vehicleImageUrl") or None
         vehicle_overlook_url = vehicle.get("imageUrl") or None
         # v3.3.9: 车辆信息（jointVenture/localMarketValue/modelYear/vehicleType/
-        # fuelType——vehicles/list 明文字段，HAR 实测；「车辆信息」传感器读取）
+        # fuelType——vehicles/list 明文字段，实机样本实测；「车辆信息」传感器读取）
         vehicle_info = {
             k: vehicle.get(k)
             for k in (
@@ -637,7 +637,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 生命周期），此处不再注册/注销。
 
     # v4.9.6: 移除 cevs 变体手动探测调试服务（probe_cevs_variant）——
-    # 合规审查项：逆向调试服务残留，自动化探测（probe_cevs_auto）已覆盖
+    # 合规审查项：调试接口残留，自动化探测（probe_cevs_auto）已覆盖
     # 所需变体，无需人工触发。对应 services.yaml 一并删除。
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

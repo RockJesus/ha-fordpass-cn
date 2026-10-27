@@ -1,7 +1,7 @@
 """Image platform: vehicle model pictures (侧视车型图 + 俯视车型图).
 
 The pictures (vehicleImageUrl=侧视45view / imageUrl=俯视birdview from
-/v5/vehicles/list, HAR 2026-10-03 实测) are downloaded once and persisted to
+/v5/vehicles/list，实机样本 2026-10-03 实测) are downloaded once and persisted to
 ``/config/.storage/fordpass_cn/<vin>[.overlook].png`` so they survive restarts
 and never need to be re-downloaded (or lost).  The entity's state shows the
 model name (e.g. 锐际 Escape) for readability — the picture itself is rendered

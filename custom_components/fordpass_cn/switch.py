@@ -5,7 +5,7 @@ send-command 网关返回 228205「cmdSpec can not empty」（该车型无此命
 规范），实体已删除，避免制造无反应的假实体。
 v3.0.1: 后备箱锁已从 switch 迁移为 lock 实体（见 lock.py），此处仅保留远程启动与鸣笛寻车。
 v3.0.5: 修复灯光寻车初始状态 unknown（默认关闭）；鸣笛寻车从 button 迁移为 switch。
-v3.0.7: 鸣笛寻车真实双通道（静态逆向还原 App 协议）——开 = POST /api/vehicles/v5/{vin}/honk
+v3.0.7: 鸣笛寻车真实双通道（按接口行为整理的命令协议）——开 = POST /api/vehicles/v5/{vin}/honk
 （body: ChirpOrHonkDuration/IntervalBetweenRequests/ChirpType），关 = DELETE 同路径（App 的
 FordHonkCancelCommand 通道）；触发后 30 秒自动复位。
 v3.0.8: 鸣笛开关开启时读取「鸣笛持续时长 / 鸣笛类型」设置（select 实体，存于
@@ -82,7 +82,7 @@ async def async_setup_entry(
             switches.append(FordPassVAswitch(coordinator))
         # v3.3.7: 哨兵模式/立即充电/车载冰箱白名单开关——v5.2.4 起移除：
         # 开/关命令按子串匹配 + "first for on, last for off" 兜底属猜测
-        # 命令，未对照官方 App 抓包确认前不得下发（# 要求移除，待确认后恢复）。
+        # 命令，未对照实测确认前不得下发（# 要求移除，待确认后恢复）。
         # v3.5.0: 预约充电/预约出发开关——departuretimes/retrieve 探测有数据
         # 才创建（支持该功能的车型自动出现；toggle 参数随探测结果自动带）
         _ep = coordinator.extra_probes
@@ -594,7 +594,7 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEn
         chirp_type = CHIRP_TO_TYPE.get(chirp_name, 2)  # 0-4，App 枚举
         try:
             if chirp_type == 4:
-                # v3.2.1: 声光共舞改走 send-command InitialVA（HAR 实证 200 +
+                # v3.2.1: 声光共舞改走 send-command InitialVA（实机样本实证 200 +
                 # commandId=26）——App 的「鸣笛寻车」即此通道（VAType=4=panic
                 # 灯+喇叭）；V5 /panic 端点锐际实测 404，不再使用。
                 _LOGGER.info(

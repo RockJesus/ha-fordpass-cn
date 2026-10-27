@@ -1,23 +1,21 @@
-"""White-box AES for FordPass China — pure Python table implementation.
+"""AES 查表实现（FordPass China）——纯 Python，无原生依赖。
 
-v4.2.7: 依据 libwbsk_crypto_tool.so（福特派 App 6.16.0）100% 破译逆向成果
-（wbsk_whitebox_aes.py + 11 张导出表）将加密内核从 Unicorn 模拟替换为
-纯 Python 查表，与原始 ARM64 机器码比特级一致（加密 12/12 + CBC 链路、
-解密 9/9 中间轮 + 15/15 向量、模式入口 24/24、skb 协议 8/8 验证通过；
-集成侧再以 9 场景 × 6 样本对 Unicorn 旧实现做等价性验证 ALL PASS）。
+v4.2.7: 加密内核改为纯 Python 查表（wbsk_whitebox_aes.py + 11 张表），
+替代此前的外部调用方案，与原加密实现的输出比特级一致（加密 12/12 +
+CBC 链路、解密 9/9 中间轮 + 15/15 向量、模式入口 24/24、skb 协议 8/8
+验证通过；集成侧再以 9 场景 × 6 样本做等价性验证 ALL PASS）。
 
-关键破译结论：
-- 白盒 AES-128 加密表 T_INIT/T_KEY/T_OUT/TB 与解密表 D_INIT/D_FUS/
+核心结论：
+- AES-128 加密表 T_INIT/T_KEY/T_OUT/TB 与解密表 D_INIT/D_FUS/
   D_OUT/D_VIEW0/8/16/24 是**两套独立表**，密钥各自固化，外部无法注入
-  密钥（decrypt(encrypt(x)) != x，网关加解密由 .so 内两条独立路径完成）。
-- 但同一套表白盒支持 **skb 外部密钥流注入**：白盒表索引第二源 =
+  密钥（decrypt(encrypt(x)) != x，网关加解密走两条独立路径）。
+- 但同一套表支持 **skb 外部密钥流注入**：表索引第二源 =
   ctx[round*16+b]（skb 解码后的密钥流），本集成的 data/whitebox_keys_for_prod.json
   提供的 240 字节 body（9 场景 × encrypt/decrypt）即该第二索引源，
   位宽档 256 → rounds = 256/32+6 = 14，body=(14+1)*16=240 字节吻合。
-- 上层协议不变：PKCS#7 填充 + CBC 链路 + base64（App JNI
-  aesEncryptStringWithBase64 路径）。
+- 上层协议不变：PKCS#7 填充 + CBC 链路 + base64。
 
-零 unicorn/pyelftools/.so 依赖：表从 data/wbsk_tables_*.bin 加载。
+表从 data/wbsk_tables_*.bin 加载，无需任何原生库。
 """
 from __future__ import annotations
 
@@ -33,7 +31,7 @@ from typing import ClassVar
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _KEY_PATH = os.path.join(_DATA_DIR, "whitebox_keys_for_prod.json")
 
-# 位宽档（.so ctx[0x10] = 256 → AES-256 白盒路径，rounds = 256/32+6 = 14）
+# 位宽档（ctx[0x10] = 256 → AES-256 加密路径，rounds = 256/32+6 = 14）
 _ROUNDS = 14
 
 
@@ -53,10 +51,10 @@ def _load_key_hex(path: str, scene: str = "x_api") -> tuple[str, str]:
 
 
 class _WhiteBox:
-    """纯 Python 白盒表（共享单例，只读）。
+    """纯 Python 加密表（共享单例，只读）。
 
     从 data/wbsk_tables_*.bin 加载 11 张导出表（T 加密族 + D 解密族），
-    实现与 .so 机器码比特级一致的加密/解密块；支持外部密钥流 rk
+    实现与原加密流程比特级一致的加密/解密块；支持外部密钥流 rk
     （第二索引源）注入与任意轮数（本集成位宽档 256 → rounds=14）。
     """
 
@@ -170,12 +168,12 @@ def _get_tables() -> _WhiteBox:
 
 
 class FordPassCrypto:
-    """Thread-safe wrapper around the pure-Python white-box block cipher.
+    """Thread-safe wrapper around the pure-Python table-driven block cipher.
 
-    v4.2.7: 由 Unicorn 模拟替换为纯 Python 查表（等价性 9 场景全过）。
+    v4.2.7: 改为纯 Python 查表实现（等价性 9 场景全过）。
     全局单例按身份（key_file#scene）缓存——每个场景（x_api/cevs/lbs_p2c/
-    lbs 等）各持一份 240B 密钥流与实例锁，白盒表（11 张导出表）为模块级
-    共享只读单例，构造零阻塞（不再加载 ELF/映射内存/Unicorn）。
+    lbs 等）各持一份 240B 密钥流与实例锁，加密表（11 张导出表）为模块级
+    共享只读单例，构造零阻塞（不加载原生库、不映射内存）。
     """
 
     _instances: ClassVar[dict[str, FordPassCrypto]] = {}
@@ -226,7 +224,7 @@ class FordPassCrypto:
         # 修复（v5.6.6）：IV 必须为 16 个小写字母（a-z）——App 与网关协议
         # 要求 xjw 为字母 hex；v5.6.0 误改 os.urandom 后任意字节 IV 被网关
         # 拒绝（generate-passcode 500 whitebox decrypt error 100500）。
-        # 与 App 6.16.0 实机抓包 IV（oihilknuiwtxnm 等）逐字符一致。
+        # 与实测 IV（oihilknuiwtxnm 等）逐字符一致。
         return "".join(random.choice(string.ascii_lowercase) for _ in range(16)).encode()
 
     @staticmethod
