@@ -178,7 +178,7 @@ async def async_setup_entry(
         all_sensors.extend(_make_sensors(coordinator))
     async_add_entities(all_sensors)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
-    # async_write_ha_state；失败轮不触发，保留旧值。v5.10.0 起属性不再
+    # async_write_ha_state；失败轮不触发，保留旧值。v5.9.8 起属性不再
     # 含每轮变化的 last_poll，值未变的实体不会产生 state_changed。
     try:
 
@@ -651,7 +651,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                     _pri.append(_s)
                     sensors.remove(_s)
         sensors = _pri + sensors
-    # v5.10.0: last_poll 从全部实体属性收口到唯一的诊断实体（默认停用，
+    # v5.9.8: last_poll 从全部实体属性收口到唯一的诊断实体（默认停用，
     # 需要的自动化场景手动启用——启用后它自己每轮变化，但只此一个）
     sensors.append(FordPassLastPollSensor(coordinator))
     return sensors
@@ -683,7 +683,7 @@ class FordPassVehicleAttrSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        # v5.10.0: 不再随实体携带 last_poll——该值每轮刷新都变，会把值
+        # v5.9.8: 不再随实体携带 last_poll——该值每轮刷新都变，会把值
         # 未变化的实体也拉进 state_changed（recorder 行数随实体数线性
         # 增长）。全局唯一权威来源见「云端最后刷新」诊断实体。
         return {}
@@ -772,7 +772,7 @@ class FordPassRestoreMixin(RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
-        """透传子类属性。v5.10.0: 不再统一注入 last_poll——该值每轮刷新
+        """透传子类属性。v5.9.8: 不再统一注入 last_poll——该值每轮刷新
         都变，会把值未变化的实体也拉进 state_changed（recorder 行数随
         实体数线性增长）。全局唯一权威来源见「云端最后刷新」诊断实体。
         兼容逻辑说明：v4.8.5 曾漏 @property 导致控制类实体添加报
@@ -810,9 +810,9 @@ class FordPassRestoreMixin(RestoreEntity):
 
 
 class FordPassLastPollSensor(SensorEntity):
-    """云端最后刷新时间（v5.10.0，诊断实体，默认停用）。
+    """云端最后刷新时间（v5.9.8，诊断实体，默认停用）。
 
-    v5.10.0: last_poll 从全部实体属性中移除——该值每轮刷新都变，会把
+    v5.9.8: last_poll 从全部实体属性中移除——该值每轮刷新都变，会把
     值未变化的实体也拉进 state_changed，recorder 行数随实体数线性增长
     （实测一次刷新 80 个实体同时写入、每天上万行）。全局唯一权威来源
     收口到本实体：依赖「最后刷新时间」的自动化迁移到本实体
