@@ -33,7 +33,7 @@ async def async_setup_entry(
     trackers = [FordPassDeviceTracker(c) for c in coordinators]
     async_add_entities(trackers)
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
-    # async_write_ha_state；失败轮不触发，保留旧值。v5.10.0 起属性不再
+    # async_write_ha_state；失败轮不触发，保留旧值。v5.9.8 起属性不再
     # 含每轮变化的 last_poll，值未变的实体不会产生 state_changed。
     try:
 
@@ -118,7 +118,7 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
         loc = self._location or {}
         # v4.8.9: 修复 v4.8.5 引入的 NameError（attrs 未定义）——该 bug 导致
         # 定位实体写状态失败、永远 unavailable。
-        # v5.10.0: last_poll 移出属性（每轮变化 → state_changed 噪音），
+        # v5.9.8: last_poll 移出属性（每轮变化 → state_changed 噪音），
         # 权威来源见「云端最后刷新」诊断实体；upload_time 为云端数据时间戳。
         return {
             "address": loc.get("address"),
