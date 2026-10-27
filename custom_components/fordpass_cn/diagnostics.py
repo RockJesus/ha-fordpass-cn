@@ -42,7 +42,14 @@ async def async_get_config_entry_diagnostics(
         data = getattr(entry, "runtime_data", None)  # v5.3.0
         if isinstance(data, dict) and (coord := data.get("coordinator")):
             payload["coordinator"] = {
-                "last_update": str(getattr(coord, "last_update", None)),
+                # v5.9.7: HA 早已移除 DataUpdateCoordinator.last_update，
+                # 取它永远是 None。改用集成自己的 last_poll（成功刷新时写入），
+                # 兼容性兜底再取 last_update_success_time / last_update。
+                "last_poll": str(getattr(coord, "last_poll", None)),
+                "last_success_time": str(
+                    getattr(coord, "last_update_success_time", None)
+                    or getattr(coord, "last_update", None)
+                ),
                 "last_update_success": bool(
                     getattr(coord, "last_update_success", None)
                 ),
