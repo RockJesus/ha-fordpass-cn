@@ -1011,16 +1011,25 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             prev_ota = (self.data or {}).get("ota_setting")
             data["ota_setting"] = prev_ota if isinstance(prev_ota, dict) else None
             self.logger.debug("FordPass ota_setting 拉取失败，沿用上一轮数据")
-        # 服务信息端点（保养计划 12h / 召回 24h / SIM 6h TTL；WiFi 状态
+        # 服务信息端点（保养计划 12h / 召回 24h TTL；WiFi 状态
         # v3.8.8 起跟随状态刷新间隔每轮刷新，不再固定 15 分钟）
         for key, ttl, factory in (
             ("maintenance_plan", 43200, lambda: self.api.get_maintenance_plan(self.vin)),
             ("recall", 86400, lambda: self.api.get_recall(self.vin)),
-            ("sim_info", 21600, lambda: self.api.get_sim_info(self.vin)),
         ):
             data[key] = await self._cached_fetch(
                 key, ttl, factory, force=force_all
             )
+        # v6.0.1: SIM 卡信息改为持久化一次拉取——ICCID/运营商/手机号是
+        # 写卡即定的终身恒量，此前 6h TTL 意味着每天真拉 4 次、每次重启
+        # 重拉。改走探测同级缓存（PROBE_PERSIST_TTL=7 天 + 落盘持久化，
+        # 重启/重载复用）：纯油车确定性业务拒绝（FordPassProbeRejected）
+        # 照旧落盘 None 不再重探；手动「刷新车辆状态」仍强制真拉。
+        data["sim_info"] = await self._cached_fetch(
+            "sim_info", PROBE_PERSIST_TTL,
+            lambda: self.api.get_sim_info(self.vin),
+            persist=True, force=force_all,
+        )
         # 车载 WiFi 状态（v3.8.8: 跟随状态刷新间隔每轮刷新；失败保留旧值）
         # v4.3.0: get_wifi_status 对确定性业务拒绝返回 None（已降噪），
         # None 同样保留最后已知状态（拒绝 ≠ 实体显示不可用）。
@@ -1050,15 +1059,22 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data["air_filter"] = await self._cached_fetch(
             "air_filter", 21600, lambda: self.api.get_air_filter_status(self.vin), force=force_all
         )
-        # 云端能力+服务信息（ccfeatures 24h TTL——出厂能力几乎永不变）
-        # 与预测性诊断（prognostic 6h TTL——机油寿命/剩余里程变化慢）
-        for key, ttl, factory in (
-            ("ccfeatures", 86400, lambda: self.api.get_ccfeatures(self.vin)),
-            ("prognostic", 21600, lambda: self.api.get_prognostic(self.vin)),
-        ):
-            data[key] = await self._cached_fetch(
-                key, ttl, factory, force=force_all
-            )
+        # 云端能力+服务信息：ccfeatures v6.0.1 起持久化一次拉取——救援/
+        # 客服/售后电话、视频说明书 URL、能力位图（availableFeatures）都是
+        # 出厂即定的恒量，此前 24h TTL 每天真拉 1 次；现改探测同级缓存
+        # （PROBE_PERSIST_TTL=7 天 + 落盘，重启/重载复用），新购云端功能
+        # 最长 7 天自动同步，「手动刷新车辆状态」仍立即重拉。
+        # 预测性诊断（prognostic 6h TTL——机油寿命/剩余里程变化慢，属
+        # 会变化数据，保持周期轮询）。
+        data["ccfeatures"] = await self._cached_fetch(
+            "ccfeatures", PROBE_PERSIST_TTL,
+            lambda: self.api.get_ccfeatures(self.vin),
+            persist=True, force=force_all,
+        )
+        data["prognostic"] = await self._cached_fetch(
+            "prognostic", 21600, lambda: self.api.get_prognostic(self.vin),
+            force=force_all,
+        )
         # 未读消息摘要（60 分钟 TTL；v5.1.8: 账号级共享缓存——账户级
         # 端点多车共享一份，多车每轮只真拉一次）
         # v5.7.4: TTL 1800→3600——与刷新间隔等长导致缓存永不命中，改后
