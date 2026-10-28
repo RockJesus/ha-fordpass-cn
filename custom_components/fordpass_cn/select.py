@@ -331,7 +331,7 @@ class FordPassHonkDurationSelect(_FordPassHonkSettingSelect):
     ) -> None:
         super().__init__(hass, entry, coordinator, settings)
         self._attr_unique_id = f"{coordinator.uid_key}-honk_duration"
-        self._attr_name = "鸣笛持续时长"
+        self._attr_name = "鸣笛寻车持续时长"
         self._attr_device_info = coordinator.device_info
         self._attr_options = [f"{v} 秒" for v in HONK_DURATION_OPTIONS]
         self._attr_current_option = (
@@ -368,7 +368,7 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
     ) -> None:
         super().__init__(hass, entry, coordinator, settings)
         self._attr_unique_id = f"{coordinator.uid_key}-chirp_type"
-        self._attr_name = "鸣笛类型"
+        self._attr_name = "鸣笛寻车类型"
         self._attr_device_info = coordinator.device_info
         self._attr_options = list(CHIRP_TYPE_OPTIONS)
         self._attr_current_option = settings.get(

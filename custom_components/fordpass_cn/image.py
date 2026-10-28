@@ -3,9 +3,9 @@
 The pictures (vehicleImageUrl=侧视45view / imageUrl=俯视birdview from
 /v5/vehicles/list，实机样本 2026-10-03 实测) are downloaded once and persisted to
 ``/config/.storage/fordpass_cn/<vin>[.overlook].png`` so they survive restarts
-and never need to be re-downloaded (or lost).  The entity's state shows the
-model name for readability — the picture itself is rendered
-by the frontend from the image proxy.
+and never need to be re-downloaded (or lost).  v6.0.4: 实体状态显示本实体
+昵称（注册表重命名优先），用于区分同车型的多张图片实体——图片本身由前端
+通过 image 代理渲染。
 
 v5.2.4: 图片缓存从 /config/www 迁至 /config/.storage 私有目录——www 目录经
 /local/ 无认证可下载，任何人知道 VIN 就能拉取车辆图片。.storage 由 HA 私有管理、不对外服务。
@@ -44,6 +44,20 @@ def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
     # v5.6.5: 文件名一律用 sha1 摘要（不再以完整 VIN 命名），杜绝 VIN 落盘
     safe = hashlib.sha1(vin.encode("utf-8")).hexdigest()[:16]
     return os.path.join(hass.config.path(".storage"), "fordpass_cn", f"{safe}{suffix}.png")
+
+
+def _entity_nickname(entity) -> str:
+    """v6.0.4: 取实体昵称——注册表用户重命名优先，其次集成给的名称。
+
+    ``Entity.registry_entry`` 是 HA 平台在实体注册后回填的公开属性；用户
+    在前端改过的名称（entry.name）优先于集成提供的 _attr_name，这样图片
+    实体的状态能跟随用户自己的命名。
+    """
+    entry = getattr(entity, "registry_entry", None)
+    if entry is not None and entry.name:
+        return entry.name
+    name = getattr(entity, "name", None)
+    return name if isinstance(name, str) else ""
 
 
 def _read_local(path: str) -> bytes | None:
@@ -129,13 +143,8 @@ class FordPassVehicleImage(ImageEntity):
 
     @property
     def state(self) -> str:
-        """Show the model name instead of an empty value.
-
-        HA image entities normally have no textual state; returning the model
-        name makes the card readable while the picture still renders from the
-        image proxy.
-        """
-        return self.coordinator.vehicle_model
+        """v6.0.4: 状态显示本实体昵称（此前所有图片实体都返回车型名，无法区分）。"""
+        return _entity_nickname(self) or self.coordinator.vehicle_model
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
@@ -248,14 +257,18 @@ class FordPassRemoteImageEntity(ImageEntity):
 
     @property
     def state(self) -> str:
-        """图片可用性提示：有 URL 显示「最新影像」，否则「暂无影像」。"""
-        return "最新影像" if self._image_url() else "暂无影像"
+        """v6.0.4: 状态显示本实体昵称（原为「最新影像/暂无影像」，两张图无法区分）。
+
+        影像有无改由属性 image_status 承载，信息不丢失。
+        """
+        return _entity_nickname(self) or ("最新影像" if self._image_url() else "暂无影像")
 
     @property
     def extra_state_attributes(self) -> dict:
         img = self._resp()
         attrs = {
             "image_url": self._image_url() or "",
+            "image_status": "最新影像" if self._image_url() else "暂无影像",
             "kind": self._kind,
             "car_id": (img or {}).get("car_id") or getattr(self.coordinator, "car_id", None),
         }
@@ -363,7 +376,8 @@ class FordPass3dModelImage(ImageEntity):
 
     @property
     def state(self) -> str:
-        return self.coordinator.vehicle_model
+        """v6.0.4: 状态显示本实体昵称（此前返回车型名，与其他图片实体重复）。"""
+        return _entity_nickname(self) or self.coordinator.vehicle_model
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:

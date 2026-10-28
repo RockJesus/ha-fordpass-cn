@@ -698,7 +698,9 @@ class FordPassLocationSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-location"
-        self._attr_name = "车辆定位"
+        # v6.0.4: 与 device_tracker 区分（两者此前同名「车辆定位」）——
+        # 本实体状态是地址文本，故命名「车辆定位地址」；device_tracker 为「车辆位置」。
+        self._attr_name = "车辆定位地址"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
@@ -1693,7 +1695,7 @@ class FordPassSlowLeakSensor(_ServiceInfoSensor):
     """慢漏气胎（v3.1.9）：prognostic.data.tiresWithSlowLeak（null=无）。"""
 
     def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "prognostic", "慢漏气胎", "mdi:tire", uid="prognostic_slowleak")
+        super().__init__(coordinator, "prognostic", "慢漏气车胎", "mdi:tire", uid="prognostic_slowleak")
 
     def _format(self, data: dict) -> str | None:
         payload = data.get("data") if isinstance(data, dict) else None
@@ -2046,7 +2048,7 @@ class FordPassChirpCloudSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-chirp_cloud"
-        self._attr_name = "鸣笛设置云端状态"
+        self._attr_name = "鸣笛寻车设置云端状态"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2113,7 +2115,7 @@ class FordPassAnnounceStatusSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-announce_status"
-        self._attr_name = "鸣笛命令状态"
+        self._attr_name = "鸣笛寻车命令状态"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2271,7 +2273,7 @@ class FordPassSyncHealthSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-sync_health"
-        self._attr_name = "云端同步状态"
+        self._attr_name = "官网云端状态"
         self._attr_device_info = coordinator.device_info
 
     @property

@@ -41,6 +41,11 @@ class _FakeImageEntity:
     def state_attributes(self) -> dict[str, str]:
         return {"access_token": self.access_tokens[-1]}
 
+    @property
+    def name(self) -> str | None:
+        """与 core Entity.name 同语义：返回 _attr_name（has_entity_name 下即实体名）。"""
+        return getattr(self, "_attr_name", None)
+
     def async_update_token(self) -> None:
         """core 原版：每次追加随机 token（子类应覆盖为只播种）。"""
         self.access_tokens.append(TOKEN_HEX)
@@ -197,3 +202,33 @@ def test_async_image_reads_local_file_without_network() -> None:
     data = asyncio.run(ent.async_image())
     assert data == b"PNGDATA"
     assert ent._image_bytes == b"PNGDATA"
+
+
+def test_state_shows_entity_nickname() -> None:
+    """v6.0.4: 图片实体状态显示本实体昵称，不再所有实体都返回车型名。"""
+    mod = load_image()
+    side = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "side")
+    overlook = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "overlook")
+    assert side.state == "侧视车型图"
+    assert overlook.state == "俯视车型图"
+    assert side.state != overlook.state  # 修复前两者都返回「测试车型」
+
+
+def test_state_prefers_registry_rename() -> None:
+    """用户在注册表里重命名后，状态跟随即时生效。"""
+    mod = load_image()
+    ent = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "side")
+    ent.registry_entry = types.SimpleNamespace(name="我的爱车侧视图")
+    assert ent.state == "我的爱车侧视图"
+
+
+def test_remote_image_state_and_attribute() -> None:
+    """远程影像状态=昵称；影像有无由 image_status 属性承载（信息不丢）。"""
+    mod = load_image()
+    coord = _FakeCoordinator({"remote_image": {"kind": "parking"}})
+    ent = mod.FordPassRemoteImageEntity(_FakeHass(), coord, "parking")
+    assert ent.state == "停车影像图"
+    assert ent.extra_state_attributes["image_status"] == "暂无影像"
+    ent._last_url = "https://example.invalid/p.jpg"
+    assert ent.state == "停车影像图"
+    assert ent.extra_state_attributes["image_status"] == "最新影像"
