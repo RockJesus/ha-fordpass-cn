@@ -1033,12 +1033,40 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 车载 WiFi 状态（v3.8.8: 跟随状态刷新间隔每轮刷新；失败保留旧值）
         # v4.3.0: get_wifi_status 对确定性业务拒绝返回 None（已降噪），
         # None 同样保留最后已知状态（拒绝 ≠ 实体显示不可用）。
-        try:
-            wifi = await self.api.get_wifi_status(self.vin)
-            data["wifi_status"] = wifi if wifi is not None else (self.data or {}).get("wifi_status")
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("FordPass wifi_status fetch failed: %s", exc)
+        # v6.0.3: CONS.AUTH.0005 是确定性拒绝（纯油车型无热点服务，永不成功），
+        # 不再每轮白打——首次拒绝后在 probe_cache 落标记（持久化，
+        # PROBE_PERSIST_TTL 内直接沿用旧值，手动刷新 force_all 可越过）；
+        # 成功路径行为不变（仍每轮真拉，用户要求）。不用 _cached_fetch 包装，
+        # 因为它会把成功值也缓存 TTL——违背「每轮刷新」语义。
+        _wifi_rej = (self._probe_cache or {}).get("wifi_status_rejected")
+        if not force_all and _wifi_rej and time.time() < _wifi_rej.get("expire", 0):
             data["wifi_status"] = (self.data or {}).get("wifi_status")
+        else:
+            try:
+                wifi = await self.api.get_wifi_status(self.vin)
+                data["wifi_status"] = (
+                    wifi if wifi is not None else (self.data or {}).get("wifi_status")
+                )
+                if wifi is not None and "wifi_status_rejected" in self._probe_cache:
+                    # 服务恢复可用：清掉拒绝标记，回到每轮真拉
+                    self._probe_cache.pop("wifi_status_rejected", None)
+                    await self._probe_save()
+            except FordPassProbeRejected:
+                # 确定性拒绝：落盘标记（v6.0.3），TTL 内不再请求
+                self._probe_cache["wifi_status_rejected"] = {
+                    "expire": time.time() + PROBE_PERSIST_TTL,
+                    "value": None,
+                }
+                await self._probe_save()
+                self.logger.info(
+                    "FordPass wifi/status 确定性拒绝（车型无热点服务），"
+                    "%d 天内不再请求（手动刷新可越过）",
+                    int(PROBE_PERSIST_TTL // 86400),
+                )
+                data["wifi_status"] = (self.data or {}).get("wifi_status")
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug("FordPass wifi_status fetch failed: %s", exc)
+                data["wifi_status"] = (self.data or {}).get("wifi_status")
         # 鸣笛设置云端状态（chirp_cloud）——v3.9.3: 恢复纳入常规轮询
         # （跟随状态刷新间隔每轮真拉，失败保留旧值）：App/车机端改动
         # 后 HA 自动同步「鸣笛设置云端状态」。v3.9.1 曾因"轮询会把 App

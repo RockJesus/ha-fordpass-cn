@@ -517,7 +517,6 @@ def _mask_debug_json(obj: Any) -> Any:
 
 
 class FordPassApi:
-    _last_wifi_reject_log: float = 0.0  # v4.3.0: wifi/status 业务拒绝降噪限频
 
     def __init__(
         self,
@@ -2079,18 +2078,18 @@ class FordPassApi:
         v4.3.0: 确定性业务拒绝（returnSuccess=false / CONS.AUTH.0005）
         识别——降噪（同类型 1 小时限频一次 INFO）并返回 None，
         coordinator 保留最后已知状态（拒绝 ≠ 实体显示不可用）。
+        v6.0.3: 该拒绝是确定性的（纯油车型无车联网热点服务，永远不会
+        成功），改抛 FordPassProbeRejected，由 coordinator 落拒绝标记
+        长缓存——TTL 内不再每轮白打请求（日志噪音同除）；成功路径
+        行为不变（仍每轮真拉）。
         """
         data = await self._get_signed(PATH_WIFI_STATUS, vin)
         inner = data.get("data") if isinstance(data, dict) else None
         if isinstance(inner, dict) and inner.get("returnSuccess") is False:
             code = f"{inner.get('returnErrCode', '')} {inner.get('returnErrMsg', '')}".strip()
-            now = time.monotonic()
-            if now - self._last_wifi_reject_log > 3600:
-                self._log.info(
-                    "FordPass wifi/status business rejected (%s) - keep last known", code
-                )
-                self._last_wifi_reject_log = now
-            return None
+            raise FordPassProbeRejected(
+                inner.get("returnStatus", 200), f"wifi/status business rejected: {code}"
+            )
         return data
 
     async def get_warranty(self, vin: str) -> dict[str, Any]:

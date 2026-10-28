@@ -108,7 +108,11 @@ async def _cleanup_legacy_vin(hass: HomeAssistant, entry: ConfigEntry, coord) ->
         # v5.8.1: HA 2026.10 async_get_device_by_identifier 增加必填 config_entry_id
         #         参数（缺失导致 TypeError 清理失败，日志 legacy vin device cleanup
         #         failed）——补传 entry.entry_id
-        dev = dreg.async_get_device_by_identifier({(DOMAIN, coord.vin)}, entry.entry_id)
+        # v6.0.3: HA 2026.10 实际签名为 (identifier: tuple, config_entry_id)——
+        #         接收**单个 tuple** 而非 set。此前传 {(DOMAIN, vin)} 导致 HA 内部
+        #         identifiers={{...}} 抛 "cannot use 'set' as a set element"，
+        #         本清理自 v5.8.1 起每次启动都静默失败（日志可见）。
+        dev = dreg.async_get_device_by_identifier((DOMAIN, coord.vin), entry.entry_id)
         if dev is not None:
             _LOGGER.debug("fordpass_cn cleanup legacy vin device: %s", dev.id)
             dreg.async_remove_device(dev.id)
