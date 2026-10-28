@@ -942,8 +942,12 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
                 return None
         if self._multiplier is not None and isinstance(value, (int, float)) and not isinstance(value, bool):
             value = value * self._multiplier
+        # v6.0.2: 修正 round_value 提前 return——此前取整后直接返回，后面
+        # 的 enum_map/transform 被静默跳过（同一实体同时配 round_value 与
+        # enum_map/transform 时映射/换算失效，且无任何报错，肉眼难查）。
+        # 现改为链式处理：先取整，再依次走映射与换算。
         if self._round_value and isinstance(value, (int, float)) and not isinstance(value, bool):
-            return round(value)
+            value = round(value)
         if self._enum_map is not None:
             value = self._enum_map.get(value, value)
         if self._transform is not None:
@@ -2282,12 +2286,16 @@ class FordPassSyncHealthSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
+        # v6.0.2: 移除每轮都变的 last_success 属性——它与 v5.9.8 清掉的
+        # last_poll 属同一类问题：每轮刷新后时间戳必然变化，实体值（正常/
+        # 异常）却没变，于是「值未变但属性变了」仍会落一条 recorder 状态行
+        # （实测每轮 1 条，每天约 48 条纯噪音）。权威来源已统一收口到
+        # 「云端最后刷新」诊断实体（device_class=TIMESTAMP，两者同为
+        # _last_success_time，语义完全等价）。本实体常态下因此完全静止：
+        # 只有真的同步失败才会写状态。
         c = self.coordinator
         attrs: dict = {}
-        st = getattr(c, "_last_success_time", None)
         et = getattr(c, "_last_error_time", None)
-        if st is not None:
-            attrs["last_success"] = st.isoformat()
         if et is not None:
             attrs["last_error"] = et.isoformat()
         attrs["consecutive_failures"] = getattr(c, "_consecutive_failures", 0)
