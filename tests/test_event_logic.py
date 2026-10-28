@@ -7,14 +7,18 @@
 - 取不到告警（``active_alerts`` 非列表）不得当成「告警全部消失」；
 - 只有云端明确返回空列表才允许触发 ``cleared``；
 - 首次回调只建基线，不补发历史；
-- 车门事件多门合并、大小写兼容、``Unknown`` 忽略。
+- 车门事件多门合并、大小写兼容、``Unknown`` 忽略；
+- 重启恢复（v6.1.2）：合法事件类型回填内部记录，非法/缺失安全降级，
+  恢复后首次刷新仍只建基线。
 """
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
@@ -30,6 +34,17 @@ class _FakeEntity:
 
     def async_write_ha_state(self) -> None:
         """测试里不需要真正写状态。"""
+
+
+class _FakeRestoreEntity(_FakeEntity):
+    """替代 homeassistant.helpers.restore_state.RestoreEntity。
+
+    测试通过 ``entity._fake_last_state = ...`` 注入历史状态（不用类属性
+    默认值，因为 ``_FordPassEventBase.__init__`` 不调 super().__init__）。
+    """
+
+    async def async_get_last_state(self):
+        return getattr(self, "_fake_last_state", None)
 
 
 class _FakeEventEntity(_FakeEntity):
@@ -83,6 +98,7 @@ def _install_fake_modules() -> None:
     mk("homeassistant.config_entries", ConfigEntry=object)
     mk("homeassistant.core", HomeAssistant=object, callback=lambda func: func)
     mk("homeassistant.helpers.entity_platform", AddEntitiesCallback=object)
+    mk("homeassistant.helpers.restore_state", RestoreEntity=_FakeRestoreEntity)
 
     pkg = mk("fpcn")
     pkg.__path__ = [str(SRC)]  # type: ignore[attr-defined]
@@ -233,4 +249,74 @@ def test_door_missing_key_ignored() -> None:
     entity._process()
     entity.coordinator.data = {"vehiclestatus": {}}
     entity._process()
+    assert fired(entity) == []
+
+
+# ---------------------------------------------------------------------------
+# 重启恢复（v6.1.2）
+# ---------------------------------------------------------------------------
+def _last(state, **attrs):
+    return SimpleNamespace(state=state, attributes=attrs)
+
+
+def test_restore_alert_event() -> None:
+    entity = make_alert(alerts("A"))
+    entity._fake_last_state = _last("alert", last_event_attributes={"headline": "X"})
+    asyncio.run(entity._restore_last_event())
+    assert fired(entity) == [("alert", {"headline": "X"})]
+
+
+def test_restore_door_event() -> None:
+    entity = make_door(doors(driverDoor="Closed"))
+    entity._fake_last_state = _last(
+        "opened", last_event_attributes={"door": "尾门", "count": 1}
+    )
+    asyncio.run(entity._restore_last_event())
+    assert fired(entity) == [("opened", {"door": "尾门", "count": 1})]
+
+
+def test_restore_missing_state_noop() -> None:
+    entity = make_alert(alerts("A"))
+    asyncio.run(entity._restore_last_event())
+    assert fired(entity) == []
+
+
+def test_restore_invalid_type_ignored() -> None:
+    """last_state 损坏（类型不在声明的事件集里）不得抛错、不得回填。"""
+    entity = make_alert(alerts("A"))
+    entity._fake_last_state = _last("opened", last_event_attributes={})
+    asyncio.run(entity._restore_last_event())
+    assert fired(entity) == []
+
+
+def test_restore_bad_attributes_degrades_to_empty() -> None:
+    entity = make_alert(alerts("A"))
+    entity._fake_last_state = _last("cleared")
+    asyncio.run(entity._restore_last_event())
+    assert fired(entity) == [("cleared", {})]
+
+    entity = make_alert(alerts("A"))
+    entity._fake_last_state = _last("cleared", last_event_attributes=["bad"])
+    asyncio.run(entity._restore_last_event())
+    assert fired(entity) == [("cleared", {})]
+
+
+def test_restore_then_first_pass_still_baselines() -> None:
+    """恢复只补显示，基线逻辑不受影响：恢复后首次刷新仍只建基线。"""
+    entity = make_alert(alerts("A"))
+    entity._fake_last_state = _last("alert", last_event_attributes={"headline": "X"})
+    asyncio.run(entity._restore_last_event())
+
+    entity._process()
+    assert len(fired(entity)) == 1  # 基线轮没有新事件
+
+    entity.coordinator.data = alerts("A", "B")
+    entity._process()
+    assert [e[0] for e in fired(entity)] == ["alert", "alert"]
+
+
+def test_restore_non_string_state_ignored() -> None:
+    entity = make_alert(alerts("A"))
+    entity._fake_last_state = SimpleNamespace(state=None, attributes={})
+    asyncio.run(entity._restore_last_event())
     assert fired(entity) == []

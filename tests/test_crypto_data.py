@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import importlib.util
 import io
+import json
 import sys
 import types
 import zipfile
@@ -279,3 +280,91 @@ def test_missing_help_mentions_three_paths(tmp_path) -> None:
     assert "fordpass_cn_data" in text
     assert "FORDPASS_DATA_URL" in text
     assert "重新加载" in text
+
+
+# ---------------------------------------------------------------------------
+# 缓存清单（v6.1.2）：换包后旧缓存必须作废，否则换包永远触达不到存量用户
+# ---------------------------------------------------------------------------
+def _setup_download(tmp_path, monkeypatch, payload: bytes):
+    """配置"本地全空 + 可下载"的环境，返回 (mod, session)。"""
+    monkeypatch.delenv("FORDPASS_DATA_DIR", raising=False)
+    monkeypatch.delenv("FORDPASS_DATA_URL", raising=False)
+    mod = load_module()
+    url = mod._urls()[0]
+    monkeypatch.setattr(mod, "CRYPTO_DATA_SHA256", hashlib.sha256(payload).hexdigest())
+    session = _FakeSession({url: (200, payload)})
+    return mod, session
+
+
+def _seed_cache(hass_root: Path, sha: str | None) -> Path:
+    """在 .storage 下构造"齐备"的下载缓存目录（manifest 可选）。"""
+    dest = Path(hass_root / ".storage" / "fordpass_cn" / "data")
+    _write_data_dir(dest)
+    if sha is not None:
+        (dest / load_module()._MANIFEST_NAME).write_text(
+            json.dumps({"sha256": sha, "files": 12}), encoding="utf-8"
+        )
+    return dest
+
+
+def test_cache_valid_manifest_hits(tmp_path, monkeypatch) -> None:
+    """缓存 manifest 与声明一致 → 命中，不联网。"""
+    mod, session = _setup_download(tmp_path, monkeypatch, _full_payload())
+    sha = mod.CRYPTO_DATA_SHA256
+    _seed_cache(tmp_path, sha)
+
+    ok, where = asyncio.run(
+        mod.async_ensure_crypto_data(_FakeHass(tmp_path, session))
+    )
+
+    assert ok is True
+    assert "本地下载缓存" in where
+    assert session.calls == []
+
+
+def test_cache_stale_manifest_redownloads(tmp_path, monkeypatch) -> None:
+    """缓存 manifest 与声明不符（换过包）→ 作废并重新下载。"""
+    payload = _full_payload()
+    mod, session = _setup_download(tmp_path, monkeypatch, payload)
+    _seed_cache(tmp_path, "f" * 64)
+
+    ok, where = asyncio.run(
+        mod.async_ensure_crypto_data(_FakeHass(tmp_path, session))
+    )
+
+    assert ok is True, where
+    assert "已下载" in where
+    assert session.calls
+
+
+def test_cache_without_manifest_redownloads(tmp_path, monkeypatch) -> None:
+    """v6.1.1 遗留缓存（无 manifest）→ 视为过期，重新下载一次。"""
+    payload = _full_payload()
+    mod, session = _setup_download(tmp_path, monkeypatch, payload)
+    _seed_cache(tmp_path, None)
+
+    ok, where = asyncio.run(
+        mod.async_ensure_crypto_data(_FakeHass(tmp_path, session))
+    )
+
+    assert ok is True, where
+    assert "已下载" in where
+    assert session.calls
+
+
+def test_download_writes_manifest(tmp_path, monkeypatch) -> None:
+    """下载落盘必须带 manifest，且记录整包 SHA-256。"""
+    payload = _full_payload()
+    mod, session = _setup_download(tmp_path, monkeypatch, payload)
+
+    ok, where = asyncio.run(
+        mod.async_ensure_crypto_data(_FakeHass(tmp_path, session))
+    )
+
+    assert ok is True, where
+    manifest = (
+        Path(mod.cache_dir(_FakeHass(tmp_path))) / mod._MANIFEST_NAME
+    ).read_text(encoding="utf-8")
+    meta = json.loads(manifest)
+    assert meta["sha256"] == mod.CRYPTO_DATA_SHA256
+    assert meta["files"] == len(wbsk_module().TABLE_FILES) + 1

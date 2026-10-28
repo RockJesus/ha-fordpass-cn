@@ -14,6 +14,11 @@ v5.9.5: 引入 HA 的 ``event`` 域。与 sensor 的区别在于语义——even
   首次加载只建立基线、不补发历史），清空时触发 ``cleared``。
 - 车门开合事件：``doorStatus`` 下各门位状态变化时触发，属性列出
   本次所有变化的门位，不必为每个门单独建实体。
+
+v6.1.2: 通过 ``RestoreEntity`` 在重启后恢复最后一次事件。HA 的 event
+状态不持久化，重启后实体一律回 ``unknown``，前端看起来像「坏了」。
+恢复只回填内部记录、随平台初始写入进状态机（state_added 而非
+state_changed），**不会**触发 state 触发器——显示恢复、自动化不误响。
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .coordinator import FordPassCoordinator
 
@@ -60,7 +66,7 @@ def _status(coordinator: FordPassCoordinator) -> dict[str, Any]:
     return {}
 
 
-class _FordPassEventBase(EventEntity):
+class _FordPassEventBase(EventEntity, RestoreEntity):
     """共享协调器订阅——事件实体不轮询，靠刷新广播驱动。"""
 
     _attr_has_entity_name = True
@@ -80,6 +86,26 @@ class _FordPassEventBase(EventEntity):
         await super().async_added_to_hass()
         if self._unsub is None:
             self._unsub = self.coordinator.async_add_listener(self._on_update)
+        await self._restore_last_event()
+
+    async def _restore_last_event(self) -> None:
+        """重启后恢复最后一次事件（v6.1.2）。
+
+        只回填 ``EventEntity`` 的内部记录，事件类型必须命中本实体声明的
+        事件集，属性缺失/损坏时降级为空字典——恢复路径上宁可显示得少，
+        也不能抛错让实体添加失败。之后平台会做初始写入，状态机里出现的
+        是 state_added 而不是 state_changed，所以 state 触发器不会因此
+        误触发。下一次真事件照常覆盖。
+        """
+        last = await self.async_get_last_state()
+        if last is None or not isinstance(last.state, str):
+            return
+        if last.state not in (self._attr_event_types or []):
+            return
+        attrs = last.attributes.get("last_event_attributes")
+        self._trigger_event(
+            last.state, dict(attrs) if isinstance(attrs, dict) else {}
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         if self._unsub is not None:

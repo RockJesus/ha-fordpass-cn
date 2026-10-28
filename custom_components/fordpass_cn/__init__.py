@@ -395,6 +395,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not crypto_ok:
         _async_notify_missing_crypto(hass)
         raise ConfigEntryNotReady(f"福特派互联缺少加密数据包：{crypto_note}")
+    # v6.1.2: 数据已齐（含自动重试成功的情况），清掉可能挂着的缺失通知。
+    # dismiss 不存在的通知是幂等的，无需先查询。
+    persistent_notification.async_dismiss(hass, _NOTIFICATION_CRYPTO_MISSING)
 
     session = async_get_clientsession(hass)
     api = FordPassApi(session, _LOGGER, brand=entry.data.get(CONF_BRAND, DEFAULT_BRAND))
