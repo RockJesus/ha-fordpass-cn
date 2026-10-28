@@ -88,8 +88,10 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 ### 方式二：手动安装
 
 1. 在 [Releases](https://github.com/RockJesus/ha-fordpass-cn/releases/latest) 下载最新源码包
-2. 将 `custom_components/fordpass_cn/` 整个目录放入 HA 的 `/config/custom_components/` 下（**含 `data/` 子目录**，缺了它集成无法启动）
+2. 将 `custom_components/fordpass_cn/` 整个目录放入 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
+
+> 首次启动会自动下载一份约 400KB 的加密表数据包（需能访问外网），校验通过后缓存到 `.storage/`，之后不再重复下载。完全离线的环境请参考 [故障排查](#-故障排查) 中的自备数据方式。
 
 ### 环境要求
 
@@ -414,6 +416,7 @@ vehicles:
 | 密码登录失败 / 被拦截 | 官方登录页对纯 HTTP 客户端有安全防护，**密码登录需走浏览器辅助**：按向导第 2 步在浏览器打开登录链接完成登录，把地址栏的授权码参数粘贴回集成（一次性有效）。被拦截或不便时**改用短信验证码登录**，登录后令牌自动续期 |
 | 某车型实体没有创建 | 集成按云端能力 / 车型字段判断，**接口返回正常 ≠ 车型支持**；不支持的功能不创建假实体，属正常设计 |
 | 重新加载弹「Setup ... cancelled」 | setup 首次刷新有 20 秒短超时，超时转 `ConfigEntryNotReady` 自动重试 |
+| 提示加密表数据包获取失败 | 首次启动需能访问数据源。三种补齐方式任选：① 什么都不做，HA 会退避重试，补齐后自动恢复无需手动重载 ② 把数据包解压到 `config/fordpass_cn_data/` ③ 设 `FORDPASS_DATA_URL` 指向可达地址，或用 `FORDPASS_DATA_DIR` 指向本地目录（完全离线）后重启 |
 | 升级后无法登录 / 认证失败 | 云端接口调整后需发布新版本适配，请关注 Releases |
 | 实体状态长期不变 | 后台刷新固定 30 分钟；可点「手动刷新车辆状态」按钮强制车机上报 |
 | 日志出现 `took longer than scheduled update interval` | 重启 / 重载初始窗口的瞬时现象，锁与开关实体已改为后台调度刷新、立即返回，若仍出现请附日志提 issue |
@@ -441,7 +444,7 @@ content: >-
 - **活动历史不落隐私**：VIN、车牌号、车辆定位三个实体的状态值不写入 logbook（按 `unique_id` 尾缀精确跳过）；定位 `device_tracker` 状态为 zone（`home` / `not_home`），坐标仅在属性中。
 - **日志掩码**：debug 日志对 VIN、经纬度、地址做掩码（VIN 保留首 4 末 4）；车辆图片缓存文件名用摘要，不含 VIN。
 - **仓库自带审计脚本**：`docs/privacy_audit.py` 覆盖全 git 可达历史、commit message、Releases body、codeload 归档与 dangling commit，输出 PASS 方可发布。
-- **数据本地**：车辆数据仅保存在你自己的 Home Assistant 中，集成除福特 / 林肯官方服务端外不向任何第三方传输。
+- **数据本地**：车辆数据仅保存在你自己的 Home Assistant 中，集成除福特 / 林肯官方服务端外不向任何第三方传输。首次启动会向数据源发起一次 GET 请求下载加密表数据包（约 400KB，请求不携带 VIN、账号或任何车辆信息），校验通过后缓存本地，之后不再重复下载。
 
 > **建议把隐私实体排除出历史库**：集成保证这三个实体不写 logbook 活动，但它们的**状态与属性仍会进入 HA 数据库**（recorder）。若不希望车牌、VIN、定位坐标留在历史记录里，在 `configuration.yaml` 中追加下面的配置：
 

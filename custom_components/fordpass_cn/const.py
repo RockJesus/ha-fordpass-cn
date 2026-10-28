@@ -607,13 +607,17 @@ PROBE_PERSIST_TTL = 604800.0
 # v6.1.0: 加密表按需获取
 # ---------------------------------------------------------------------------
 # 11 张白盒 AES 表 + 密钥流属于第三方逆向材料，自 v6.1.0 起不再随代码仓库
-# 分发。集成在 setup 时按「环境变量 → 配置目录自备 → 本地缓存 → 远程下载」
-# 四级顺序定位；远程包必须通过 CRYPTO_DATA_SHA256 校验才会落盘。
+# 分发。集成在 setup 时按「环境变量 → 随包 → 配置目录自备 → 本地缓存 →
+# 远程下载」顺序定位；远程包必须通过 CRYPTO_DATA_SHA256 校验才会落盘。
 #
 # 自建镜像请改此处，或用环境变量 FORDPASS_DATA_URL 覆盖（单源，优先级最高），
 # 便于在内网完全不联外网的环境里指向本地文件服务器。
+#
+# 默认源刻意放在 HA 自己的 /local/ 下（映射 <config>/www/），而不是另起一个
+# 静态站点：少一层反代配置就少一处会随环境漂移的失败点，且随 HA 一起备份。
+# 代价是 URL 必须带端口，公网可达性以 HA 自身的暴露方式为准。
 CRYPTO_DATA_URLS: tuple[str, ...] = (
-    "https://ha.rockjesus.cn/fordpass/fordpass-data-1.0.zip",
+    "https://ha.rockjesus.cn:8123/local/fordpass/fordpass-data-1.0.zip",
 )
 
 # 数据包（zip，12 个文件：11 张表 + whitebox_keys_for_prod.json）的 SHA-256。

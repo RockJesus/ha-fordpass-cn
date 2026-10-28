@@ -12,16 +12,15 @@ Thumbs.db
 custom_components/fordpass_cn/data/probe_cache.json
 custom_components/fordpass_cn/data/*.tmp
 
-# v6.1.0: 加密表（11 张 wbsk_tables_*.bin + whitebox_keys_for_prod.json）
-# 计划停止入库——属第三方逆向材料，公开仓库携带会带来 DMCA / 反规避风险。
+# v6.1.1: 加密表（11 张 wbsk_tables_*.bin + whitebox_keys_for_prod.json）
+# 已停止入库——属第三方逆向材料，公开仓库携带会带来 DMCA / 反规避风险。
 #
-# 过渡期说明：本版本（v6.1.0）**仍随包分发**，集成优先命中随包目录、零网络
-# 请求，行为与旧版完全一致；等远程数据包（dist/fordpass-data-1.0.zip）在
-# CRYPTO_DATA_URLS[0] 上线并验证 200 + SHA-256 一致之后，再把下面两行
-# 取消注释并 `git rm -r --cached custom_components/fordpass_cn/data`。
+# 数据包改为集成在 setup 时按「环境变量 → 随包 → 配置目录自备 → 本地缓存 →
+# 远程下载」解析（见 const.CRYPTO_DATA_URLS + crypto_data.candidates），
+# 远程包必须通过 CRYPTO_DATA_SHA256 校验才会落盘。
 #
-# 顺序不能颠倒：HACS 升级会整体替换集成目录，数据包未就位就先移除表，
-# 会让所有现有用户升级后立刻进入 ConfigEntryNotReady 重试。
-#
-# custom_components/fordpass_cn/data/*.bin
-# custom_components/fordpass_cn/data/whitebox_keys_for_prod.json
+# ⚠️ 顺序红线：远程数据包必须**先上线并验证 200 + SHA-256 一致**，才能把这里
+# 的忽略规则与 git rm 一起提交。HACS 升级会整体替换集成目录，数据包未就位
+# 就先移除表，会让所有现有用户升级后立刻进入 ConfigEntryNotReady 重试。
+custom_components/fordpass_cn/data/*.bin
+custom_components/fordpass_cn/data/whitebox_keys_for_prod.json
