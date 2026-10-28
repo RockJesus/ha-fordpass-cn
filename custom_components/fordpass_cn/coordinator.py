@@ -35,6 +35,13 @@ from .const import (
 # （真实 VIN、车牌、地址/坐标字符串）不得进 logbook 活动历史。
 _PRIVACY_UID_SUFFIXES = ("-vehicle_vin", "-license_plate", "-location")
 
+# v5.9.9: TTL 缓存两个缺陷的统一上限——「成功但云端返回 null」的短缓存
+# TTL 与「请求失败回退旧值」的重试退避 TTL 都收敛到 1h：慢变端点
+# （TTL 6h~24h）在故障/空值期间从每轮（30min）真拉降为约每 1h 一次，
+# 云端恢复后最多 1h 内数据自动回归正常。
+_TTL_EMPTY_RESULT = 3600.0
+_TTL_FAIL_RETRY = 3600.0
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -366,6 +373,20 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # v4.0.9: 网络瞬时故障/空响应等异常**不落盘**——下次 reload 重探，
                 # 避免把瞬时故障错误钉死 7 天。
                 self.logger.debug("FordPass %s fetch failed: %s", key, exc)
+                # v5.9.9: 失败把旧值写回缓存并续期（上限 _TTL_FAIL_RETRY）——
+                # 此前 expire 留在过去，下一轮必然再 miss 再真拉：云端故障
+                # 持续多久，故障端点就每轮白打多久请求（风控请求量暴露面）。
+                # 续期取 max（不缩短 force 路径原缓存剩余的未过期 TTL）。
+                if store is not None:
+                    prev = store.get(key)
+                    fallback = old if old is not None else (prev[1] if prev else None)
+                    if fallback is not None:
+                        backoff = max(
+                            prev[0] if prev else 0.0,
+                            time.monotonic() + min(ttl, _TTL_FAIL_RETRY),
+                        )
+                        store[key] = (backoff, fallback)
+                        return fallback
                 if old is not None:
                     return old
                 if not account and persist and self._probe_cache:
@@ -386,6 +407,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "value": val,
                     }
                     await self._probe_save()
+            elif store is not None:
+                # v5.9.9: 请求成功但云端返回 null 也写短 TTL 缓存——此前
+                # None 不落缓存，TTL 永不命中 → 该端点每轮（30min）必真拉，
+                # 云端长期返回 null 的端点每天白打 48 次请求。短 TTL 保证
+                # 「暂无数据」不是永久态，云端补上后最多 1h 内回归；调用方
+                # 对 None 已有「沿用上一轮 data」兜底，实体行为不变。落盘
+                # 仍不持久化 None（reload 重探语义不变）。
+                store[key] = (time.monotonic() + min(ttl, _TTL_EMPTY_RESULT), None)
             return val
 
         if account:
