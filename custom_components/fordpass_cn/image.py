@@ -15,11 +15,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import secrets
 
 import aiohttp
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -100,6 +101,27 @@ class FordPassVehicleImage(ImageEntity):
         self._attr_content_type = "image/png"
         self._persist_path = _local_path(hass, coordinator.vin, self._persist_suffix)
         self._image_bytes: bytes | None = None
+
+    @callback
+    def async_update_token(self) -> None:
+        """只播种一次访问令牌，之后跳过 HA core 每 5 分钟的轮换。
+
+        core 的 image 组件对组件内全部实体无条件 async_update_token() +
+        async_write_ha_state()（TOKEN_CHANGE_INTERVAL=5min），且
+        ImageEntity.__init__ 也靠本方法创建首个 token——因此不能覆盖成
+        纯空操作（空 deque 会让 state_attributes 取 access_tokens[-1]
+        时 IndexError，实体创建即坏）。token 是 /api/image_proxy 的防盗
+        链参数，只服务于 ``image_url`` 代理取图；本平台图片由
+        async_image() 自取（.storage 持久化 + 内存缓存），轮换 token 对
+        取图毫无作用，唯一效果是令 attributes 每次都变 → 状态机
+        same_attr 不成立 → 每 5 分钟一次 state_changed（token 虽被列为
+        不记录属性，recorder 仍落一行状态）→ 每实体每天 288 行纯噪音。
+        首次播种后不再轮换：state/attributes 恒等，core 的定时强制写被
+        状态机以 state_reported 短路，不再产生任何 recorder 行。
+        """
+        if not self.access_tokens:
+            # core 的 hex(SystemRandom().getrandbits(256))[2:] 等价写法
+            self.access_tokens.append(secrets.token_hex(32))
 
     @property
     def available(self) -> bool:
@@ -193,6 +215,12 @@ class FordPassRemoteImageEntity(ImageEntity):
         # 缓存必须失效重拉（此前首次缓存后永不更新，用户点查询按钮后
         # state 显示"最新影像"但前端仍展示第一张图）
         self._cached_url: str | None = None
+
+    @callback
+    def async_update_token(self) -> None:
+        """只播种一次令牌、之后不轮换——理由见 FordPassVehicleImage（不走 image_url 代理）。"""
+        if not self.access_tokens:
+            self.access_tokens.append(secrets.token_hex(32))
 
     @property
     def available(self) -> bool:
@@ -308,6 +336,12 @@ class FordPass3dModelImage(ImageEntity):
         self._attr_content_type = "image/png"
         self._persist_path = _local_path(hass, coordinator.vin, "_3d")
         self._image_bytes: bytes | None = None
+
+    @callback
+    def async_update_token(self) -> None:
+        """只播种一次令牌、之后不轮换——理由见 FordPassVehicleImage（不走 image_url 代理）。"""
+        if not self.access_tokens:
+            self.access_tokens.append(secrets.token_hex(32))
 
     def _model_url(self) -> str | None:
         ep = self.coordinator.extra_probes or {}
