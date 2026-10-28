@@ -9,6 +9,7 @@ import shutil
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryAuthFailed,
@@ -39,6 +40,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
+from .crypto_data import async_ensure_crypto_data, missing_help
 from .wbsk import FordPassCrypto
 
 _LOGGER = logging.getLogger(__name__)
@@ -368,7 +370,32 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+_NOTIFICATION_CRYPTO_MISSING = "fordpass_cn_crypto_data_missing"
+
+
+def _async_notify_missing_crypto(hass: HomeAssistant) -> None:
+    """加密数据包缺失时发持久通知（固定 id，多车/多次重试只更新不刷屏）。"""
+    try:
+        persistent_notification.async_create(
+            hass,
+            missing_help(hass),
+            title="福特派互联：缺少加密数据包",
+            notification_id=_NOTIFICATION_CRYPTO_MISSING,
+        )
+    except Exception as err:  # noqa: BLE001 - 通知失败不应影响 setup 结果
+        _LOGGER.warning("fordpass_cn 加密数据包缺失通知发送失败：%s", err)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # v6.1.0: 加密表不再随代码仓库分发，setup 时先定位/按需下载。
+    # 缺失时用 ConfigEntryNotReady 而不是普通异常：HA 会按退避自动重试，
+    # 用户把数据补齐后无需手动重载即可恢复；同时发持久通知给出补齐方式，
+    # 避免只留下一句没有信息量的"集成加载失败"。
+    crypto_ok, crypto_note = await async_ensure_crypto_data(hass)
+    if not crypto_ok:
+        _async_notify_missing_crypto(hass)
+        raise ConfigEntryNotReady(f"福特派互联缺少加密数据包：{crypto_note}")
+
     session = async_get_clientsession(hass)
     api = FordPassApi(session, _LOGGER, brand=entry.data.get(CONF_BRAND, DEFAULT_BRAND))
     api.set_token(

@@ -602,3 +602,25 @@ PROBE_PERSIST_TTL = 604800.0
 # Platforms
 # P2-8（v5.6.0）：删除——真正的平台列表在 __init__.py PLATFORMS（含 image），
 # 此副本缺 image 且从未被引用，保留只会误导。
+
+# ---------------------------------------------------------------------------
+# v6.1.0: 加密表按需获取
+# ---------------------------------------------------------------------------
+# 11 张白盒 AES 表 + 密钥流属于第三方逆向材料，自 v6.1.0 起不再随代码仓库
+# 分发。集成在 setup 时按「环境变量 → 配置目录自备 → 本地缓存 → 远程下载」
+# 四级顺序定位；远程包必须通过 CRYPTO_DATA_SHA256 校验才会落盘。
+#
+# 自建镜像请改此处，或用环境变量 FORDPASS_DATA_URL 覆盖（单源，优先级最高），
+# 便于在内网完全不联外网的环境里指向本地文件服务器。
+CRYPTO_DATA_URLS: tuple[str, ...] = (
+    "https://ha.rockjesus.cn/fordpass/fordpass-data-1.0.zip",
+)
+
+# 数据包（zip，12 个文件：11 张表 + whitebox_keys_for_prod.json）的 SHA-256。
+# 更换数据包时必须同步更新，否则集成会拒绝落盘并给出校验失败提示。
+CRYPTO_DATA_SHA256 = "92d5b07933e65a8c2221f813cc4504cc54d982085355935b276a48c7f83cd4aa"
+
+# 用户自备数据目录：环境变量 > <config>/fordpass_cn_data/ > 自动下载缓存
+FORD_DATA_DIR_ENV = "FORDPASS_DATA_DIR"
+FORD_DATA_URL_ENV = "FORDPASS_DATA_URL"
+FORD_DATA_SUBDIR = "fordpass_cn_data"

@@ -15,7 +15,11 @@ CBC 链路、解密 9/9 中间轮 + 15/15 向量、模式入口 24/24、skb 协�
   位宽档 256 → rounds = 256/32+6 = 14，body=(14+1)*16=240 字节吻合。
 - 上层协议不变：PKCS#7 填充 + CBC 链路 + base64。
 
-表从 data/wbsk_tables_*.bin 加载，无需任何原生库。
+表从数据目录的 wbsk_tables_*.bin 加载，无需任何原生库。
+
+v6.1.0: 这些表属于第三方逆向材料，不再随代码仓库分发。本模块支持把
+数据目录在运行时注入（用户自备目录 / 集成自动下载的缓存），见
+``set_data_dir``。默认仍指向随包分发的 data/，以便本地开发与旧版本兼容。
 """
 from __future__ import annotations
 
@@ -28,8 +32,26 @@ import struct
 import threading
 from typing import ClassVar
 
-_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+_PKG_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DATA_DIR = os.path.join(_PKG_DIR, "data")
+_DATA_DIR = _DEFAULT_DATA_DIR
 _KEY_PATH = os.path.join(_DATA_DIR, "whitebox_keys_for_prod.json")
+
+# 数据目录齐备的判据：11 张表 + 密钥文件，缺一不可。
+TABLE_FILES: tuple[str, ...] = (
+    "wbsk_tables_T_INIT.bin",
+    "wbsk_tables_T_KEY.bin",
+    "wbsk_tables_T_OUT.bin",
+    "wbsk_tables_TB.bin",
+    "wbsk_tables_D_INIT.bin",
+    "wbsk_tables_D_FUS.bin",
+    "wbsk_tables_D_OUT.bin",
+    "wbsk_tables_D_VIEW0.bin",
+    "wbsk_tables_D_VIEW8.bin",
+    "wbsk_tables_D_VIEW16.bin",
+    "wbsk_tables_D_VIEW24.bin",
+)
+KEY_FILE = "whitebox_keys_for_prod.json"
 
 # 位宽档（ctx[0x10] = 256 → AES-256 加密路径，rounds = 256/32+6 = 14）
 _ROUNDS = 14
@@ -198,9 +220,12 @@ class FordPassCrypto:
     def __init__(self, key_file: str | None = None, scene: str = "x_api") -> None:
         if not os.path.exists(key_file or _KEY_PATH):
             raise RuntimeError(
-                "FordPass 集成数据文件缺失：找不到 data/whitebox_keys_for_prod.json。"
-                "请确认 custom_components/fordpass_cn/ 目录完整（含 data 子目录），"
-                "完整复制后重启 HA。"
+                "FordPass 加密数据包缺失："
+                f"{os.path.dirname(key_file or _KEY_PATH)} 下找不到 "
+                f"{KEY_FILE} 或 11 张 wbsk_tables_*.bin。"
+                "集成 setup 会自动尝试获取；若已看到本错误，请查看持久通知"
+                "（设置 → 设备与服务），或把数据包解压到 "
+                "config/fordpass_cn_data/ 后重新加载集成。"
             )
         enc_hex, dec_hex = _load_key_hex(key_file or _KEY_PATH, scene)
         raw_e = bytes.fromhex(enc_hex)
@@ -273,3 +298,58 @@ class FordPassCrypto:
             if not 1 <= pad <= 16 or out[-pad:] != bytes([pad]) * pad:
                 raise ValueError(f"bad PKCS#7 padding: pad={pad}")
             return out[:-pad].decode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# v6.1.0: 数据目录解析与注入
+# ---------------------------------------------------------------------------
+def data_ready(path: str | None = None) -> bool:
+    """目录内是否齐备（11 张表 + 密钥文件）。
+
+    只做静态检查，不加载表——用于在 setup 阶段判定"够不够用"，避免为了
+    探测而把 420KB 表读进内存。
+    """
+    d = _DATA_DIR if path is None else path
+    try:
+        return all(
+            os.path.isfile(os.path.join(d, n)) for n in (*TABLE_FILES, KEY_FILE)
+        )
+    except OSError:
+        return False
+
+
+def data_dir() -> str:
+    """当前生效的数据目录（诊断用）。"""
+    return _DATA_DIR
+
+
+def bundled_data_dir() -> str:
+    """随包目录（custom_components/fordpass_cn/data）。
+
+    过渡版本仍随包分发数据时由这里命中；移除 data/ 之后该目录不存在，
+    ``data_ready`` 返回 False，集成自动落到自备/缓存/下载等其他来源。
+    """
+    return _DEFAULT_DATA_DIR
+
+
+def set_data_dir(path: str) -> None:
+    """注入数据目录并使已缓存的表/密钥失效。
+
+    单例按目录缓存：``_get_tables()`` 缓存整批表、``FordPassCrypto._instances``
+    按 ``key_file#scene`` 缓存实例。换目录后不清空会继续用旧表（数据目录
+    漂移时静默算错密文），所以必须一并清掉。
+    """
+    global _DATA_DIR, _KEY_PATH
+    if os.path.abspath(path) == os.path.abspath(_DATA_DIR):
+        return
+    _DATA_DIR = path
+    _KEY_PATH = os.path.join(path, KEY_FILE)
+    _invalidate_cache()
+
+
+def _invalidate_cache() -> None:
+    global _tables
+    with _tables_lock:
+        _tables = None
+    with FordPassCrypto._lock:
+        FordPassCrypto._instances.clear()

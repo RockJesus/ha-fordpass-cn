@@ -38,6 +38,23 @@ async def async_get_config_entry_diagnostics(
         "entry_data": async_redact_data(dict(entry.data), TO_REDACT),
         "options": async_redact_data(dict(entry.options), TO_REDACT),
     }
+    # v6.1.0: 加密数据来源。表不再随仓库分发后，"为什么实体不可用"
+    # 十有八九是数据目录落空或下载校验失败，这条能一句话定位。
+    # 只报目录类型与该目录是否齐备，不报绝对路径（用户家目录结构不外泄）。
+    try:
+        from . import wbsk
+
+        active = wbsk.data_dir()
+        bundled = wbsk.bundled_data_dir()
+        if active == bundled:
+            source = "bundled"
+        elif ".storage" in active:
+            source = "downloaded_cache"
+        else:
+            source = "user_supplied"
+        payload["crypto_data"] = {"source": source, "ready": wbsk.data_ready()}
+    except Exception as exc:  # noqa: BLE001 - 诊断接口绝不让异常打断
+        payload["crypto_data"] = {"error": str(exc)}
     try:
         data = getattr(entry, "runtime_data", None)  # v5.3.0
         if isinstance(data, dict) and (coord := data.get("coordinator")):
