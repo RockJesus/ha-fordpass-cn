@@ -137,6 +137,10 @@ class FordPassMomentarySwitch(FordPassTaskTracker):
     （_attr_assumed_state = True，HA 前端据此渲染成两个闪电按钮而非开关），
     并在触发后按设定时长自动复位显示。
 
+    v6.1.6: 状态由协调器刷新广播驱动，轮询不产出新信息；且 PARALLEL_UPDATES=1
+    下轮询与命令服务调用共用信号量，长命令链会堵住轮询轮触发
+    「took longer than update interval」警告，故关闭轮询。
+
     v5.8.10 修复两处：
       1. 灯光寻车此前**没有任何自动复位**——点一次就永久停在「开」，与
          鸣笛/声光不一致；现统一走 _schedule_auto_off()。
@@ -148,6 +152,8 @@ class FordPassMomentarySwitch(FordPassTaskTracker):
     另外 _schedule_auto_off() 会取消上一轮未到点的复位任务——连续点两次时
     旧计时器不会提前把开关打回「关」。
     """
+
+    _attr_should_poll = False
 
     coordinator: FordPassCoordinator
     _state: bool
@@ -268,6 +274,8 @@ class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
 
     _attr_assumed_state = True
     _attr_icon = "mdi:ev-station"
+    # v6.1.6: 纯推送（同 FordPassMomentarySwitch 注释），轮询不产出新信息
+    _attr_should_poll = False
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
@@ -347,6 +355,9 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
     """
 
     _attr_assumed_state = True
+    # v6.1.6: 纯推送（同 FordPassMomentarySwitch 注释）；async_update 保留
+    # 仅作 data 未就绪时的兜底刷新调度，正常轮询不再发生
+    _attr_should_poll = False
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
@@ -414,6 +425,9 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
 
 class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
     """Remote engine start / stop."""
+
+    # v6.1.6: 纯推送（同 FordPassMomentarySwitch 注释），轮询不产出新信息
+    _attr_should_poll = False
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator

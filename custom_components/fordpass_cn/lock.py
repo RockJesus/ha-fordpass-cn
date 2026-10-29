@@ -75,6 +75,14 @@ async def async_setup_entry(
 class FordPassLock(FordPassRestoreMixin, LockEntity):
     """Lock entity controlling the vehicle doors."""
 
+    # v6.1.6: 锁状态由协调器刷新广播驱动（v4.8.5），轮询从不产出新信息。
+    # 此前默认每 30s 空轮询，且 PARALLEL_UPDATES=1 让轮询与锁操作服务调用
+    # 共用一把信号量——锁命令链（等命令完成 + force_refresh，实测 60-90s）
+    # 期间轮询轮被堵在 acquire() 上，触发「Updating fordpass_cn lock took
+    # longer than the scheduled update interval」警告（11:25 实测复现）。
+    # 关闭轮询后平台更新轮没有任何实体，该警告从机制上不可能再发生。
+    _attr_should_poll = False
+
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-lock"
@@ -150,6 +158,8 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
 
     _attr_assumed_state = True
     _attr_icon = "mdi:car-back"
+    # v6.1.6: 纯推送（同 FordPassLock 注释）——不继承 FordPassLock，需单列
+    _attr_should_poll = False
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
