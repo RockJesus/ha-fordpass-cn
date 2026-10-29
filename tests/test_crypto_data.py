@@ -1,4 +1,4 @@
-"""crypto_data 加密表定位与下载测试（v6.1.0）。
+"""crypto_data 运行时数据包定位与下载测试（v6.1.0）。
 
 用最小假模块替换 ``homeassistant.*``，直接加载 ``crypto_data.py``，因此
 不需要装 HA、也不会真的联网。

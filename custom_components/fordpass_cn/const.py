@@ -427,7 +427,7 @@ PATH_USER_REDDOT = "/api/cnesl-user/v1/reddot-status"
 #   3. GET  CombinedSigninAndSignup/confirmed -> 302, Location carries ?code=<JWT>
 #   4. POST dlt-token-by-b2c-auth-code       -> same access/refresh JWTs as SMS
 # The authorization code is exchanged for the same DLT tokens as passcode
-# login; the code itself is white-box encrypted (x_api scene).
+# login; the code itself is sent encrypted (x_api scene).
 B2C_AUTHORITY = "https://login.ford.com.cn"
 B2C_PATH_AUTHORIZE = (
     "/CNB2CFORD.partner.onmschina.cn/B2C_1A_SIGNINSIGNUP_ZH-CN/oauth2/v2.0/authorize"
@@ -604,25 +604,23 @@ PROBE_PERSIST_TTL = 604800.0
 # 此副本缺 image 且从未被引用，保留只会误导。
 
 # ---------------------------------------------------------------------------
-# v6.1.0: 加密表按需获取
+# v6.1.0: 运行时数据包按需获取
 # ---------------------------------------------------------------------------
-# 11 张白盒 AES 表 + 密钥流属于第三方逆向材料，自 v6.1.0 起不再随代码仓库
+# 签名所需的表数据由独立的运行时数据包提供，自 v6.1.0 起不再随代码仓库
 # 分发。集成在 setup 时按「环境变量 → 随包 → 配置目录自备 → 本地缓存 →
 # 远程下载」顺序定位；远程包必须通过 CRYPTO_DATA_SHA256 校验才会落盘。
 #
-# 自建镜像请改此处，或用环境变量 FORDPASS_DATA_URL 覆盖（单源，优先级最高），
-# 便于在内网完全不联外网的环境里指向本地文件服务器。
+# 自建镜像请改此处，或用环境变量 FORDPASS_DATA_URL 覆盖（优先级最高），
+# 便于在完全不联外网的环境里指向本地文件服务器。
 #
-# 默认源是独立中性仓库（GitHub Release asset），与集成仓库分离：
-# 不在公开代码里暴露维护者自建服务器的地址（域名 / IP 属于个人隐私），
-# 也避免主仓库与数据包产生任何法律层面的关联。所有源都被
-# CRYPTO_DATA_SHA256 校验保护，内容被替换会被拒绝落盘。
+# 默认源是独立的中性仓库（GitHub Release asset），与集成仓库分离：
+# 不在公开代码里暴露维护者自建服务器的地址（域名 / IP 属于个人隐私）。
 CRYPTO_DATA_URLS: tuple[str, ...] = (
     "https://github.com/RockJesus/data-packs/releases/download/v1.0/data-pack-1.0.zip",
 )
 
-# 数据包（zip，12 个文件：11 张表 + whitebox_keys_for_prod.json）的 SHA-256。
-# 更换数据包时必须同步更新，否则集成会拒绝落盘并给出校验失败提示。
+# 数据包整包（zip）的 SHA-256：换包时必须同步更新，
+# 否则集成会拒绝落盘并给出校验失败提示。
 CRYPTO_DATA_SHA256 = "92d5b07933e65a8c2221f813cc4504cc54d982085355935b276a48c7f83cd4aa"
 
 # 用户自备数据目录：环境变量 > <config>/fordpass_cn_data/ > 自动下载缓存

@@ -1,25 +1,13 @@
-"""AES 查表实现（FordPass China）——纯 Python，无原生依赖。
+"""FordPass China 的请求签名运算核——纯 Python，无原生依赖。
 
-v4.2.7: 加密内核改为纯 Python 查表（wbsk_whitebox_aes.py + 11 张表），
-替代此前的外部调用方案，与原加密实现的输出比特级一致（加密 12/12 +
-CBC 链路、解密 9/9 中间轮 + 15/15 向量、模式入口 24/24、skb 协议 8/8
-验证通过；集成侧再以 9 场景 × 6 样本做等价性验证 ALL PASS）。
+运算所需的表数据由**运行时数据包**提供，不随代码仓库分发：
 
-核心结论：
-- AES-128 加密表 T_INIT/T_KEY/T_OUT/TB 与解密表 D_INIT/D_FUS/
-  D_OUT/D_VIEW0/8/16/24 是**两套独立表**，密钥各自固化，外部无法注入
-  密钥（decrypt(encrypt(x)) != x，网关加解密走两条独立路径）。
-- 但同一套表支持 **skb 外部密钥流注入**：表索引第二源 =
-  ctx[round*16+b]（skb 解码后的密钥流），本集成的 data/whitebox_keys_for_prod.json
-  提供的 240 字节 body（9 场景 × encrypt/decrypt）即该第二索引源，
-  位宽档 256 → rounds = 256/32+6 = 14，body=(14+1)*16=240 字节吻合。
-- 上层协议不变：PKCS#7 填充 + CBC 链路 + base64。
+- 默认目录：``custom_components/fordpass_cn/data/``
+- 运行时可由 ``set_data_dir`` 注入（用户自备目录，或集成自动下载的缓存）
+- 齐备判据：``TABLE_FILES`` 内文件全部存在，且 ``KEY_FILE`` 存在
 
-表从数据目录的 wbsk_tables_*.bin 加载，无需任何原生库。
-
-v6.1.0: 这些表属于第三方逆向材料，不再随代码仓库分发。本模块支持把
-数据目录在运行时注入（用户自备目录 / 集成自动下载的缓存），见
-``set_data_dir``。默认仍指向随包分发的 data/，以便本地开发与旧版本兼容。
+上层协议与云端一致：填充、链式模式、文本编码，细节见
+``FordPassCrypto.encrypt_field`` / ``decrypt_field``。
 """
 from __future__ import annotations
 
@@ -35,9 +23,10 @@ from typing import ClassVar
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_DATA_DIR = os.path.join(_PKG_DIR, "data")
 _DATA_DIR = _DEFAULT_DATA_DIR
-_KEY_PATH = os.path.join(_DATA_DIR, "whitebox_keys_for_prod.json")
+KEY_FILE = "whitebox_keys_for_prod.json"
+_KEY_PATH = os.path.join(_DATA_DIR, KEY_FILE)
 
-# 数据目录齐备的判据：11 张表 + 密钥文件，缺一不可。
+# 数据目录齐备的判据：下列表文件 + KEY_FILE，缺一不可。
 TABLE_FILES: tuple[str, ...] = (
     "wbsk_tables_T_INIT.bin",
     "wbsk_tables_T_KEY.bin",
@@ -51,14 +40,13 @@ TABLE_FILES: tuple[str, ...] = (
     "wbsk_tables_D_VIEW16.bin",
     "wbsk_tables_D_VIEW24.bin",
 )
-KEY_FILE = "whitebox_keys_for_prod.json"
 
-# 位宽档（ctx[0x10] = 256 → AES-256 加密路径，rounds = 256/32+6 = 14）
+# 轮数：由数据包对应的算法参数决定
 _ROUNDS = 14
 
 
 def _load_key_hex(path: str, scene: str = "x_api") -> tuple[str, str]:
-    """Read a white-box key file. Supports the app's JSON (per-scene
+    """Read a key file. Supports the app's JSON (per-scene
     encrypt / decrypt, e.g. x_api / lbs / lbs_p2c) and the raw
     244-hex-char txt variant (single direction file, used by e.g. the LBS
     'wb_local_*' keys: the same file serves as both encrypt and decrypt
@@ -73,11 +61,10 @@ def _load_key_hex(path: str, scene: str = "x_api") -> tuple[str, str]:
 
 
 class _WhiteBox:
-    """纯 Python 加密表（共享单例，只读）。
+    """表驱动的块运算（共享单例，只读）。
 
-    从 data/wbsk_tables_*.bin 加载 11 张导出表（T 加密族 + D 解密族），
-    实现与原加密流程比特级一致的加密/解密块；支持外部密钥流 rk
-    （第二索引源）注入与任意轮数（本集成位宽档 256 → rounds=14）。
+    从数据目录加载 ``TABLE_FILES`` 中的表，实现与云端一致的加/解密块；
+    支持外部密钥流 rk（第二索引源）注入与任意轮数。
     """
 
     ROT = (0, 24, 16, 8)  # 加密行 0..3 的循环右移量
@@ -102,7 +89,7 @@ class _WhiteBox:
         for name in ("D_VIEW0", "D_VIEW8", "D_VIEW16", "D_VIEW24"):
             with open(os.path.join(d, f"wbsk_tables_{name}.bin"), "rb") as fh:
                 self._views.append(fh.read())
-        # 末轮输出字节置换（AES ShiftRows 列映射）
+        # 末轮输出字节置换（列映射）
         self.PERM = [(4 * (j // 4) + 5 * (j % 4)) % 16 for j in range(16)]
 
     @staticmethod
@@ -192,10 +179,9 @@ def _get_tables() -> _WhiteBox:
 class FordPassCrypto:
     """Thread-safe wrapper around the pure-Python table-driven block cipher.
 
-    v4.2.7: 改为纯 Python 查表实现（等价性 9 场景全过）。
     全局单例按身份（key_file#scene）缓存——每个场景（x_api/cevs/lbs_p2c/
-    lbs 等）各持一份 240B 密钥流与实例锁，加密表（11 张导出表）为模块级
-    共享只读单例，构造零阻塞（不加载原生库、不映射内存）。
+    lbs 等）各持一份密钥流与实例锁；表数据为模块级共享只读单例，
+    构造零阻塞（不加载原生库、不映射内存）。
     """
 
     _instances: ClassVar[dict[str, FordPassCrypto]] = {}
@@ -203,7 +189,7 @@ class FordPassCrypto:
 
     @classmethod
     def get(cls, key_file: str | None = None, scene: str = "x_api") -> FordPassCrypto:
-        """Per-identity instance cache; key_file + scene select the white-box key.
+        """Per-identity instance cache; key_file + scene select the key.
         The default is the main prod key (x_api); the LBS gateway uses its own
         key (lbs_p2c for request fields, lbs for response fields), cevs uses
         the shared-session key."""
@@ -220,9 +206,8 @@ class FordPassCrypto:
     def __init__(self, key_file: str | None = None, scene: str = "x_api") -> None:
         if not os.path.exists(key_file or _KEY_PATH):
             raise RuntimeError(
-                "FordPass 加密数据包缺失："
-                f"{os.path.dirname(key_file or _KEY_PATH)} 下找不到 "
-                f"{KEY_FILE} 或 11 张 wbsk_tables_*.bin。"
+                "FordPass 运行时数据包缺失："
+                f"{os.path.dirname(key_file or _KEY_PATH)} 下找不到所需文件。"
                 "集成 setup 会自动尝试获取；若已看到本错误，请查看持久通知"
                 "（设置 → 设备与服务），或把数据包解压到 "
                 "config/fordpass_cn_data/ 后重新加载集成。"
@@ -233,7 +218,7 @@ class FordPassCrypto:
         self._body_enc = bytes(x ^ raw_e[(i + 4) % 3] for i, x in enumerate(raw_e[4:]))
         self._body_dec = bytes(x ^ raw_d[(i + 4) % 3] for i, x in enumerate(raw_d[4:]))
         if len(self._body_enc) != 240 or len(self._body_dec) != 240:
-            raise RuntimeError("Unexpected white-box key length")
+            raise RuntimeError("Unexpected key material length")
         self._lock = threading.Lock()
 
     def _block(self, data: bytes, direction: str) -> bytes:
@@ -248,7 +233,7 @@ class FordPassCrypto:
     def _new_iv() -> bytes:
         # 修复（v5.6.6）：IV 必须为 16 个小写字母（a-z）——App 与网关协议
         # 要求 xjw 为字母 hex；v5.6.0 误改 os.urandom 后任意字节 IV 被网关
-        # 拒绝（generate-passcode 500 whitebox decrypt error 100500）。
+        # 拒绝（generate-passcode 返回 500 解密失败）。
         # 与实测 IV（oihilknuiwtxnm 等）逐字符一致。
         return "".join(random.choice(string.ascii_lowercase) for _ in range(16)).encode()
 
@@ -304,10 +289,10 @@ class FordPassCrypto:
 # v6.1.0: 数据目录解析与注入
 # ---------------------------------------------------------------------------
 def data_ready(path: str | None = None) -> bool:
-    """目录内是否齐备（11 张表 + 密钥文件）。
+    """目录内是否齐备（``TABLE_FILES`` + ``KEY_FILE``）。
 
     只做静态检查，不加载表——用于在 setup 阶段判定"够不够用"，避免为了
-    探测而把 420KB 表读进内存。
+    探测而把整包表读进内存。
     """
     d = _DATA_DIR if path is None else path
     try:

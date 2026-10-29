@@ -4,8 +4,8 @@ Protocol reproduced from the official FordPass China app 6.14.0 and verified
 against a live capture:
 
 * every request carries fixed headers (application-id / appversion / ...);
-* sensitive fields (phone, passcode, VIN, response bodies) are encrypted with
-  a custom white-box AES-256-CBC (see wbsk.py);
+* sensitive fields (phone, passcode, VIN, response bodies) go through a
+  custom symmetric cipher implemented in pure Python (see wbsk.py);
 * a `sign` (SHA-256 over a canonical parameter string, wrapped with two fixed
   secrets) is attached to every request;
 * after login, an `auth-token` header (JWT) is attached to every request.
@@ -408,7 +408,7 @@ def _as_refresh_failed(exc: Exception) -> FordPassApiError:
     """刷新失败分类（v5.6.2）：业务性认证失败（401/403/600）转
     refresh_failed=True 触发 reauth；网关 5xx / 网络异常保留原状（非
     refresh_failed）——__init__ 据此走 ConfigEntryNotReady 自动重试，不再
-    误弹 reauth。2026-10-24 实测：福特网关 whitebox decrypt 500 熔断期间，
+    误弹 reauth。2026-10-24 实测：福特网关解密失败 500 熔断期间，
     旧代码把所有刷新异常包成 401 → entry 每轮 setup_error + 用户被要求
     重新认证（token 实际未失效）。
     """
@@ -861,15 +861,15 @@ class FordPassApi:
 
         Phone and passcode are encrypted with the SAME session IV (one xjw
         field per request, as the official app does); otherwise the server
-        fails with ``whitebox decrypt error``.
+        fails with a decrypt error.
         """
         if iv_hex:
             iv = bytes.fromhex(iv_hex)
         else:
             # v5.5.6: iv=None（林肯分支）——自生成一次会话 IV 并复用。
             # 若两次 encrypt_field 各传 None 会生成两个不同随机 IV，请求只
-            # 携带 phone 的 xjw，服务端解 encryptedPasscode 报 whitebox
-            # decrypt error（errorCode 100500）。
+            # 携带 phone 的 xjw，服务端解 encryptedPasscode 报解密失败
+            # （errorCode 100500）。
             iv = FordPassCrypto._new_iv()
         enc_phone, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(phone, iv))
         enc_code, _ = await asyncio.to_thread(lambda: self.crypto.encrypt_field(passcode, iv))
@@ -977,7 +977,7 @@ class FordPassApi:
                 # 无 token 字段（网关异常响应/结构变更/业务拒绝）抛带
                 # status/error/errorCode 的 FordPassApiError，避免裸 KeyError
                 # 被 _as_refresh_failed 按 500 处理丢失诊断信息（2026-10-24
-                # 福特网关 whitebox decrypt 500 期间日志只有 "token refresh
+                # 福特网关解密失败 500 期间日志只有 "token refresh
                 # failed"，无法区分业务拒绝与结构异常）。
                 status = data.get("status") if isinstance(data, dict) else None
                 err_text = (
@@ -2174,7 +2174,7 @@ class FordPassApi:
         """GET /api/cnxapi-cds/v1/vha/activealert (明文中文告警).
 
         Verified from the official app capture (2026-09-29): this endpoint
-        takes the normal white-box encrypted VIN + random xjw, reuses the
+        takes the usual encrypted VIN + random xjw, reuses the
         main auth-token header, and — like every other gateway call — carries
         ``timestamp`` + ``sign`` (a bare GET without them is 404'd by the
         server since 2026-09-29, fixed in v2.7.4).  The vha service uses its
@@ -2724,9 +2724,9 @@ class FordPassApi:
         return result or None
 
     async def probe_cevs_auto(self, vin: str) -> None:
-        """cevs 域自动探测（v3.7.20）：**AES-CBC + cevs 场景专用密钥**
-        （whitebox_keys_for_prod.json 的 cevs.encrypt——v3.7.20 实证此前
-        x_api 场景加密被服务器 cevs 场景解密报 bad key）。单变体
+        """cevs 域自动探测（v3.7.20）：**链式模式 + cevs 场景专用密钥**
+        （数据包中的 cevs.encrypt——v3.7.20 实证此前 x_api 场景加密被
+        服务器 cevs 场景解密报 bad key）。单变体
         wbk_cevs_shared（共享会话 IV），3 请求/次防福特云风控静默降级；
         结果写 api.cevs_diag（coordinator 引用同一对象，诊断传感器可读）。"""
         # v3.7.24: 成功响应解析进 self.cevs_probe（预约出发/充电实体数据源）——
@@ -3491,7 +3491,7 @@ class FordPassApi:
 
         GET /api/cnxapi-token-exchange/v1/app/third-party-token?tokenType=LBS&...
         (path verified from live captures; the response's encryptedAccessToken
-        is white-box decrypted with the x_api scene, yielding the base64 token
+        is decrypted with the x_api scene, yielding the base64 token
         used as queryLocation's `token` field — VIN+UUID+server-signed tail).
         """
         now = time.time()
@@ -3566,7 +3566,7 @@ class FordPassApi:
         Fully reversed and verified against a live session:
           * LBS token is EXCHANGED via get_lbs_token() (server-signed tail;
             the app does not construct it locally).
-          * vin      = whitebox_AES("lbs_p2c" scene, plaintext VIN), IV random
+          * vin      = cipher("lbs_p2c" scene, plaintext VIN), IV random
             (server accepted: no more "bad ciphertext" 2013).
           * x-sign   = base64(SHA256(SK + sorted_body + ts + PKL + SK[:5] +
             ts[-5:])).upper()  (26/26 verified).

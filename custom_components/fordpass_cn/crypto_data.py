@@ -1,7 +1,7 @@
-"""加密表定位与按需获取（v6.1.0）。
+"""运行时数据包定位与按需获取（v6.1.0）。
 
-11 张白盒 AES 表 + 每个场景的密钥流是实现云端请求签名所必需的第三方
-逆向材料，自 v6.1.0 起不再随代码仓库分发。本模块按四级优先级定位：
+云端请求签名所需的表数据由一份独立的**运行时数据包**提供，不随代码仓库
+分发。本模块按四级优先级定位：
 
 1. ``FORDPASS_DATA_DIR`` 环境变量 —— 用户自备，完全离线可用
 2. ``<config>/fordpass_cn_data/`` —— 用户自备，放在 HA 配置目录
@@ -42,7 +42,7 @@ _MAX_BYTES = 8 * 1024 * 1024  # 整包上限：防异常响应把内存撑爆
 _HTTP_TIMEOUT = 60  # 首启一次下载，给足超时（396KB 在慢网下也可完成）
 _CACHE_SUBDIR = ("fordpass_cn", "data")
 # 下载缓存目录的清单文件名（记录整包 SHA-256，用于换包后判定缓存过期）。
-# 下划线开头：不在 data_ready 检查的表/密钥名单里，不影响齐备性判定。
+# 下划线开头：不在 data_ready 检查的文件名单里，不影响齐备性判定。
 _MANIFEST_NAME = "_pack.json"
 _CACHE_LABEL = "本地下载缓存"
 
@@ -106,14 +106,14 @@ def _pick_local(hass: HomeAssistant) -> tuple[str, str] | None:
         if label == _CACHE_LABEL and not _manifest_matches(path):
             # 缓存与当前声明的数据包不符（换了包 / v6.1.1 遗留无清单），
             # 作废并落到下面的重新下载——不能让旧表永远挡住新包。
-            _LOGGER.info("FordPass 加密表缓存已过期（与当前数据包不符），重新下载")
+            _LOGGER.info("FordPass 数据包缓存已过期（与当前声明的校验值不符），重新下载")
             continue
         return path, label
     return None
 
 
 async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
-    """确保加密表可用，返回 ``(是否可用, 说明)``。
+    """确保运行时数据包可用，返回 ``(是否可用, 说明)``。
 
     命中本地任一级即返回，不发起网络请求；只有全部落空才下载——避免每次
     重载集成都打一次服务器。
@@ -122,7 +122,7 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
     if picked is not None:
         path, label = picked
         wbsk.set_data_dir(path)
-        _LOGGER.debug("FordPass 加密表已就绪（%s）：%s", label, path)
+        _LOGGER.debug("FordPass 数据包已就绪（%s）：%s", label, path)
         return True, f"{label}（{path}）"
 
     blob = await _async_fetch(hass)
@@ -133,14 +133,14 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
     try:
         await hass.async_add_executor_job(_extract_atomic, blob, dest)
     except Exception as err:  # noqa: BLE001 - 解压失败不阻断 setup
-        _LOGGER.warning("FordPass 加密表解压失败：%s", err)
+        _LOGGER.warning("FordPass 数据包解压失败：%s", err)
         return False, f"数据包解压失败：{err}"
 
     if not wbsk.data_ready(dest):
-        return False, "数据包内容不完整（缺少表或密钥文件）"
+        return False, "数据包内容不完整（缺少必需文件）"
 
     wbsk.set_data_dir(dest)
-    _LOGGER.info("FordPass 加密表已下载至 %s", dest)
+    _LOGGER.info("FordPass 数据包已下载至 %s", dest)
     return True, f"已下载（{dest}）"
 
 
@@ -153,20 +153,20 @@ async def _async_fetch(hass: HomeAssistant) -> bytes | None:
                 async with session.get(url) as resp:
                     if resp.status != 200:
                         _LOGGER.debug(
-                            "FordPass 加密表下载 %s 返回 HTTP %s", url, resp.status
+                            "FordPass 数据包下载 %s 返回 HTTP %s", url, resp.status
                         )
                         continue
                     blob = await resp.read()
         except (TimeoutError, OSError) as err:
-            _LOGGER.debug("FordPass 加密表下载失败 %s：%s", url, err)
+            _LOGGER.debug("FordPass 数据包下载失败 %s：%s", url, err)
             continue
         except Exception as err:  # noqa: BLE001 - 单源失败继续下一源
-            _LOGGER.debug("FordPass 加密表下载异常 %s：%s", url, err)
+            _LOGGER.debug("FordPass 数据包下载异常 %s：%s", url, err)
             continue
 
         if len(blob) > _MAX_BYTES:
             _LOGGER.warning(
-                "FordPass 加密表响应过大（%d 字节），已忽略 %s", len(blob), url
+                "FordPass 数据包响应过大（%d 字节），已忽略 %s", len(blob), url
             )
             continue
         digest = hashlib.sha256(blob).hexdigest()
@@ -174,7 +174,7 @@ async def _async_fetch(hass: HomeAssistant) -> bytes | None:
             # 校验失败通常意味着镜像内容被替换或上传了错误文件，
             # 明确告警而不是静默重试——这类问题必须让人看到。
             _LOGGER.warning(
-                "FordPass 加密表校验失败 %s（期望 %s，实得 %s）",
+                "FordPass 数据包校验失败 %s（期望 %s，实得 %s）",
                 url,
                 CRYPTO_DATA_SHA256[:16],
                 digest[:16],
@@ -187,7 +187,7 @@ async def _async_fetch(hass: HomeAssistant) -> bytes | None:
 def _extract_atomic(blob: bytes, dest: str) -> None:
     """解压到临时目录，成功后整体替换 dest（阻塞调用，走 executor）。
 
-    先落临时目录再 rename，避免解压中途失败留下半套表——半套表会被
+    先落临时目录再 rename，避免解压中途失败留下半套文件——不完整的包会被
     ``data_ready`` 判为不可用，但残留文件会让下次排查产生误导。
     落盘时一并写 ``_pack.json``（整包 SHA-256），作为缓存过期判据。
     """
@@ -228,15 +228,14 @@ def missing_help(hass: HomeAssistant) -> str:
     urls = _urls()
     primary = urls[0] if urls else "（未配置下载源）"
     return (
-        "福特派互联（非官方）需要一份加密数据包才能与云端通信，"
+        "福特派互联（非官方）需要一份运行时数据包才能与云端通信，"
         "当前未找到。任选一种方式补齐即可——集成每几分钟自动重试，"
         "**补齐后无需任何操作**，恢复后本通知自动消失：\n\n"
         f"**1. 自动下载**（把文件放到可访问的位置，或直接让它联网）\n"
         f"{primary}\n\n"
         "**2. 手动放置**（离线环境推荐）\n"
-        f"把压缩包解压到 `{hass.config.path(FORD_DATA_SUBDIR)}`，"
-        "确保目录内有 11 个 `wbsk_tables_*.bin` 和 "
-        "`whitebox_keys_for_prod.json`。\n\n"
+        f"把压缩包**解压到** `{hass.config.path(FORD_DATA_SUBDIR)}`"
+        "（不要把 zip 直接放进去，也不要多套一层子目录）。\n\n"
         "**3. 指向私有镜像**\n"
         f"设置环境变量 `{FORD_DATA_URL_ENV}` 为完整下载地址，"
         "或 `FORDPASS_DATA_DIR` 直接指向已解压的目录。\n\n"

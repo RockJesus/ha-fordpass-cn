@@ -374,27 +374,27 @@ _NOTIFICATION_CRYPTO_MISSING = "fordpass_cn_crypto_data_missing"
 
 
 def _async_notify_missing_crypto(hass: HomeAssistant) -> None:
-    """加密数据包缺失时发持久通知（固定 id，多车/多次重试只更新不刷屏）。"""
+    """运行时数据包缺失时发持久通知（固定 id，多车/多次重试只更新不刷屏）。"""
     try:
         persistent_notification.async_create(
             hass,
             missing_help(hass),
-            title="福特派互联：缺少加密数据包",
+            title="福特派互联：缺少运行时数据包",
             notification_id=_NOTIFICATION_CRYPTO_MISSING,
         )
     except Exception as err:  # noqa: BLE001 - 通知失败不应影响 setup 结果
-        _LOGGER.warning("fordpass_cn 加密数据包缺失通知发送失败：%s", err)
+        _LOGGER.warning("fordpass_cn 数据包缺失通知发送失败：%s", err)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # v6.1.0: 加密表不再随代码仓库分发，setup 时先定位/按需下载。
+    # v6.1.0: 运行时数据包不再随代码仓库分发，setup 时先定位/按需下载。
     # 缺失时用 ConfigEntryNotReady 而不是普通异常：HA 会按退避自动重试，
     # 用户把数据补齐后无需手动重载即可恢复；同时发持久通知给出补齐方式，
     # 避免只留下一句没有信息量的"集成加载失败"。
     crypto_ok, crypto_note = await async_ensure_crypto_data(hass)
     if not crypto_ok:
         _async_notify_missing_crypto(hass)
-        raise ConfigEntryNotReady(f"福特派互联缺少加密数据包：{crypto_note}")
+        raise ConfigEntryNotReady(f"福特派互联缺少运行时数据包：{crypto_note}")
     # v6.1.2: 数据已齐（含自动重试成功的情况），清掉可能挂着的缺失通知。
     # dismiss 不存在的通知是幂等的，无需先查询。
     persistent_notification.async_dismiss(hass, _NOTIFICATION_CRYPTO_MISSING)
@@ -493,7 +493,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "账号下未发现车辆——请先在福特派/林肯之道 App 中确认已绑定车辆"
         )
 
-    # v4.2.7: 预热加密模块单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
+    # v4.2.7: 预热签名模块单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
     # 查表实现（v4.2.7 起不再依赖原生库）。表加载与 key 文件读取
     # 仍统一放在线程中完成，双保险防止未来新增未包裹 to_thread 的调用路径
     # 造成 blocking call 回归。
