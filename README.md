@@ -12,7 +12,7 @@
 [![Ruff](https://img.shields.io/github/actions/workflow/status/RockJesus/ha-fordpass-cn/ruff.yml?style=flat-square&label=Ruff)](https://github.com/RockJesus/ha-fordpass-cn/actions/workflows/ruff.yml)
 [![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn?style=flat-square)](LICENSE)
 
-[功能特性](#-功能特性) · [安装](#-安装) · [配置](#-配置) · [服务](#-服务) · [支持的实体](#-支持的实体) · [自动化示例](#-自动化示例) · [EVCC 联动](#-与-evcc-联动) · [故障排查](#-故障排查) · [隐私与安全](#-隐私与安全) · [版本与更新](#-版本与更新)
+[功能特性](#-功能特性) · [安装](#-安装) · [配置](#-配置) · [支持的实体](#-支持的实体) · [服务](#-服务) · [自动化示例](#-自动化示例) · [EVCC 联动](#-与-evcc-联动) · [故障排查](#-故障排查) · [隐私与安全](#-隐私与安全) · [版本与更新](#-版本与更新)
 
 </div>
 
@@ -125,21 +125,6 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 
 > 手机号 / 品牌 / 登录方式在集成「重新配置」入口维护；令牌失效时集成会自动弹出重新认证。
 
-## 🧰 服务
-
-全部服务可在自动化、脚本、`service:` 动作中直接调用。
-
-| 服务 | 参数 | 说明 |
-|---|---|---|
-| `fordpass_cn.refresh_status` | `vin`（可选） | 立即请求云端刷新车况。缺省刷新账号下全部车辆，指定 VIN 只刷该车；VIN 不属于当前账号时报错。云端刷新为命令式，响应约 30–60 秒 |
-| `fordpass_cn.clear_tokens` | — | 清除已保存令牌并重置会话，重载集成后需重新认证。用于登录异常、令牌疑似失效 |
-| `fordpass_cn.share_wallbox` | `phone`（必填）、`vin`、`wallbox_id` | 把家充桩分享给家人；`wallbox_id` 缺省取默认绑定桩 |
-| `fordpass_cn.create_departure` | `vin`、`structure` | 保存 / 新建预约出发充电计划；`structure` 缺省时按云端现有计划回填 |
-| `fordpass_cn.update_srs` | `vin` | 保存 / 更新紧急联系人（SRS）档案 |
-| `fordpass_cn.approve_auth` | `approve`、`vin` | 审批他人对你这辆车的授权申请，`approve` 默认 `true` |
-
-> 写入类服务（分享家充桩、预约计划、授权审批）会直接改云端状态，建议先在官方 App 中确认语义再接入自动化。
-
 ## 📊 支持的实体
 
 ### 车型 × 能力矩阵
@@ -179,6 +164,21 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 - **长期统计**：油量、电量、总里程、续航里程、纯电续航、机油寿命等均为数值传感器（`measurement` + `distance`/`battery` 分类），在「开发者工具 → 统计」中可直接看趋势图。
 - **可进趋势图的分类**：燃油量 / 动力电池电量 / 尿素液位（%）、总里程 / 续航 / 纯电续航 / 尿素续航（km）、四轮胎压 + 推荐胎压（kPa）、蓄电池电压（V）、车内温度（°C）、机油寿命（%）、上次充电电量（%）、自动熄火剩余时间（分钟）。
 - **云端同步状态**：每辆车都有一个诊断传感器，复用每轮刷新的结果（**零额外请求**）。连续失败自动转「异常」，属性带最后成功/失败时间、连续失败次数与失败摘要（限流 / 风控拦截 / 网关 / 业务错误已分级），可接自动化告警。
+
+## 🧰 服务
+
+全部服务可在自动化、脚本、`service:` 动作中直接调用。
+
+| 服务 | 参数 | 说明 |
+|---|---|---|
+| `fordpass_cn.refresh_status` | `vin`（可选） | 立即请求云端刷新车况。缺省刷新账号下全部车辆，指定 VIN 只刷该车；VIN 不属于当前账号时报错。云端刷新为命令式，响应约 30–60 秒 |
+| `fordpass_cn.clear_tokens` | — | 清除已保存令牌并重置会话，重载集成后需重新认证。用于登录异常、令牌疑似失效 |
+| `fordpass_cn.share_wallbox` | `phone`（必填）、`vin`、`wallbox_id` | 把家充桩分享给家人；`wallbox_id` 缺省取默认绑定桩 |
+| `fordpass_cn.create_departure` | `vin`、`structure` | 保存 / 新建预约出发充电计划；`structure` 缺省时按云端现有计划回填 |
+| `fordpass_cn.update_srs` | `vin` | 保存 / 更新紧急联系人（SRS）档案 |
+| `fordpass_cn.approve_auth` | `approve`、`vin` | 审批他人对你这辆车的授权申请，`approve` 默认 `true` |
+
+> 写入类服务（分享家充桩、预约计划、授权审批）会直接改云端状态，建议先在官方 App 中确认语义再接入自动化。
 
 ## 🤖 自动化示例
 
