@@ -122,7 +122,7 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
     if picked is not None:
         path, label = picked
         wbsk.set_data_dir(path)
-        app_constants.load_from(path)
+        await hass.async_add_executor_job(app_constants.load_from, path)
         _LOGGER.debug("FordPass 数据包已就绪（%s）：%s", label, path)
         return True, f"{label}（{path}）"
 
@@ -137,11 +137,11 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
         _LOGGER.warning("FordPass 数据包解压失败：%s", err)
         return False, f"数据包解压失败：{err}"
 
-    if not wbsk.data_ready(dest):
+    if not await hass.async_add_executor_job(wbsk.data_ready, dest):
         return False, "数据包内容不完整（缺少必需文件）"
 
     wbsk.set_data_dir(dest)
-    app_constants.load_from(dest)
+    await hass.async_add_executor_job(app_constants.load_from, dest)
     _LOGGER.info("FordPass 数据包已获取至 %s", dest)
     return True, f"已下载（{dest}）"
 
