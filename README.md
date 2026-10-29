@@ -91,7 +91,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 2. 将 `custom_components/fordpass_cn/` 整个目录放入 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
-> 首次启动会自动下载一份约 400KB 的加密表数据包（需能访问外网），校验通过后缓存到 `.storage/`，之后不再重复下载。完全离线的环境请参考 [故障排查](#-故障排查) 中的自备数据方式。
+> 首次启动会自动下载一份约 400KB 的加密表数据包（内置两个下载源按序尝试：自建源 + GitHub 镜像），校验通过后缓存到 `.storage/`，之后不再重复下载。完全离线的环境请参考 [故障排查](#-故障排查) 中的自备数据方式。
 
 ### 环境要求
 

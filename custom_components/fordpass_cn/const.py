@@ -618,6 +618,10 @@ PROBE_PERSIST_TTL = 604800.0
 # 代价是 URL 必须带端口，公网可达性以 HA 自身的暴露方式为准。
 CRYPTO_DATA_URLS: tuple[str, ...] = (
     "https://ha.rockjesus.cn:8123/local/fordpass/fordpass-data-1.0.zip",
+    # 兜底镜像：独立中性仓库（RockJesus/data-packs）的 Release asset，
+    # 与主源是同一份文件、同一个 SHA-256。主源不可达时按序自动尝试；
+    # 所有源都被 CRYPTO_DATA_SHA256 校验保护，镜像内容被替换会被拒绝落盘。
+    "https://github.com/RockJesus/data-packs/releases/download/v1.0/data-pack-1.0.zip",
 )
 
 # 数据包（zip，12 个文件：11 张表 + whitebox_keys_for_prod.json）的 SHA-256。

@@ -368,3 +368,24 @@ def test_download_writes_manifest(tmp_path, monkeypatch) -> None:
     meta = json.loads(manifest)
     assert meta["sha256"] == mod.CRYPTO_DATA_SHA256
     assert meta["files"] == len(wbsk_module().TABLE_FILES) + 1
+
+
+def test_fallback_to_second_url(tmp_path, monkeypatch) -> None:
+    """第一源失败 → 自动尝试下一源（v6.1.3 多源兜底回归）。"""
+    payload = _full_payload()
+    monkeypatch.delenv("FORDPASS_DATA_DIR", raising=False)
+    monkeypatch.delenv("FORDPASS_DATA_URL", raising=False)
+    mod = load_module()
+    assert len(mod.CRYPTO_DATA_URLS) >= 2, "至少要有一个兜底源"
+    monkeypatch.setattr(mod, "CRYPTO_DATA_SHA256", hashlib.sha256(payload).hexdigest())
+    primary, fallback = mod.CRYPTO_DATA_URLS[0], mod.CRYPTO_DATA_URLS[1]
+    # _FakeSession 未配置的 URL 一律返回 404，即第一源必然失败
+    session = _FakeSession({fallback: (200, payload)})
+
+    ok, where = asyncio.run(
+        mod.async_ensure_crypto_data(_FakeHass(tmp_path, session))
+    )
+
+    assert ok is True, where
+    assert primary in session.calls, "应先尝试过第一源"
+    assert fallback in session.calls, "第一源失败后应尝试兜底源"
