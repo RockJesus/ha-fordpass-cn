@@ -1163,7 +1163,9 @@ def _ts_to_local(v):
         ts = int(v)
         if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
             return None
-        return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        return dt_util.as_local(dt_util.utc_from_timestamp(ts)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
     except (TypeError, ValueError, OSError):
         return None
 
@@ -1216,7 +1218,9 @@ def _remote_start_time(v):
         ts = fv / 1000 if fv > 1e12 else fv  # 毫秒/秒自适应
         if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
             return "未启动"
-        return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        return dt_util.as_local(dt_util.utc_from_timestamp(ts)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
     except (TypeError, ValueError, OSError):
         return "未启动"
 

@@ -509,7 +509,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 私有目录；此处 setup 时在 executor 中删除一次遗留目录，目录删掉后
     # 不存在，天然只执行一次，不影响新版本私有缓存。
     legacy_www_dir = hass.config.path("www", "fordpass_cn")
-    if os.path.isdir(legacy_www_dir):
+    if await asyncio.to_thread(os.path.isdir, legacy_www_dir):
         try:
             await asyncio.to_thread(shutil.rmtree, legacy_www_dir, ignore_errors=False)
             _LOGGER.info(

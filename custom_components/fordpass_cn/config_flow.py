@@ -122,7 +122,7 @@ STEP_B2C_CODE_SCHEMA = vol.Schema(
 
 
 def _build_b2c_login_url() -> str:
-    """构造 B2C authorize 登录地址（与 api._b2c_login_sync 参数一致）。
+    """构造 B2C authorize 登录地址（与 api.password_login 的 code 换取流程配套）。
 
     v4.4.6: 供用户在真实浏览器打开完成登录；redirect 后地址栏
     redirect_uri?code=xxx 中的 xxx 即 authorization code。
@@ -281,8 +281,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         reauth 会把新账号 token 写进旧账号 entry，导致实体绑旧 VIN、token
         属新账号的错配；不一致直接 abort（提示需删除重配）。
 
-        v4.4.6: extra_data 合并进 entry.data（如 B2C 密码登录的密码，
-        按用户要求持久化到本地配置，供浏览器辅助重登录使用）。
+        v6.2.2: extra_data 仅用于非敏感附加配置合并（B2C 密码已不再落盘）。
         """
         if self._reconfigure:
             # v5.4.0: reconfigure = 重配核心配置（换手机号/登录方式/账号），
@@ -571,13 +570,10 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "unknown"
                     _LOGGER.exception("unexpected error during b2c code exchange")
                 else:
-                    # v4.4.6: 密码按用户要求持久化到 entry.data（仅本地配置），
-                    # 供浏览器辅助重登录/自动化使用；token 与短信登录一致持久化。
-                    return self._finish_login(
-                        LOGIN_MODE_PASSWORD,
-                        tokens,
-                        extra_data={CONF_PASSWORD: self._password or ""},
-                    )
+                    # v6.2.2: 不再持久化密码——全仓库无任何代码读取
+                    # entry.data["password"]（实际登录链路是用户浏览器地址栏
+                    # 粘贴的 authorization code），明文落盘徒增 .storage 泄露面。
+                    return self._finish_login(LOGIN_MODE_PASSWORD, tokens)
         # v6.2.1: B2C 固定值来自运行时数据包——先确保数据包可用再构造 URL
         await crypto_data.async_ensure_crypto_data(self.hass)
         login_url = _build_b2c_login_url()
