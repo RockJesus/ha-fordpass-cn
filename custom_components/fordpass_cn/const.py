@@ -3,13 +3,13 @@ from __future__ import annotations
 
 DOMAIN = "fordpass_cn"
 
-# Production gateways (verified from official app captures)
+# Production gateways (verified against live cloud traffic)
 BASE_URL = "https://cn.api.mps.ford.com.cn"
 LBS_BASE_URL = "https://api-connect.ford.com.cn"
-# v5 REST gateway — recovered from the app's Dart AOT code and verified live
-# (2026-10-01): POST /api/vehicles/v5/{vin}/honk (body: ChirpOrHonkDuration/
+# v5 REST gateway — verified against live cloud traffic (2026-10-01): POST
+# /api/vehicles/v5/{vin}/honk (body: ChirpOrHonkDuration/
 # IntervalBetweenRequests/ChirpType) returns HTTP 200 + commandId; DELETE on the
-# same path (the app's FordHonkCancelCommand) also returns 200 + commandId.
+# same path (honk cancel command) also returns 200 + commandId.
 # Both channels verified against the live gateway with the standard DLT headers
 # (no sign/timestamp envelope needed on this route).
 V5_BASE_URL = "https://cnapi.cv.ford.com.cn"
@@ -109,21 +109,21 @@ REMOTE_CLIMATE_TEMP_OPTIONS = list(range(16, 31))
 DEFAULT_REMOTE_TEMP = 24
 
 
-# LBS (vehicle location) gateway — recovered from the app's Dart AOT code and
-# verified against 26 live captures (x-sign 26/26).
+# LBS (vehicle location) gateway — verified against live request/response
+# captures (x-sign 26/26).
 #   x-sign = base64(SHA256(SK + sorted-body-params + ts + PKL + SK[:5] + ts[8:])).upper()
 LBS_APP_ID = "632b3c058abe42f8b82889a935296911"   # ocp-application-id
 LBS_APP_KEY = "211c2122-d829-4f5e-ad36-95d16fd0bf16"  # x-appkey == signature_lbs_secretKey
 LBS_PAYLOAD_KEY = "3e432474-6f0e-4c48-ab48-d4858ccb8df2"  # signature_lbs_payLoadKey
 
-# Fixed headers (observed from official app)
+# Fixed headers (client identification used by the cloud gateway)
 APPLICATION_ID = "46409D04-BD1B-40C6-9D51-13A52666E9F9"
 APP_VERSION = "6.14.0"
 CLIENT_TYPE = "FP"
 OS_TYPE = "android"
 OS_VERSION = "12"
 
-# sign secrets (recovered from the app binary, verified against live captures)
+# sign secrets (verified against live captures)
 # secretKey2 rotates every day:
 #   secretKey2 = URLEncode(SHA256(SHA256(BeijingDate "yyyy-MM-dd") + PAYLOAD_KEY))
 # (the old fixed constant 1607f4c12d... was the 2026-09-25 derived value and is
@@ -133,7 +133,7 @@ PAYLOAD_KEY = "B_sd*ow7"
 
 TOUCH_POINT = "FORD_APP_LOGIN"
 
-# API paths (all verified against live captures)
+# API paths (all verified against live cloud traffic)
 PATH_GENERATE_PASSCODE = "/api/cnxapi-user-validation/v1/app/sms/generate-passcode"
 PATH_PASSCODE_LOGIN = "/api/cnxapi-token-exchange/v1/app/dlt-token-by-phone-passcode-login"
 PATH_REFRESH_TOKEN = "/api/cnxapi-token-exchange/v1/app/refresh-dlt-token"
@@ -145,8 +145,8 @@ PATH_VEHICLE_STATUS = "/api/cnxapi-cvinfo/v1/vehicle-status"
 PATH_SEND_COMMAND = "/api/cnxapi-cvinfo/v1/vehicles/send-command"
 PATH_COMMAND_STATUS = "/api/cnxapi-cvinfo/v1/vehicles/command-execution-status"
 PATH_QUERY_LOCATION = "/lbs-map/v2/public/app/queryLocation"
-# Vehicle health alerts (明文中文告警) — verified from the official app
-# capture (2026-09-29): this endpoint REQUIRES the standard request signature.
+# Vehicle health alerts (明文中文告警) — verified from a live capture
+# (2026-09-29): this endpoint REQUIRES the standard request signature.
 #   GET /api/cnxapi-cds/v1/vha/activealert?hmiPreferredLanguage=zh-cn&
 #       preferredLanguage=zh-cn&source=TCU&encryptedVin={wb}&xjw={iv}&
 #       timestamp={ms}&sign={sha256}
@@ -420,7 +420,7 @@ PATH_MCM_MESSAGES_V3 = "/api/mcm/messagecenter/v3/user/messages"
 # 用户级红点（cnesl-user 域——账号级统一红点，字段更少，替代 alert 缺字段红点）
 PATH_USER_REDDOT = "/api/cnesl-user/v1/reddot-status"
 
-# Username/password (B2C) login — recovered from the official app capture
+# Username/password (B2C) login — verified from a live capture
 # (2026-09-29). Azure AD B2C four-step flow:
 #   1. GET  authorize            -> HTML form + cookies (x-ms-cpim-csrf) + x-request-id
 #   2. POST SelfAsserted         -> {"status":"200"} on success

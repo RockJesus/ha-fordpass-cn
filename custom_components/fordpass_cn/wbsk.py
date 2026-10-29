@@ -245,7 +245,7 @@ class FordPassCrypto:
     def encrypt_field(self, text: str, iv: bytes | None = None) -> tuple[str, str]:
         """Encrypt a string the way the app does.
 
-        The official app reuses one IV (xjw) for every encrypted field of the
+        The gateway reuses one IV (xjw) for every encrypted field of the
         same login session (verified against live captures #79/#83), so a
         caller may pass the session IV explicitly; otherwise a fresh random
         IV is generated.

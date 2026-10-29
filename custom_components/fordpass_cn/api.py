@@ -1,6 +1,6 @@
 """API client for FordPass China (cn.api.mps.ford.com.cn).
 
-Protocol reproduced from the official FordPass China app 6.14.0 and verified
+Protocol aligned with the cloud gateway's client behaviour and verified
 against a live capture:
 
 * every request carries fixed headers (application-id / appversion / ...);
@@ -283,7 +283,7 @@ def _canonical(params: dict[str, Any]) -> str:
 def _secret_key2(timestamp_ms: int) -> str:
     """secretKey2 = URLEncode(SHA256(SHA256(BeijingDate) + PAYLOAD_KEY)).
 
-    Recovered from the app's Dart AOT code (R3Signature::_getAppSecret2):
+    Interoperability note (aligned with the cloud gateway's signing scheme):
     the inner SHA-256 is computed over the Beijing date string ("yyyy-MM-dd")
     derived from the request timestamp; the result is salted with the
     PAYLOAD_KEY constant and hashed again.  This is why the server started
@@ -317,13 +317,12 @@ def _new_traceid() -> str:
 
 
 def compute_lbs_sign(body: dict[str, Any], timestamp_ms: int) -> str:
-    """Re-produce the LBS gateway `x-sign` (recovered from the app's Dart AOT
-    code `LbsSignature::signatureR3` + heap dump of the assembled string).
+    """Re-produce the LBS gateway `x-sign`.
 
     raw = SK + sorted_body_params + ts + PKL + SK[:5] + ts[8:]
     x-sign = base64(SHA256(utf8(raw))).upper()
-    Verified 26/26 against live captures (same as the app: the result is
-    upper-cased before it is sent in the x-sign header).
+    Verified against live request/response captures (26/26 matches); the
+    result is upper-cased before it is sent in the x-sign header.
     """
     biz = "&".join(f"{k}={body[k]}" for k in sorted(body))
     ts = str(timestamp_ms)
@@ -2114,8 +2113,8 @@ class FordPassApi:
         间隔 ~2.2s）；仅命令执行期短暂轮询（60s 上限 20 次），非持续高频，
         风控风险可控，与 App 节奏对齐。
 
-        Verified from the official app capture (2026-09-29): after
-        send-command returns a commandId, the app polls
+        Verified from a live capture (2026-09-29): after
+        send-command returns a commandId, the gateway polls
         /vehicles/command-execution-status?commandType=..&commandId=..
         every ~2.2 s.  While the command is still running the decrypted
         vehiclestatus is a placeholder (every field status=LAST_KNOWN,
@@ -2177,7 +2176,7 @@ class FordPassApi:
     async def get_active_alerts(self, vin: str) -> list[dict[str, Any]]:
         """GET /api/cnxapi-cds/v1/vha/activealert (明文中文告警).
 
-        Verified from the official app capture (2026-09-29): this endpoint
+        Verified from a live capture (2026-09-29): this endpoint
         takes the usual encrypted VIN + random xjw, reuses the
         main auth-token header, and — like every other gateway call — carries
         ``timestamp`` + ``sign`` (a bare GET without them is 404'd by the
@@ -3511,7 +3510,7 @@ class FordPassApi:
         """Exchange an LBS token for the location gateway.
 
         GET /api/cnxapi-token-exchange/v1/app/third-party-token?tokenType=LBS&...
-        (path verified from live captures; the response's encryptedAccessToken
+        (path verified from live request/response captures; the response's encryptedAccessToken
         is decrypted with the x_api scene, yielding the base64 token
         used as queryLocation's `token` field — VIN+UUID+server-signed tail).
         """

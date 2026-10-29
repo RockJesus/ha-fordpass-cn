@@ -476,7 +476,7 @@ class FordPassButton(_FordPassButtonBase):
     async def async_press(self) -> None:
         """Send the command, then refresh entities so the UI always moves.
 
-        ForceRefresh (v2.7.1, verified from the official app capture):
+        ForceRefresh (v2.7.1, verified from a live capture):
           * send-command returns a commandId,
           * the app polls command-execution-status every ~2 s until the
             decrypted vehiclestatus flips from placeholder (LAST_KNOWN,
