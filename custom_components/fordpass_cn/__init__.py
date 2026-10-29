@@ -433,17 +433,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # （"options saved before entry loaded"，下次 setup 生效）。
     # v4.9.6: 移除用户可配置刷新间隔（HA 官方规则禁止），调度间隔固定
     # 默认值；此处只补位置跟踪/坐标系两项默认，保留已存在字段绝不覆盖。
-    if not entry.options.get("track_location") or not entry.options.get(
-        CONF_COORDINATE_SYSTEM
-    ):
+    # v6.2.7: 改为按键存在性判断、只补缺失键——此前用真值判断
+    # (not entry.options.get("track_location"))：用户显式关闭定位跟踪
+    # （track_location=False）会被误判为"缺默认值"，下次 setup 静默改回
+    # True，违背"用户已保存的值原样保留，绝不覆盖"。
+    _opt_defaults: dict[str, Any] = {}
+    if "track_location" not in entry.options:
+        _opt_defaults["track_location"] = True
+    if CONF_COORDINATE_SYSTEM not in entry.options:
+        _opt_defaults[CONF_COORDINATE_SYSTEM] = DEFAULT_COORDINATE_SYSTEM
+    if _opt_defaults:
         try:
             hass.config_entries.async_update_entry(
                 entry,
-                options={
-                    **entry.options,  # 保留已存在字段（历史业务残留等）
-                    "track_location": True,
-                    CONF_COORDINATE_SYSTEM: DEFAULT_COORDINATE_SYSTEM,
-                },
+                options={**entry.options, **_opt_defaults},
             )
         except Exception as exc:  # noqa: BLE001 - 落盘失败不阻断 setup
             _LOGGER.warning("fordpass_cn default options persist failed: %s", exc)
@@ -456,10 +459,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # 把刷新间隔填进了 track_location 的位置且 track_location=True
             # 硬编码重复。
             _LOGGER.info(
-                "fordpass_cn options defaults persisted: track_location=%s "
-                "coordinate_system=%s",
-                True,
-                DEFAULT_COORDINATE_SYSTEM,
+                "fordpass_cn options defaults persisted: %s",
+                ", ".join(f"{k}={v}" for k, v in _opt_defaults.items()),
             )
 
     try:
