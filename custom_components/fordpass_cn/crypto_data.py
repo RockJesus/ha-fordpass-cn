@@ -94,11 +94,11 @@ def _urls() -> tuple[str, ...]:
     return CRYPTO_DATA_URLS
 
 
-async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
-    """确保加密表可用，返回 ``(是否可用, 说明)``。
+def _pick_local(hass: HomeAssistant) -> tuple[str, str] | None:
+    """遍历本地候选，返回第一个可用来源（阻塞调用，走 executor）。
 
-    命中本地任一级即返回，不发起网络请求；只有全部落空才下载——避免每次
-    重载集成都打一次服务器。
+    ``data_ready`` 的 isfile 探测与缓存清单的 open 都是磁盘 IO，不能在
+    事件循环里跑（HA 会报 blocking call）。整个探测统一放 executor。
     """
     for path, label in candidates(hass):
         if not wbsk.data_ready(path):
@@ -108,6 +108,19 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
             # 作废并落到下面的重新下载——不能让旧表永远挡住新包。
             _LOGGER.info("FordPass 加密表缓存已过期（与当前数据包不符），重新下载")
             continue
+        return path, label
+    return None
+
+
+async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
+    """确保加密表可用，返回 ``(是否可用, 说明)``。
+
+    命中本地任一级即返回，不发起网络请求；只有全部落空才下载——避免每次
+    重载集成都打一次服务器。
+    """
+    picked = await hass.async_add_executor_job(_pick_local, hass)
+    if picked is not None:
+        path, label = picked
         wbsk.set_data_dir(path)
         _LOGGER.debug("FordPass 加密表已就绪（%s）：%s", label, path)
         return True, f"{label}（{path}）"
