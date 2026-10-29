@@ -27,15 +27,14 @@ from typing import Any
 import aiohttp
 
 from .const import (
-    APPLICATION_ID,
     B2C_AUTHORITY,
-    B2C_CLIENT_ID,
     B2C_PATH_AUTHORIZE,
     B2C_PATH_CONFIRMED,
     B2C_PATH_SELF_ASSERTED,
     B2C_POLICY,
     B2C_REDIRECT_URI,
     BRAND_FORD,
+    BRAND_LINCOLN,
     BRAND_PROFILE,
     BASE_URL,
     CHIRP_TO_ANNOUNCE,
@@ -44,12 +43,7 @@ from .const import (
     DEFAULT_HONK_DURATION,
     GROUP_REMOTE_CLIMATE,
     GROUP_VEHICLE_ANNOUNCEMENT,
-    LBS_APP_ID,
-    LBS_APP_KEY,
     LBS_BASE_URL,
-    LBS_PAYLOAD_KEY,
-    OS_TYPE,
-    OS_VERSION,
     PATH_3D_MODEL,
     PATH_AAR_STATUS,
     PATH_ACTIVE_ALERT,
@@ -187,13 +181,12 @@ from .const import (
     PATH_WALLBOX_UNSHARE,
     PATH_WARRANTY,
     PATH_WIFI_STATUS,
-    PAYLOAD_KEY,
     PREF_DURATION,
     PREF_SOUND_TYPE,
     PREF_TARGET_TEMP,
-    SECRET_KEY,
     V5_BASE_URL,
 )
+from . import app_constants
 from .wbsk import FordPassCrypto
 
 
@@ -295,7 +288,7 @@ def _secret_key2(timestamp_ms: int) -> str:
     )
     date = beijing.strftime("%Y-%m-%d")
     h1 = hashlib.sha256(date.encode("utf-8")).hexdigest()
-    h2 = hashlib.sha256((h1 + PAYLOAD_KEY).encode("utf-8")).hexdigest()
+    h2 = hashlib.sha256((h1 + app_constants.get("PAYLOAD_KEY")).encode("utf-8")).hexdigest()
     return urllib.parse.quote(h2, safe="")
 
 
@@ -308,7 +301,7 @@ def compute_sign(params: dict[str, Any]) -> str:
     biz = _canonical(params)
     ts = int(params.get("timestamp") or 0)
     sk2 = _secret_key2(ts)
-    raw = f"secretKey2={sk2}&{biz}&secretKey={SECRET_KEY}"
+    raw = f"secretKey2={sk2}&{biz}&secretKey={app_constants.get('SECRET_KEY')}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -326,7 +319,7 @@ def compute_lbs_sign(body: dict[str, Any], timestamp_ms: int) -> str:
     """
     biz = "&".join(f"{k}={body[k]}" for k in sorted(body))
     ts = str(timestamp_ms)
-    raw = f"{LBS_APP_KEY}{biz}{ts}{LBS_PAYLOAD_KEY}{LBS_APP_KEY[:5]}{ts[8:]}"
+    raw = f"{app_constants.get('LBS_APP_KEY')}{biz}{ts}{app_constants.get('LBS_PAYLOAD_KEY')}{app_constants.get('LBS_APP_KEY')[:5]}{ts[8:]}"
     digest = hashlib.sha256(raw.encode("utf-8")).digest()
     return base64.b64encode(digest).decode("ascii").upper()
 
@@ -536,8 +529,14 @@ class FordPassApi:
         self._brand = brand
         self._brand_code = _profile["brand_code"]
         self._app_key = _profile["app_key"]
-        self._client_type = _profile["client_type"]
-        self._app_version = _profile["app_version"]
+        # v6.2.1: client_type/app_version 属 App 固定值，运行时从数据包
+        # app_constants 注入（缺失为 None，走既有降级：数据包缺失仅签名请求不可用）
+        if brand == BRAND_LINCOLN:
+            self._client_type = app_constants.get("LINCOLN_CLIENT_TYPE") or _profile.get("client_type")
+            self._app_version = app_constants.get("LINCOLN_APP_VERSION") or _profile.get("app_version")
+        else:
+            self._client_type = app_constants.get("CLIENT_TYPE") or _profile.get("client_type")
+            self._app_version = app_constants.get("APP_VERSION") or _profile.get("app_version")
         self._touch_point = _profile["touch_point"]
         self._access_token: str | None = None
         self._refresh_token: str | None = None
@@ -596,10 +595,10 @@ class FordPassApi:
         headers = {
             "user-agent": "Dart (dart:io)",
             "appversion": self._app_version,
-            "ostype": OS_TYPE,
-            "osversion": OS_VERSION,
+            "ostype": app_constants.get('OS_TYPE'),
+            "osversion": app_constants.get('OS_VERSION'),
             "clienttype": self._client_type,
-            "application-id": APPLICATION_ID,
+            "application-id": app_constants.get('APPLICATION_ID'),
             "content-type": "application/json; charset=utf-8",
             "accept-encoding": "gzip",
             "x-dynatrace": "",
@@ -3352,14 +3351,14 @@ class FordPassApi:
             "Chrome/110.0.5481.154 Mobile Safari/537.36 channel/app"
         )
         authorize_query: dict[str, Any] = {
-            "client_id": B2C_CLIENT_ID,
+            "client_id": app_constants.get('B2C_CLIENT_ID'),
             "nonce": "defaultNonce",
             "redirect_uri": B2C_REDIRECT_URI,
             "scope": "openid",
             "response_type": "code",
             "prompt": "login",
             "country_code": "CHN",
-            "ford_application_id": APPLICATION_ID,
+            "ford_application_id": app_constants.get('APPLICATION_ID'),
             "language_code": "zh-CN",
             "tnc_accepted": "true",
             # v3.3.0: App 6.16.0 实机样本实证携带 consent 参数（此前 v2.7.6 实测
@@ -3608,9 +3607,9 @@ class FordPassApi:
             "user-agent": "Dart (dart:io)",
             "x-dynatrace": "",
             "accept-encoding": "gzip",
-            "ocp-application-id": LBS_APP_ID,
+            "ocp-application-id": app_constants.get('LBS_APP_ID'),
             "x-timestamp": str(ts),
-            "x-appkey": LBS_APP_KEY,
+            "x-appkey": app_constants.get('LBS_APP_KEY'),
             "ostype": "android",
             "content-type": "application/json",
             "clienttype": "FP",

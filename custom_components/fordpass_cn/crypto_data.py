@@ -27,7 +27,7 @@ import zipfile
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import wbsk
+from . import app_constants, wbsk
 from .const import (
     CRYPTO_DATA_SHA256,
     CRYPTO_DATA_URLS,
@@ -122,6 +122,7 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
     if picked is not None:
         path, label = picked
         wbsk.set_data_dir(path)
+        app_constants.load_from(path)
         _LOGGER.debug("FordPass 数据包已就绪（%s）：%s", label, path)
         return True, f"{label}（{path}）"
 
@@ -140,6 +141,7 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
         return False, "数据包内容不完整（缺少必需文件）"
 
     wbsk.set_data_dir(dest)
+    app_constants.load_from(dest)
     _LOGGER.info("FordPass 数据包已下载至 %s", dest)
     return True, f"已下载（{dest}）"
 

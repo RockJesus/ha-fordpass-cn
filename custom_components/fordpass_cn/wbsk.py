@@ -288,16 +288,24 @@ class FordPassCrypto:
 # ---------------------------------------------------------------------------
 # v6.1.0: 数据目录解析与注入
 # ---------------------------------------------------------------------------
+# v6.2.1: App 固定值文件（app_constants.json）纳入齐备判据——旧数据包
+# （v1.0，无此文件）会被判"不齐备"而触发换包下载；自备目录缺少该文件
+# 同样会落到自动下载/补齐提示，避免"表齐了但固定值缺失"的隐性问题。
+APP_CONSTANTS_FILE = "app_constants.json"
+
+
 def data_ready(path: str | None = None) -> bool:
-    """目录内是否齐备（``TABLE_FILES`` + ``KEY_FILE``）。
+    """目录内是否齐备（``TABLE_FILES`` + ``KEY_FILE`` + ``app_constants.json``）。
 
     只做静态检查，不加载表——用于在 setup 阶段判定"够不够用"，避免为了
-    探测而把整包表读进内存。
+    探测而把整包表读进内存。v6.2.1 起 App 固定值文件也必需（缺失即旧包，
+    触发换包下载）。
     """
     d = _DATA_DIR if path is None else path
     try:
         return all(
-            os.path.isfile(os.path.join(d, n)) for n in (*TABLE_FILES, KEY_FILE)
+            os.path.isfile(os.path.join(d, n))
+            for n in (*TABLE_FILES, KEY_FILE, APP_CONSTANTS_FILE)
         )
     except OSError:
         return False

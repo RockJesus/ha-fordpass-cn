@@ -26,11 +26,10 @@ from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import app_constants, crypto_data
 from .api import FordPassApi, FordPassApiError
 from .const import (
-    APPLICATION_ID,
     B2C_AUTHORITY,
-    B2C_CLIENT_ID,
     B2C_PATH_AUTHORIZE,
     B2C_REDIRECT_URI,
     BRAND_FORD,
@@ -131,14 +130,14 @@ def _build_b2c_login_url() -> str:
     from urllib.parse import urlencode
 
     query = {
-        "client_id": B2C_CLIENT_ID,
+        "client_id": app_constants.get("B2C_CLIENT_ID"),
         "nonce": "defaultNonce",
         "redirect_uri": B2C_REDIRECT_URI,
         "scope": "openid",
         "response_type": "code",
         "prompt": "login",
         "country_code": "CHN",
-        "ford_application_id": APPLICATION_ID,
+        "ford_application_id": app_constants.get("APPLICATION_ID"),
         "language_code": "zh-CN",
         "tnc_accepted": "true",
         "tnc_consent1_accepted": "true",
@@ -579,6 +578,8 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         tokens,
                         extra_data={CONF_PASSWORD: self._password or ""},
                     )
+        # v6.2.1: B2C 固定值来自运行时数据包——先确保数据包可用再构造 URL
+        await crypto_data.async_ensure_crypto_data(self.hass)
         login_url = _build_b2c_login_url()
         return self.async_show_form(
             step_id="b2c",

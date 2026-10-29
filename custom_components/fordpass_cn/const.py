@@ -112,24 +112,12 @@ DEFAULT_REMOTE_TEMP = 24
 # LBS (vehicle location) gateway — verified against live request/response
 # captures (x-sign 26/26).
 #   x-sign = base64(SHA256(SK + sorted-body-params + ts + PKL + SK[:5] + ts[8:])).upper()
-LBS_APP_ID = "632b3c058abe42f8b82889a935296911"   # ocp-application-id
-LBS_APP_KEY = "211c2122-d829-4f5e-ad36-95d16fd0bf16"  # x-appkey == signature_lbs_secretKey
-LBS_PAYLOAD_KEY = "3e432474-6f0e-4c48-ab48-d4858ccb8df2"  # signature_lbs_payLoadKey
-
-# Fixed headers (client identification used by the cloud gateway)
-APPLICATION_ID = "46409D04-BD1B-40C6-9D51-13A52666E9F9"
-APP_VERSION = "6.14.0"
-CLIENT_TYPE = "FP"
-OS_TYPE = "android"
-OS_VERSION = "12"
-
-# sign secrets (verified against live captures)
-# secretKey2 rotates every day:
-#   secretKey2 = URLEncode(SHA256(SHA256(BeijingDate "yyyy-MM-dd") + PAYLOAD_KEY))
-# (the old fixed constant 1607f4c12d... was the 2026-09-25 derived value and is
-#  rejected by the server since 2026-09-26; compute_sign() derives it at runtime)
-SECRET_KEY = "as24#02_"
-PAYLOAD_KEY = "B_sd*ow7"
+#
+# v6.2.1: LBS_APP_ID / LBS_APP_KEY / LBS_PAYLOAD_KEY / APPLICATION_ID /
+# APP_VERSION / CLIENT_TYPE / OS_TYPE / OS_VERSION / SECRET_KEY / PAYLOAD_KEY
+# 均为云端互操作所需的 App 固定值，已随运行时数据包下发（app_constants.json），
+# 不再硬编码于本文件。代码内一律经 app_constants.get() 读取；数据包缺失时
+# 返回 None，按既有降级策略（集成照常加载、依赖签名的请求不可用）处理。
 
 TOUCH_POINT = "FORD_APP_LOGIN"
 
@@ -440,7 +428,8 @@ B2C_PATH_CONFIRMED = (
     "api/CombinedSigninAndSignup/confirmed"
 )
 B2C_POLICY = "B2C_1A_SignInSignUp_zh-CN"
-B2C_CLIENT_ID = "72af5fa7-d101-425d-ba47-c392e3970399"
+# v6.2.1: B2C_CLIENT_ID 属 App 固定值，随运行时数据包下发（app_constants.json），
+# 经 app_constants.get("B2C_CLIENT_ID") 读取
 B2C_REDIRECT_URI = "https://www.ford.com.cn/support/category/fordpass"
 PATH_B2C_TOKEN = "/api/cnxapi-token-exchange/v1/app/dlt-token-by-b2c-auth-code"
 
@@ -549,12 +538,12 @@ BRAND_PROFILE = {
         "touch_point": TOUCH_POINT,
         "brand_code": "FORD",
         "app_key": "fordpass",
-        "client_type": CLIENT_TYPE,
-        "app_version": APP_VERSION,
+        "client_type": None,  # v6.2.1: 运行时由 app_constants.get("CLIENT_TYPE") 注入
+        "app_version": None,  # v6.2.1: 运行时由 app_constants.get("APP_VERSION") 注入
         "passcode_login": PATH_PASSCODE_LOGIN,
         "b2c_authority": B2C_AUTHORITY,
         "b2c_policy": B2C_POLICY,
-        "b2c_client_id": B2C_CLIENT_ID,
+        "b2c_client_id": None,  # v6.2.1: 运行时由 app_constants.get("B2C_CLIENT_ID") 注入
         "b2c_redirect": B2C_REDIRECT_URI,
         "ready": True,
     },
@@ -573,8 +562,8 @@ BRAND_PROFILE = {
         "touch_point": "LINCOLN_APP_LOGIN",
         "brand_code": "LINCOLN",
         "app_key": "lincoln",
-        "client_type": "LW",
-        "app_version": "6.0.0",
+        "client_type": None,  # v6.2.1: 运行时由 app_constants.get("LINCOLN_CLIENT_TYPE") 注入
+        "app_version": None,  # v6.2.1: 运行时由 app_constants.get("LINCOLN_APP_VERSION") 注入
         "passcode_login": PATH_PASSCODE_LOGIN,
         "b2c_authority": None,
         "b2c_policy": None,
@@ -616,12 +605,12 @@ PROBE_PERSIST_TTL = 604800.0
 # 默认源是独立的中性仓库（GitHub Release asset），与集成仓库分离：
 # 不在公开代码里暴露维护者自建服务器的地址（域名 / IP 属于个人隐私）。
 CRYPTO_DATA_URLS: tuple[str, ...] = (
-    "https://github.com/RockJesus/data-packs/releases/download/v1.0/data-pack-1.0.zip",
+    "https://github.com/RockJesus/data-packs/releases/download/v1.1/data-pack-1.1.zip",
 )
 
 # 数据包整包（zip）的 SHA-256：换包时必须同步更新，
 # 否则集成会拒绝落盘并给出校验失败提示。
-CRYPTO_DATA_SHA256 = "92d5b07933e65a8c2221f813cc4504cc54d982085355935b276a48c7f83cd4aa"
+CRYPTO_DATA_SHA256 = "e4e7bff99f88009619749476ff5718115f681d0722d10b37d53eff69d369724e"
 
 # 用户自备数据目录：环境变量 > <config>/fordpass_cn_data/ > 自动下载缓存
 FORD_DATA_DIR_ENV = "FORDPASS_DATA_DIR"
