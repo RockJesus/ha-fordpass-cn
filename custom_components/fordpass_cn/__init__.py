@@ -387,7 +387,7 @@ def _async_notify_missing_crypto(hass: HomeAssistant) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # v6.1.0: 运行时数据包不再随代码仓库分发，setup 时先定位/按需下载。
+    # v6.1.0: 运行时数据包不再随代码仓库分发，setup 时先定位/按需获取。
     # 缺失时用 ConfigEntryNotReady 而不是普通异常：HA 会按退避自动重试，
     # 用户把数据补齐后无需手动重载即可恢复；同时发持久通知给出补齐方式，
     # 避免只留下一句没有信息量的"集成加载失败"。

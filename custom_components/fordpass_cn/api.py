@@ -647,7 +647,7 @@ class FordPassApi:
             params["sign"] = compute_sign(params)
             kwargs = {"params": params}
         # v5.2.4: 请求体日志只记录字段名不记录值——encryptedRefreshToken/
-        # encryptedPasscode/encryptedAuthCode 的解密密钥就在集成内，完整值进
+        # encryptedPasscode/encryptedAuthCode 的还原密钥经运行时数据包提供，完整值进
         # debug 日志等于泄露 refresh token（用户会把日志贴进 issue）。
         _payload_fields = (
             ",".join(sorted(kwargs["json"].keys()))

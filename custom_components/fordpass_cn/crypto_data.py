@@ -5,11 +5,11 @@
 
 1. ``FORDPASS_DATA_DIR`` 环境变量 —— 用户自备，完全离线可用
 2. ``<config>/fordpass_cn_data/`` —— 用户自备，放在 HA 配置目录
-3. ``<config>/.storage/fordpass_cn/data/`` —— 本模块下载后的缓存
-4. 远程下载 —— 首次 setup 自动完成，SHA-256 校验通过才落盘
+3. ``<config>/.storage/fordpass_cn/data/`` —— 本模块获取后的缓存
+4. 远程获取 —— 首次 setup 自动完成，SHA-256 校验通过才落盘
 
 四级全部落空时**不阻断 setup**：集成照常加载，仅依赖签名的实体不可用，
-并以持久通知给出可操作的补齐方式（下载 / 手动放置 / 指向私有镜像）。
+并以持久通知给出可操作的补齐方式（获取 / 手动放置 / 指向私有镜像）。
 这样用户看到的是"差一步"而不是"集成加载失败"。
 """
 
@@ -106,7 +106,7 @@ def _pick_local(hass: HomeAssistant) -> tuple[str, str] | None:
         if label == _CACHE_LABEL and not _manifest_matches(path):
             # 缓存与当前声明的数据包不符（换了包 / v6.1.1 遗留无清单），
             # 作废并落到下面的重新下载——不能让旧表永远挡住新包。
-            _LOGGER.info("FordPass 数据包缓存已过期（与当前声明的校验值不符），重新下载")
+            _LOGGER.info("FordPass 数据包缓存已过期（与当前声明的校验值不符），重新获取")
             continue
         return path, label
     return None
@@ -142,7 +142,7 @@ async def async_ensure_crypto_data(hass: HomeAssistant) -> tuple[bool, str]:
 
     wbsk.set_data_dir(dest)
     app_constants.load_from(dest)
-    _LOGGER.info("FordPass 数据包已下载至 %s", dest)
+    _LOGGER.info("FordPass 数据包已获取至 %s", dest)
     return True, f"已下载（{dest}）"
 
 
@@ -155,15 +155,15 @@ async def _async_fetch(hass: HomeAssistant) -> bytes | None:
                 async with session.get(url) as resp:
                     if resp.status != 200:
                         _LOGGER.debug(
-                            "FordPass 数据包下载 %s 返回 HTTP %s", url, resp.status
+                            "FordPass 数据包获取 %s 返回 HTTP %s", url, resp.status
                         )
                         continue
                     blob = await resp.read()
         except (TimeoutError, OSError) as err:
-            _LOGGER.debug("FordPass 数据包下载失败 %s：%s", url, err)
+            _LOGGER.debug("FordPass 数据包获取失败 %s：%s", url, err)
             continue
         except Exception as err:  # noqa: BLE001 - 单源失败继续下一源
-            _LOGGER.debug("FordPass 数据包下载异常 %s：%s", url, err)
+            _LOGGER.debug("FordPass 数据包获取异常 %s：%s", url, err)
             continue
 
         if len(blob) > _MAX_BYTES:
@@ -228,12 +228,12 @@ def _extract_atomic(blob: bytes, dest: str) -> None:
 def missing_help(hass: HomeAssistant) -> str:
     """数据缺失时给用户的三选一指引（用于持久通知正文）。"""
     urls = _urls()
-    primary = urls[0] if urls else "（未配置下载源）"
+    primary = urls[0] if urls else "（未配置获取源）"
     return (
         "福特派互联（非官方）需要一份运行时数据包才能与云端通信，"
         "当前未找到。任选一种方式补齐即可——集成每几分钟自动重试，"
         "**补齐后无需任何操作**，恢复后本通知自动消失：\n\n"
-        f"**1. 自动下载**（把文件放到可访问的位置，或直接让它联网）\n"
+        f"**1. 自动获取**（把文件放到可访问的位置，或直接让它联网）\n"
         f"{primary}\n\n"
         "**2. 手动放置**（离线环境推荐）\n"
         f"把压缩包**解压到** `{hass.config.path(FORD_DATA_SUBDIR)}`"

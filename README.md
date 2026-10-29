@@ -91,7 +91,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 2. 将 `custom_components/fordpass_cn/` 整个目录放入 HA 的 `/config/custom_components/` 下
 3. 重启 Home Assistant
 
-> 首次启动会自动下载一份约 400KB 的运行时数据包，校验通过后缓存到 `.storage/`，之后不再重复下载。完全离线的环境请参考 [故障排查](#-故障排查) 中的自备数据方式。
+> 首次启动会自动获取运行时互操作数据并校验缓存至 `.storage/`（请求不携带任何车辆或账号信息），之后不再重复获取。完全离线的环境请参考 [故障排查](#-故障排查) 中的自备数据方式。
 
 ### 环境要求
 
@@ -445,7 +445,7 @@ content: >-
 - **日志掩码**：debug 日志对 VIN、经纬度、地址做掩码（VIN 保留首 4 末 4）；车辆图片缓存文件名用摘要，不含 VIN。
 - **仓库自带审计脚本**：`docs/privacy_audit.py` 覆盖全 git 可达历史、commit message、Releases body、codeload 归档与 dangling commit，输出 PASS 方可发布。
 - **互操作固定值随数据包下发（v6.2.1）**：云端互操作所需的 App 固定值（LBS 网关标识、应用 ID、客户端/OS 标识、签名密钥等）不再硬编码于集成代码，随运行时数据包 `app_constants.json` 下发并按 SHA-256 校验，缺失时按既有降级策略处理。
-- **数据本地**：车辆数据仅保存在你自己的 Home Assistant 中，集成除福特 / 林肯官方服务端外不向任何第三方传输。首次启动会向数据源发起一次 GET 请求下载运行时数据包（约 400KB，请求不携带 VIN、账号或任何车辆信息），校验通过后缓存本地，之后不再重复下载。
+- **数据本地**：车辆数据仅保存在你自己的 Home Assistant 中，集成除福特 / 林肯官方服务端外不向任何第三方传输。首次启动会自动获取运行时互操作数据（请求不携带 VIN、账号或任何车辆信息），校验通过后缓存本地，之后不再重复获取。
 
 > **建议把隐私实体排除出历史库**：集成保证这三个实体不写 logbook 活动，但它们的**状态与属性仍会进入 HA 数据库**（recorder）。若不希望车牌、VIN、定位坐标留在历史记录里，在 `configuration.yaml` 中追加下面的配置：
 

@@ -30,7 +30,7 @@ _VALUES: dict[str, str] = {}
 def load_from(path: str) -> bool:
     """从数据目录读取 app_constants.json 并填充全局字典。
 
-    目录里没有该文件（旧版数据包 / 未下载）返回 False，字典保持空——
+    目录里没有该文件（旧版数据包 / 未获取）返回 False，字典保持空——
     与数据包缺失的既有降级语义一致。文件内容非法同样返回 False 并告警。
     """
     global _VALUES
