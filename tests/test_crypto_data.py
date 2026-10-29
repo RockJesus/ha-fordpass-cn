@@ -121,6 +121,8 @@ def _write_data_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     for name in (*wbsk_module().TABLE_FILES, wbsk_module().KEY_FILE):
         (path / name).write_bytes(b"\x00" * 16)
+    # v6.2.1: data_ready 把 app_constants.json 纳入必需判据，辅助目录需补齐
+    (path / wbsk_module().APP_CONSTANTS_FILE).write_text("{}", encoding="utf-8")
     return path
 
 
@@ -135,6 +137,7 @@ def _zip_payload(entries: dict[str, bytes]) -> bytes:
 def _full_payload() -> bytes:
     entries = {name: b"\x00" * 16 for name in wbsk_module().TABLE_FILES}
     entries[wbsk_module().KEY_FILE] = b"{}"
+    entries[wbsk_module().APP_CONSTANTS_FILE] = b"{}"
     return _zip_payload(entries)
 
 

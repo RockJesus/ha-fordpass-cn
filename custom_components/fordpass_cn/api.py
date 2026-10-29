@@ -29,10 +29,6 @@ import aiohttp
 from .const import (
     B2C_AUTHORITY,
     B2C_PATH_AUTHORIZE,
-    B2C_PATH_CONFIRMED,
-    B2C_PATH_SELF_ASSERTED,
-    B2C_POLICY,
-    B2C_REDIRECT_URI,
     BRAND_FORD,
     BRAND_LINCOLN,
     BRAND_PROFILE,
