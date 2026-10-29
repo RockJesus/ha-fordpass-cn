@@ -370,7 +370,7 @@ def test_download_writes_manifest(tmp_path, monkeypatch) -> None:
     ).read_text(encoding="utf-8")
     meta = json.loads(manifest)
     assert meta["sha256"] == mod.CRYPTO_DATA_SHA256
-    assert meta["files"] == len(wbsk_module().TABLE_FILES) + 1
+    assert meta["files"] == len(wbsk_module().TABLE_FILES) + 2  # KEY_FILE + APP_CONSTANTS_FILE
 
 
 def test_fallback_to_second_url(tmp_path, monkeypatch) -> None:

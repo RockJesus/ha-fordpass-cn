@@ -27,8 +27,6 @@ from typing import Any
 import aiohttp
 
 from .const import (
-    B2C_AUTHORITY,
-    B2C_PATH_AUTHORIZE,
     BRAND_FORD,
     BRAND_LINCOLN,
     BRAND_PROFILE,
