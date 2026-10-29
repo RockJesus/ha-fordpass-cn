@@ -371,14 +371,16 @@ def test_download_writes_manifest(tmp_path, monkeypatch) -> None:
 
 
 def test_fallback_to_second_url(tmp_path, monkeypatch) -> None:
-    """第一源失败 → 自动尝试下一源（v6.1.3 多源兜底回归）。"""
+    """第一源失败 → 自动尝试下一源（多源兜底回归，用临时 URL 对验证机制）。"""
     payload = _full_payload()
     monkeypatch.delenv("FORDPASS_DATA_DIR", raising=False)
     monkeypatch.delenv("FORDPASS_DATA_URL", raising=False)
     mod = load_module()
-    assert len(mod.CRYPTO_DATA_URLS) >= 2, "至少要有一个兜底源"
+    assert len(mod.CRYPTO_DATA_URLS) >= 1, "至少要有一个默认下载源"
     monkeypatch.setattr(mod, "CRYPTO_DATA_SHA256", hashlib.sha256(payload).hexdigest())
-    primary, fallback = mod.CRYPTO_DATA_URLS[0], mod.CRYPTO_DATA_URLS[1]
+    # 用临时构造的双源验证按序尝试机制（默认 const 可能只有单源）
+    primary, fallback = "https://primary.invalid/pack.zip", mod.CRYPTO_DATA_URLS[0]
+    monkeypatch.setattr(mod, "CRYPTO_DATA_URLS", (primary, fallback))
     # _FakeSession 未配置的 URL 一律返回 404，即第一源必然失败
     session = _FakeSession({fallback: (200, payload)})
 
@@ -389,3 +391,10 @@ def test_fallback_to_second_url(tmp_path, monkeypatch) -> None:
     assert ok is True, where
     assert primary in session.calls, "应先尝试过第一源"
     assert fallback in session.calls, "第一源失败后应尝试兜底源"
+
+
+def test_default_urls_privacy() -> None:
+    """默认下载源不得包含维护者自建服务器地址（隐私红线，v6.1.5）。"""
+    mod = load_module()
+    for url in mod.CRYPTO_DATA_URLS:
+        assert "rockjesus" not in url, f"默认源泄露自建域名: {url}"

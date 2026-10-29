@@ -613,14 +613,11 @@ PROBE_PERSIST_TTL = 604800.0
 # 自建镜像请改此处，或用环境变量 FORDPASS_DATA_URL 覆盖（单源，优先级最高），
 # 便于在内网完全不联外网的环境里指向本地文件服务器。
 #
-# 默认源刻意放在 HA 自己的 /local/ 下（映射 <config>/www/），而不是另起一个
-# 静态站点：少一层反代配置就少一处会随环境漂移的失败点，且随 HA 一起备份。
-# 代价是 URL 必须带端口，公网可达性以 HA 自身的暴露方式为准。
+# 默认源是独立中性仓库（GitHub Release asset），与集成仓库分离：
+# 不在公开代码里暴露维护者自建服务器的地址（域名 / IP 属于个人隐私），
+# 也避免主仓库与数据包产生任何法律层面的关联。所有源都被
+# CRYPTO_DATA_SHA256 校验保护，内容被替换会被拒绝落盘。
 CRYPTO_DATA_URLS: tuple[str, ...] = (
-    "https://ha.rockjesus.cn:8123/local/fordpass/fordpass-data-1.0.zip",
-    # 兜底镜像：独立中性仓库（RockJesus/data-packs）的 Release asset，
-    # 与主源是同一份文件、同一个 SHA-256。主源不可达时按序自动尝试；
-    # 所有源都被 CRYPTO_DATA_SHA256 校验保护，镜像内容被替换会被拒绝落盘。
     "https://github.com/RockJesus/data-packs/releases/download/v1.0/data-pack-1.0.zip",
 )
 
