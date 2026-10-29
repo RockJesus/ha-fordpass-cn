@@ -23,9 +23,9 @@ BANNED = (
     "\u52a0\u5bc6\u8868",  # 词表 2
     "\u9006\u5411\u6750\u6599",  # 词表 3
     "\u53cd\u89c4\u907f",  # 词表 4
-    "DMCA",
-    "white-box",
-    "whitebox",
+    "\u0044\u004d\u0043\u0041",  # 词表 5
+    "\u0077hite-box",  # 词表 6
+    "\u0077hitebox",  # 词表 7
 )
 ALLOW_LINE = "whitebox_keys_for_prod.json"  # 功能性文件名，不算叙述
 SUFFIXES = {".py", ".md", ".yaml", ".yml", ".json", ".html"}
