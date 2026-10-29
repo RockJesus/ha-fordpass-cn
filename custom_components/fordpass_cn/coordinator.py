@@ -1157,13 +1157,21 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "app_init_settings": "应用设置信息",
                 "vehicle_model_masterdata": "车型主数据",
                 "user_login_status": "用户登录状态",
+                # v6.1.9: 剩余只读端点补全
+                "warranty": "质保信息", "capability_v4": "车辆能力清单",
+                "vehicle_info": "车辆信息", "fposb_resources": "维保可约资源",
+                "evss_freepass_notice": "免密支付通知",
+                "wallbox_process_log": "充电过程日志",
+                "wallbox_tnc_content": "家充桩分享条款",
             }
             _charge_kinds = ("wallbox_bound", "wallbox_info", "wallbox_records_v2",
                              "evss_order_status", "evss_apps_info", "evss_usage_notice",
                              "vpoi_status", "vpoi_saved",
                              "evss_payment_summary", "evss_invoiceables",
                              "evss_events_v3", "evss_evaluate_url",
-                             "wallbox_ble_vehicles")
+                             "wallbox_ble_vehicles",
+                             "evss_freepass_notice", "wallbox_process_log",
+                             "wallbox_tnc_content")
             _fuel = str(self.vehicle_info.get("fuelType") or "").upper()
             _charge_ok = _fuel in ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
             ep = self.extra_probes or {}

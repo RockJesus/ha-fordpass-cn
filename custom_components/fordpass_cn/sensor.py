@@ -539,6 +539,16 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             # /api/app-init/v3/visitor-mode/init-page-info，探测到数据才创建，
             # 全车型自动适配）
             ("visitor_mode", "访客模式", "visitor_mode"),
+            # v6.1.9: 剩余只读业务端点补全（探测到数据才创建，全车型
+            # 自动适配；探测被拒/无数据不创建、零噪音）：
+            ("warranty", "质保信息", "warranty"),
+            ("capability_v4", "车辆能力清单", "capability_v4"),
+            ("vehicle_info", "车辆信息", "vehicle_info"),
+            ("fposb_resources", "维保可约资源", "fposb_resources"),
+            # 充电域三项（电/插混/混动才探测创建）：
+            ("evss_freepass_notice", "免密支付通知", "evss_freepass_notice"),
+            ("wallbox_process_log", "充电过程日志", "wallbox_process_log"),
+            ("wallbox_tnc_content", "家充桩分享条款", "wallbox_tnc_content"),
             # v4.8.1: 林肯之道专属账号级只读端点（5.8.0 实测）——仅
             # brand==lincoln 时 coordinator 探测，键存在（探测成功）才创建；
             # 福特派账号不探测、键不存在不创建，零副作用。
@@ -564,7 +574,9 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                              "vpoi_status", "vpoi_saved",
                              "evss_payment_summary", "evss_invoiceables",
                              "evss_events_v3", "evss_evaluate_url",
-                             "wallbox_ble_vehicles")
+                             "wallbox_ble_vehicles",
+                             "evss_freepass_notice", "wallbox_process_log",
+                             "wallbox_tnc_content")
             _common_kinds = ("ota_agreements", "share_capability", "share_history",
                              "app_init_settings", "vehicle_model_masterdata",
                              "user_login_status", "visitor_mode")
@@ -3234,6 +3246,57 @@ class FordPassProbeSensor(SensorEntity):
                             "false": "未登录", "LOGIN": "已登录", "LOGOUT": "未登录"}.get(
                         str(st), str(st))
                 return "登录状态未知"
+            # ---- v6.1.9: 剩余只读业务端点（探测到数据才创建）----
+            if self._kind == "warranty":
+                st = (_swb_find(data, "warrantyStatus") or _swb_find(data, "status"))
+                start = (_swb_find(data, "warrantyStartDate") or _swb_find(data, "startDate"))
+                end = (_swb_find(data, "warrantyEndDate") or _swb_find(data, "endDate"))
+                parts = [str(x) for x in (st, start, end) if x]
+                if parts:
+                    return " · ".join(parts)
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 项质保信息"
+                return "质保信息已连接"
+            if self._kind == "capability_v4":
+                feat = (_swb_find(data, "availableFeatures")
+                        or _swb_find(data, "featureData"))
+                if isinstance(feat, str) and feat:
+                    return f"能力位图 {feat}"
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 项能力"
+                return "能力清单已连接"
+            if self._kind == "vehicle_info":
+                n = (_swb_find(data, "vehicleModelName") or _swb_find(data, "modelName")
+                     or _swb_find(data, "model") or _swb_find(data, "vehicleName"))
+                if n is not None:
+                    return str(n)
+                return f"{len(data)} 项车辆信息"
+            if self._kind == "fposb_resources":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 项可约资源"
+                return "维保可约资源已连接"
+            if self._kind == "evss_freepass_notice":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条免密通知"
+                st = _swb_find(data, "status") or _swb_find(data, "noticeStatus")
+                if st is not None:
+                    return str(st)
+                return "免密通知已连接"
+            if self._kind == "wallbox_process_log":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条过程日志"
+                return "充电过程日志已连接"
+            if self._kind == "wallbox_tnc_content":
+                v = (_swb_find(data, "version") or _swb_find(data, "tncVersion")
+                     or _swb_find(data, "title"))
+                if v is not None:
+                    return str(v)
+                return "分享条款已连接"
         except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
             return "解析失败"
         return None

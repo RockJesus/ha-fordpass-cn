@@ -82,8 +82,10 @@ from .const import (
     PATH_EVSS_ORDERS,
     PATH_EVSS_PARKING,
     PATH_EVSS_PAYMENT_SUMMARY,
+    PATH_EVSS_FREEPASS_NOTICE,
     PATH_EVSS_STATIONS,
     PATH_EVSS_USAGE_NOTICE,
+    PATH_FPOSB_AVAILABLE_RESOURCE,
     PATH_FPOSB_BOOKING_DETAIL,
     PATH_FPOSB_CANCEL,
     PATH_FPOSB_HISTORY,
@@ -138,6 +140,7 @@ from .const import (
     PATH_SMARTWALLBOX_CONFIG,
     PATH_SMARTWALLBOX_INFO,
     PATH_SMARTWALLBOX_ORDERS,
+    PATH_SMARTWALLBOX_PROCESS_LOG,
     PATH_SMARTWALLBOX_RECORDS,
     PATH_SMARTWALLBOX_RECORDS_V2,
     PATH_SMARTWALLBOX_SHARING_QUERY,
@@ -161,6 +164,7 @@ from .const import (
     PATH_V5_PANIC,
     PATH_V5_STATUS,
     PATH_V5_STATUSREFRESH,
+    PATH_VEHICLE_INFO,
     PATH_VEHICLE_MODEL_MASTERDATA,
     PATH_VEHICLE_STATUS,
     PATH_VEHICLE_USER_AUTH,
@@ -2565,6 +2569,21 @@ class FordPassApi:
             # 后替换 v3 传感器数据源——先探测落盘）
             "vpoi_chargestations_v4": (PATH_VPOI_CHARGESTATIONS_V4, None, True),
             "vpoi_saved_v4": (PATH_VPOI_SAVED_V4, None, True),
+            # v6.1.9: 剩余只读业务端点补全（探测到数据才创建，与现有实体
+            # 不重复；全部 GET + 标准签名 / 多形态自适应 POST）：
+            # 质保信息（v6.1.9 前实测签名通过但服务端 100502 参数校验拒绝
+            # ——探测失败不建实体、确定性拒绝落盘缓存，云端放开后自动出现）
+            "warranty": (PATH_WARRANTY, None, False),
+            # 车辆能力清单 v4（cvfeatures，v3.1.16 实测 GET/POST 均 404——
+            # 网关未开放；同上探测自适应，未来开放自动创建）
+            "capability_v4": (PATH_CVFEATURES, None, True),
+            # 车辆信息 v5（vehicles/info，未实测——探测自适应）
+            "vehicle_info": (PATH_VEHICLE_INFO, None, False),
+            # 充电域只读扩展（免密支付通知 / 充电过程日志 / 分享条款内容；
+            # 纯油/柴油车型由下方 fuelType 过滤跳过）：
+            "evss_freepass_notice": (PATH_EVSS_FREEPASS_NOTICE, None, True),
+            "wallbox_process_log": (PATH_SMARTWALLBOX_PROCESS_LOG, None, True),
+            "wallbox_tnc_content": (PATH_WALLBOX_TNC_CONTENT, None, False),
         }
         # v3.5.1: 账号级端点。v3.5.6 实证——GET 全 404（v3.5.1/3.5.2 移除
         # 车辆参数后仍 404 → 路由为 POST-only）；POST body 需
@@ -2601,10 +2620,10 @@ class FordPassApi:
             for _k in (
                 "chargelogs",
                 "wallbox_bound", "wallbox_info", "wallbox_records_v2",
-                "wallbox_ble_vehicles",
+                "wallbox_ble_vehicles", "wallbox_process_log", "wallbox_tnc_content",
                 "evss_order_status", "evss_apps_info", "evss_usage_notice",
                 "evss_payment_summary", "evss_invoiceables", "evss_events_v3",
-                "evss_evaluate_url",
+                "evss_evaluate_url", "evss_freepass_notice",
                 "vpoi_status", "vpoi_saved",
                 "vpoi_chargestations_v4", "vpoi_saved_v4",
                 "evss_stations", "evss_orders", "vpoi_chargestations",
@@ -2954,6 +2973,8 @@ class FordPassApi:
             "fposb_detail": PATH_FPOSB_BOOKING_DETAIL,
             "fposb_pud": PATH_FPOSB_PUD_DETAIL,
             "fposb_sa": PATH_FPOSB_SA_INFO,
+            # v6.1.9: 维保可约资源查询（GET 只读，不触发下单动作）
+            "fposb_resources": PATH_FPOSB_AVAILABLE_RESOURCE,
         }
         for name, path in probes.items():
             try:
