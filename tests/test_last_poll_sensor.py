@@ -115,7 +115,7 @@ def test_diag_sensor_defaults():
     assert cls._attr_has_entity_name is True
     # v6.2.8: 默认启用（不设 enabled_default=False，与旧 last_poll 相反）
     assert getattr(cls, "_attr_entity_registry_enabled_default", True) is not False
-    assert ent._attr_name == "车辆数据时间"
+    assert ent._attr_name == "车机数据最后刷新时间"
 
 
 def test_native_value_last_modified_date_seconds():
@@ -135,10 +135,11 @@ def test_native_value_millis_fallback_last_refresh():
 
 def test_native_value_date_string():
     cls = load_sensor_cls()
-    # v6.2.9: 实测云端返回日期时间字符串 "MM-DD-YYYY HH:mm:ss"（无时区 →
-    # 按 UTC 解释，as_utc 语义由 fake 承担）
-    ent = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": "10-30-2026 04:15:47"}}))
-    assert ent.native_value == datetime(2026, 10, 30, 4, 15, 47, tzinfo=timezone.utc)
+    # v6.2.10: 实测云端日期时间字符串为 UTC 时间（与字段级 timestamp 同值、
+    # 与 HA last_changed 分钟级吻合），直接按 UTC 解释——不再按本地时区 +8
+    # 转换（此前值晚 8 小时）
+    ent = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": "10-30-2026 06:08:29"}}))
+    assert ent.native_value == datetime(2026, 10, 30, 6, 8, 29, tzinfo=timezone.utc)
     # 纯日期无时间部分
     ent2 = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": "2026-10-30"}}))
     assert ent2.native_value == datetime(2026, 10, 30, 0, 0, tzinfo=timezone.utc)

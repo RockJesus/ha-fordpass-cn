@@ -829,7 +829,7 @@ class FordPassRestoreMixin(RestoreEntity):
 
 
 class FordPassVehicleDataTimeSensor(SensorEntity):
-    """车辆数据时间——云端 vehicle-status 顶层的最后数据时间（v6.2.8）。
+    """车机数据最后刷新时间——云端 vehicle-status 顶层的最后数据时间。
 
     v6.2.8: 替代「云端最后刷新」。后者是本机轮询完成时间（每轮都变、
     与车辆数据无关）；本实体取云端返回的 ``lastModifiedDate`` /
@@ -838,6 +838,10 @@ class FordPassVehicleDataTimeSensor(SensorEntity):
     拉取失败时保留最后已知值（available 恒随 coordinator.data）。
     秒/毫秒时间戳自适应（13 位毫秒 / 10 位秒），占位值（早于
     2000-01-01）视为无效显示 unknown。
+    v6.2.10: 名称改为「车机数据最后刷新时间」；实测云端日期时间字符串
+    （MM-DD-YYYY HH:mm:ss）为 UTC 时间（与字段级 timestamp 同值、与
+    HA last_changed 分钟级吻合），字符串直接按 UTC 解释，不再按
+    HA 本地时区（+8）转换（此前值晚 8 小时）。
     """
 
     _attr_should_poll = False  # coordinator listener 驱动
@@ -849,7 +853,7 @@ class FordPassVehicleDataTimeSensor(SensorEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-vehicle_data_time"
-        self._attr_name = "车辆数据时间"
+        self._attr_name = "车机数据最后刷新时间"
         self._attr_device_info = coordinator.device_info
 
     @staticmethod
@@ -1173,8 +1177,9 @@ def _ts_to_dt(v):
 
     v6.2.8: 车辆数据时间实体用。v6.2.9: 实测云端 lastModifiedDate/
     lastRefresh 为日期时间字符串（如 "10-30-2026 04:15:47"，
-    MM-DD-YYYY HH:mm:ss），数字秒/毫秒（13 位 / 10 位）同样支持；
-    字符串无时区信息时按 HA 本地时区解释（as_utc）。
+    MM-DD-YYYY HH:mm:ss），数字秒/毫秒（13 位 / 10 位）同样支持。
+    v6.2.10: 实测该字符串本身为 UTC 时间，直接按 UTC 解释（此前按
+    HA 本地时区 +8 转换，值晚 8 小时）。
     早于 2000 年一律视为云端占位（实测命令执行中返回 01-01-0001）。
     """
     if not v:
@@ -1189,7 +1194,9 @@ def _ts_to_dt(v):
             return dt_util.utc_from_timestamp(ts)
         except (TypeError, ValueError, OSError):
             return None
-    # 日期时间字符串（实测 MM-DD-YYYY HH:mm:ss；兼容常见变体与 ISO）
+    # 日期时间字符串（实测 MM-DD-YYYY HH:mm:ss；兼容常见变体与 ISO）。
+    # v6.2.10: 实测该字符串为 UTC 时间（与字段级 timestamp 同值、与 HA
+    # last_changed 分钟级吻合），直接按 UTC 解释，不再走本地时区转换。
     s = str(v).strip()
     if not s:
         return None
@@ -1199,7 +1206,7 @@ def _ts_to_dt(v):
             dt = datetime.datetime.strptime(s, fmt)
             if dt.year < 2000:
                 return None
-            return dt_util.as_utc(dt)
+            return dt.replace(tzinfo=datetime.timezone.utc)
         except ValueError:
             continue
     try:
@@ -1207,6 +1214,8 @@ def _ts_to_dt(v):
         if dt is not None:
             if dt.year < 2000:
                 return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
             return dt_util.as_utc(dt)
     except (TypeError, ValueError, OSError):
         return None
