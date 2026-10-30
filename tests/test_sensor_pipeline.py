@@ -14,7 +14,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
 
@@ -41,7 +41,7 @@ class _FakeCoordinator:
 
     uid_key = "VIN123"
     vin = "VIN123"
-    device_info: dict[str, Any] = {}
+    device_info: ClassVar[dict[str, Any]] = {}
     last_poll: Any = None
     _consecutive_failures = 0
     _last_success_time: Any = None
@@ -60,8 +60,28 @@ def _mk(name: str, **attrs: Any) -> types.ModuleType:
     return module
 
 
+def _ensure_dt_fakes() -> None:
+    """每次加载前重设 dt fake——其他测试文件（如 test_last_poll_sensor）
+    会用全新模块替换 sys.modules['homeassistant.util.dt'] 导致 as_local/
+    utc_from_timestamp 等成员丢失；此处幂等重设保证本文件测试顺序无关。"""
+    import datetime as _dt_mod
+
+    _dt = sys.modules["homeassistant.util.dt"]
+    _tz_cn = _dt_mod.timezone(_dt_mod.timedelta(hours=8))
+    _dt.as_utc = lambda v: v
+    _dt.now = lambda: None
+    _dt.utc_from_timestamp = (
+        lambda ts: _dt_mod.datetime.fromtimestamp(ts, tz=_dt_mod.UTC)
+    )
+    _dt.as_local = (
+        lambda dt: dt.astimezone(_tz_cn) if dt.tzinfo else dt.replace(tzinfo=_tz_cn)
+    )
+    _dt.parse_datetime = lambda s: None
+
+
 def _install_fake_modules() -> None:
     if "fpcn.sensor" in sys.modules:
+        _ensure_dt_fakes()
         return
     for name in (
         "homeassistant",
@@ -168,8 +188,8 @@ def _install_fake_modules() -> None:
     )
     sys.modules["homeassistant.helpers.entity"].Entity = object
     sys.modules["homeassistant.helpers.entity_platform"].AddEntitiesCallback = object
-    sys.modules["homeassistant.util.dt"].as_utc = lambda v: v
-    sys.modules["homeassistant.util.dt"].now = lambda: None
+    sys.modules["homeassistant.util.dt"] = _mk("homeassistant.util.dt")
+    _ensure_dt_fakes()
     _mk(
         "homeassistant.exceptions",
         HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
@@ -265,3 +285,40 @@ def test_sync_health_has_no_per_poll_timestamp() -> None:
     assert attrs["consecutive_failures"] == 2
     assert attrs["last_error_detail"] == "限流"
     assert ent.native_value == "异常"
+
+
+def test_ts_to_local_any() -> None:
+    """v6.3.2: UTC 数字（秒/毫秒）与日期时间字符串统一转本地；无效/占位 → None。"""
+    mod = load_sensor()
+    assert mod._ts_to_local_any(1730075400) == "2024-10-28 08:30:00"
+    assert mod._ts_to_local_any(1730075400000) == "2024-10-28 08:30:00"
+    assert mod._ts_to_local_any("10-28-2024 02:30:00") == "2024-10-28 10:30:00"
+    assert mod._ts_to_local_any("01-01-0001 00:00:00") is None  # 云端占位
+    assert mod._ts_to_local_any(0) is None
+    assert mod._ts_to_local_any(None) is None
+    assert mod._ts_to_local_any("garbage") is None
+
+
+def test_localized_time_attributes() -> None:
+    """v6.3.2: 公共属性 timestamp/vehicle_data_time 本地化 + *_raw 保留原值。"""
+    mod = load_sensor()
+    data = {
+        "vehiclestatus": {
+            "fuel": {
+                "value": 55.6,
+                "status": "CURRENT",
+                "timestamp": 1730075400000,
+            },
+            "lastModifiedDate": "10-28-2024 02:30:00",
+        }
+    }
+    coord = _FakeCoordinator(data)
+    ent = mod.FordPassSensor(
+        coord, "test", "测试", "%", None, "mdi:fuel", ["fuel"]
+    )
+    attrs = ent.extra_state_attributes
+    assert attrs["timestamp"] == "2024-10-28 08:30:00"  # 本地展示（00:30 UTC +8）
+    assert attrs["timestamp_raw"] == 1730075400000       # 云端原值保留
+    assert attrs["vehicle_data_time"] == "2024-10-28 10:30:00"
+    assert attrs["vehicle_data_time_raw"] == "10-28-2024 02:30:00"
+    assert attrs["source_status"] == "CURRENT"

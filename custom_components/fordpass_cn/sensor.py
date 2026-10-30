@@ -27,6 +27,7 @@ from . import capability
 from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
 from .coordinator import FordPassCoordinator
 
+
 def async_sync_entity_categories(hass: HomeAssistant, domain: str, entities) -> None:
     """v5.9.3: 把代码声明的 entity_category 同步到已存在的注册表条目。
 
@@ -948,15 +949,25 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Expose Ford's own data timestamp/status for this reading (v2.7.2)."""
+        """Expose Ford's own data timestamp/status for this reading (v2.7.2).
+
+        v6.3.2: 时间属性本地化展示——``timestamp`` / ``vehicle_data_time``
+        从云端 UTC 原值改为本地时间字符串（前端直接可读），云端原值移到
+        ``timestamp_raw`` / ``vehicle_data_time_raw`` 供诊断与自动化对照；
+        ``source_status`` 原样透传。
+        """
         status = (self.coordinator.data or {}).get("vehiclestatus", {})
         attrs: dict = {}
         node = _first_leaf_node(status, self._paths)
         if isinstance(node, dict):
-            attrs["timestamp"] = node.get("timestamp")
+            raw_ts = node.get("timestamp")
+            attrs["timestamp"] = _ts_to_local_any(raw_ts)
+            attrs["timestamp_raw"] = raw_ts
             attrs["source_status"] = node.get("status")
         if isinstance(status, dict):
-            attrs["vehicle_data_time"] = status.get("lastModifiedDate") or status.get("lastRefresh")
+            raw_vdt = status.get("lastModifiedDate") or status.get("lastRefresh")
+            attrs["vehicle_data_time"] = _ts_to_local_any(raw_vdt)
+            attrs["vehicle_data_time_raw"] = raw_vdt
         # v5.4.6: EVCC 对接——charging_status 中文 enum -> 数值 chargeState
         # （0 未知/1 未充电/2 充电中/3 已充满，EVCC chargeState 语义）
         if self._evcc_state and self.native_value is not None:
@@ -1051,7 +1062,9 @@ class FordPassAlertSensor(SensorEntity):
             node = _leaf_node(status, "PrmtAlarmEvent")
             if isinstance(node, dict):
                 attrs["source"] = "vehicle_status"
-                attrs["timestamp"] = node.get("timestamp")
+                raw_ts = node.get("timestamp")
+                attrs["timestamp"] = _ts_to_local_any(raw_ts)
+                attrs["timestamp_raw"] = raw_ts
                 attrs["source_status"] = node.get("status")
         # v4.9.0: 过滤空值属性（source_status/timestamp null 噪音）
         return {k: v for k, v in attrs.items() if v not in (None, "")}
@@ -1206,7 +1219,7 @@ def _ts_to_dt(v):
             dt = datetime.datetime.strptime(s, fmt)
             if dt.year < 2000:
                 return None
-            return dt.replace(tzinfo=datetime.timezone.utc)
+            return dt.replace(tzinfo=datetime.UTC)
         except ValueError:
             continue
     try:
@@ -1215,11 +1228,28 @@ def _ts_to_dt(v):
             if dt.year < 2000:
                 return None
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=datetime.timezone.utc)
+                dt = dt.replace(tzinfo=datetime.UTC)
             return dt_util.as_utc(dt)
     except (TypeError, ValueError, OSError):
         return None
     return None
+
+
+def _ts_to_local_any(v):
+    """UTC 数字/字符串时间戳 → 本地时间字符串（v6.3.2）。
+
+    统一处理 vehiclestatus 家族的 UTC 时间字段（字段级 timestamp 数字/
+    毫秒、lastModifiedDate/lastRefresh 日期时间字符串）为本地展示值；
+    无效/云端占位（早于 2000 年）返回 None。
+
+    注意：福特云端不同端点时间字段时区不一致——vehiclestatus 家族为
+    UTC（v6.2.10/v6.3.0 实测），定位 uploadTime、告警 eventTime 为北京
+    本地透传（勿用本函数转换，见时区审计结论）。
+    """
+    dt = _ts_to_dt(v)
+    if dt is None:
+        return None
+    return dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _ts_to_local(v):
@@ -1298,7 +1328,12 @@ def _remote_start_time(v):
 
 
 def _ts_or_str(v):
-    """充电开始/结束时间：unix 秒/毫秒时间戳 → 本地时间，字符串原样（v2.9.0）。"""
+    """充电开始/结束时间：unix 秒/毫秒时间戳 → 本地时间，字符串原样（v2.9.0）。
+
+    v6.3.2: 字符串分支**保持原样**——chargeStartTime/chargeEndTime 的云端
+    时区未实测（福特不同端点时区不一致），不盲转本地避免改错（若实测为
+    UTC 再接入 _ts_to_local_any）。
+    """
     if v is None:
         return None
     if isinstance(v, (int, float)) and not isinstance(v, bool):
@@ -1342,8 +1377,10 @@ class FordPassAutoOffSensor(SensorEntity):
             "duration_minutes": rs.get("remoteStartDuration"),
             "start_time": _ts_to_local(t0),
             "source_status": rss.get("status") or rs.get("status"),
-            "timestamp": rss.get("timestamp") or rs.get("timestamp"),
         }
+        raw_ts = rss.get("timestamp") or rs.get("timestamp")
+        attrs["timestamp"] = _ts_to_local_any(raw_ts)
+        attrs["timestamp_raw"] = raw_ts
         return attrs
 
     @property

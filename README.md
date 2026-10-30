@@ -477,7 +477,7 @@ recorder:
 **变更记录统一发布在 GitHub Releases**，本 README 不再维护更新日志：
 
 - 全部版本与变更说明 → [Releases](https://github.com/RockJesus/ha-fordpass-cn/releases)
-- 当前版本 → **v6.3.1**（见顶部版本徽章，或 HACS「已下载」列表）
+- 当前版本 → **v6.3.2**（见顶部版本徽章，或 HACS「已下载」列表）
 - 升级方式 → HACS → 福特派互联 → **更新**（或「重新下载」）→ 重启 Home Assistant
 - 需要强制升级的接口变更会在 Release 标题中标注
 
