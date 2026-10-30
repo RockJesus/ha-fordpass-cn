@@ -58,8 +58,9 @@ def _install_fake_modules() -> None:
         pass
 
     _dt = mk("homeassistant.util.dt")
-    _dt.as_utc = lambda value: value.astimezone(timezone.utc)
+    _dt.as_utc = lambda value: value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
     _dt.utc_from_timestamp = lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc)
+    _dt.parse_datetime = lambda s: None
 
     for name in ("homeassistant", "homeassistant.components",
                  "homeassistant.helpers", "homeassistant.util"):
@@ -130,6 +131,17 @@ def test_native_value_millis_fallback_last_refresh():
     # lastModifiedDate 缺失 → 回退 lastRefresh；13 位毫秒自适应
     ent = cls(_mk_coord({"vehiclestatus": {"lastRefresh": 1730075400123}}))
     assert ent.native_value == datetime.fromtimestamp(1730075400.123, tz=timezone.utc)
+
+
+def test_native_value_date_string():
+    cls = load_sensor_cls()
+    # v6.2.9: 实测云端返回日期时间字符串 "MM-DD-YYYY HH:mm:ss"（无时区 →
+    # 按 UTC 解释，as_utc 语义由 fake 承担）
+    ent = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": "10-30-2026 04:15:47"}}))
+    assert ent.native_value == datetime(2026, 10, 30, 4, 15, 47, tzinfo=timezone.utc)
+    # 纯日期无时间部分
+    ent2 = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": "2026-10-30"}}))
+    assert ent2.native_value == datetime(2026, 10, 30, 0, 0, tzinfo=timezone.utc)
 
 
 def test_placeholder_and_missing_value_invalid():

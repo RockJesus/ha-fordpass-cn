@@ -1169,23 +1169,48 @@ class FordPassActiveAlertListSensor(SensorEntity):
 
 
 def _ts_to_dt(v):
-    """云端时间戳（秒或毫秒）→ aware UTC datetime；占位/无效返回 None。
+    """云端时间戳 → aware UTC datetime；占位/无效返回 None。
 
-    v6.2.8: 车辆数据时间实体用。13 位毫秒 / 10 位秒自适应；早于
-    2000-01-01（946684800 秒）的时间戳为云端占位（实测命令执行中
-    返回 01-01-0001），一律视为无效。
+    v6.2.8: 车辆数据时间实体用。v6.2.9: 实测云端 lastModifiedDate/
+    lastRefresh 为日期时间字符串（如 "10-30-2026 04:15:47"，
+    MM-DD-YYYY HH:mm:ss），数字秒/毫秒（13 位 / 10 位）同样支持；
+    字符串无时区信息时按 HA 本地时区解释（as_utc）。
+    早于 2000 年一律视为云端占位（实测命令执行中返回 01-01-0001）。
     """
     if not v:
         return None
-    try:
-        ts = int(v)
-        if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        try:
+            ts = int(v)
+            if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
+                return None
+            if ts >= 1_000_000_000_000:  # 13 位毫秒
+                ts /= 1000
+            return dt_util.utc_from_timestamp(ts)
+        except (TypeError, ValueError, OSError):
             return None
-        if ts >= 1_000_000_000_000:  # 13 位毫秒
-            ts /= 1000
-        return dt_util.utc_from_timestamp(ts)
+    # 日期时间字符串（实测 MM-DD-YYYY HH:mm:ss；兼容常见变体与 ISO）
+    s = str(v).strip()
+    if not s:
+        return None
+    for fmt in ("%m-%d-%Y %H:%M:%S", "%m-%d-%Y %H:%M", "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.datetime.strptime(s, fmt)
+            if dt.year < 2000:
+                return None
+            return dt_util.as_utc(dt)
+        except ValueError:
+            continue
+    try:
+        dt = dt_util.parse_datetime(s)
+        if dt is not None:
+            if dt.year < 2000:
+                return None
+            return dt_util.as_utc(dt)
     except (TypeError, ValueError, OSError):
         return None
+    return None
 
 
 def _ts_to_local(v):
