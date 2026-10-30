@@ -23,6 +23,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import capability
@@ -315,33 +316,28 @@ class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         wid = self._wallbox_id()
         if not wid:
-            # v5.8.10: 此前完全静默（点了没反应也无日志），改为留痕
-            _LOGGER.warning("FordPass 家充桩充电（开）跳过：探测结果里没有可用的 wallboxId")
-            self._state = False
-            self.async_write_ha_state()
-            return
+            # v6.3.4: 对齐 App——前端明确提示（此前只记日志，点了没反应）
+            raise HomeAssistantError("家充桩充电：未找到已绑定的家充桩（wallboxId）")
         try:
             await self.coordinator.api.wallbox_charge_start(self.coordinator.vin, wid)
-            self._state = True
-        except Exception as exc:  # noqa: BLE001 - 网关拒绝时如实提示
+        except Exception as exc:
             # v5.8.10: 原为纯静默吞掉，用户只看到开关弹回、无任何提示
+            # v6.3.4: 改为抛错 → HA 前端 toast 明确提示（App 式失败反馈）
             _LOGGER.warning("FordPass 家充桩充电（开）失败: %s", exc)
-            self._state = False
+            raise HomeAssistantError(f"家充桩充电（开）失败: {exc}") from exc
+        self._state = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         wid = self._wallbox_id()
         if not wid:
-            _LOGGER.warning("FordPass 家充桩充电（关）跳过：探测结果里没有可用的 wallboxId")
-            self._state = False
-            self.async_write_ha_state()
-            return
+            raise HomeAssistantError("家充桩充电：未找到已绑定的家充桩（wallboxId）")
         try:
             await self.coordinator.api.wallbox_charge_stop(self.coordinator.vin, wid)
-            self._state = False
-        except Exception as exc:  # noqa: BLE001 - 网关拒绝时如实提示
+        except Exception as exc:
             _LOGGER.warning("FordPass 家充桩充电（关）失败: %s", exc)
-            self._state = True
+            raise HomeAssistantError(f"家充桩充电（关）失败: {exc}") from exc
+        self._state = False
         self.async_write_ha_state()
 
 
