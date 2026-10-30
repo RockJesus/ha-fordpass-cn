@@ -94,6 +94,23 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         # 门锁操作后立即显示目标状态，不再等 30s 轮询才有反馈；
         # 命令完成由真实快照纠正，失败回滚并如实报错。
         self._pending: bool | None = None
+        # v6.3.4: HA lock 标准操作中属性——操作期间前端锁卡片显示
+        # 「正在锁定/解锁」动画（对齐福特派 App 的执行中反馈）。
+        self._attr_is_locking = False
+        self._attr_is_unlocking = False
+
+    def _set_pending(self, target: bool) -> None:
+        """置操作中标记：乐观目标状态 + is_locking/is_unlocking 动画。"""
+        self._pending = target
+        self._attr_is_locking = bool(target)
+        self._attr_is_unlocking = not bool(target)
+        self.async_write_ha_state()
+
+    def _clear_pending(self) -> None:
+        self._pending = None
+        self._attr_is_locking = False
+        self._attr_is_unlocking = False
+        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
@@ -108,28 +125,22 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         return self._restore_bool(value == "LOCKED" if value else None)
 
     async def async_lock(self, **kwargs: Any) -> None:
-        self._pending = True
-        self.async_write_ha_state()
+        self._set_pending(True)
         try:
             await self.coordinator.run_command(CMD_LOCK)
         except Exception:
-            self._pending = None
-            self.async_write_ha_state()
+            self._clear_pending()
             raise
-        self._pending = None
-        self.async_write_ha_state()
+        self._clear_pending()
 
     async def async_unlock(self, **kwargs: Any) -> None:
-        self._pending = False
-        self.async_write_ha_state()
+        self._set_pending(False)
         try:
             await self.coordinator.run_command(CMD_UNLOCK)
         except Exception:
-            self._pending = None
-            self.async_write_ha_state()
+            self._clear_pending()
             raise
-        self._pending = None
-        self.async_write_ha_state()
+        self._clear_pending()
 
     async def async_update(self) -> None:
         # v3.8.0: 锁状态由 coordinator 定时刷新驱动，实体轮询不再强制
@@ -168,6 +179,19 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool | None = None  # True=锁定
+        # v6.3.4: 操作中动画（对齐 App 执行中反馈，同门锁）
+        self._attr_is_locking = False
+        self._attr_is_unlocking = False
+
+    def _set_pending(self, target: bool) -> None:
+        self._attr_is_locking = bool(target)
+        self._attr_is_unlocking = not bool(target)
+        self.async_write_ha_state()
+
+    def _clear_pending(self) -> None:
+        self._attr_is_locking = False
+        self._attr_is_unlocking = False
+        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
@@ -189,13 +213,23 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
 
     async def async_lock(self, **kwargs: Any) -> None:
         """锁定后备箱：全车上锁（网关无独立 TrunkLock 命令）。"""
-        await self.coordinator.run_command(CMD_LOCK)
+        self._set_pending(True)
+        try:
+            await self.coordinator.run_command(CMD_LOCK)
+        except Exception:
+            self._clear_pending()
+            raise
         self._state = True
-        self.async_write_ha_state()
+        self._clear_pending()
 
     async def async_unlock(self, **kwargs: Any) -> None:
         """解锁后备箱（TrunkUnlock）。"""
-        await self.coordinator.run_command(CMD_TRUNK_UNLOCK)
+        self._set_pending(False)
+        try:
+            await self.coordinator.run_command(CMD_TRUNK_UNLOCK)
+        except Exception:
+            self._clear_pending()
+            raise
         self._state = False
-        self.async_write_ha_state()
+        self._clear_pending()
 
