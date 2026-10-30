@@ -2097,13 +2097,18 @@ class FordPassApi:
 
     async def wait_command_complete(
         self, vin: str, command_id: str, command_type: str,
-        timeout: float = 60.0, poll: float = 3.0,
+        timeout: float = 30.0, poll: float = 3.0,
     ) -> tuple[bool, dict[str, Any] | None]:
         """Poll command-execution-status until ForceRefresh finishes (v2.7.1).
         v3.8.0: poll 2s→5s（单命令最多 12 次而非 30 次，防福特云限流）。
         v5.8.3: poll 5s→3s——门锁等操作感知从 ~30s 降到 ~15s 内（App 实测
         间隔 ~2.2s）；仅命令执行期短暂轮询（60s 上限 20 次），非持续高频，
         风控风险可控，与 App 节奏对齐。
+        v6.3.3: timeout 60s→30s——实测门锁解锁后物理动作 ~10s 完成，但
+        状态最迟 1 分钟才返回（云端快照翻转慢时轮询吃满 60s 上限）。超时
+        上限压到 30s，到点由 coordinator.run_command 的 fallback 立即全量
+        刷新（force_all=False 无冷却），感知延迟压到 ~30-40s；云端翻转快
+        （~15s）时行为不变。
 
         Verified from a live capture (2026-09-29): after
         send-command returns a commandId, the gateway polls
