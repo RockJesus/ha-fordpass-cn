@@ -17,6 +17,7 @@ import asyncio
 import importlib.util
 import sys
 import types
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -92,8 +93,18 @@ def _install_fake_modules() -> None:
         sys.modules[name] = module
         return module
 
-    for name in ("homeassistant", "homeassistant.components", "homeassistant.helpers"):
+    for name in ("homeassistant", "homeassistant.components", "homeassistant.helpers",
+                 "homeassistant.util"):
         mk(name)
+    # v6.3.1: event.py 用 dt_util 生成事件时间（固定 UTC 时刻 06:09:26，
+    # 本地 +8 为 14:09:26，便于断言本地/UTC 双口径属性）
+    _DT_NOW = datetime(2026, 10, 30, 6, 9, 26, tzinfo=timezone.utc)
+    _TZ_CN = timezone(timedelta(hours=8))
+    _dt = mk("homeassistant.util.dt")
+    _dt.utcnow = lambda: _DT_NOW
+    _dt.as_local = lambda dt: dt.astimezone(_TZ_CN) if dt.tzinfo else dt.replace(tzinfo=_TZ_CN)
+    _dt.as_utc = lambda dt: dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    sys.modules["homeassistant.util.dt"] = _dt
     mk("homeassistant.components.event", EventEntity=_FakeEventEntity)
     mk("homeassistant.config_entries", ConfigEntry=object)
     mk("homeassistant.core", HomeAssistant=object, callback=lambda func: func)
@@ -216,6 +227,41 @@ def test_door_open_then_close() -> None:
     entity.coordinator.data = doors(driverDoor="Closed", tailgateDoor="Closed")
     entity._process()
     assert [e[0] for e in fired(entity)][-1] == "closed"
+
+
+def test_fire_attributes_local_time_and_cn() -> None:
+    """v6.3.1: 事件属性带本地时间（+8）、UTC 时间与中文事件类型。
+
+    state 是框架语义（UTC 时间戳），本地时间放属性供展示。
+    """
+    entity = make_door(doors(driverDoor="Closed"))
+    entity._process()
+    entity.coordinator.data = doors(driverDoor="Open")
+    entity._process()
+    attrs = fired(entity)[0][1]
+    assert attrs["event_time"] == "2026-10-30 14:09:26"      # 本地 +8
+    assert attrs["event_time_utc"] == "2026-10-30 06:09:26"  # UTC 原始
+    assert attrs["event_type_cn"] == "已开门"
+
+    entity.coordinator.data = doors(driverDoor="Closed")
+    entity._process()
+    attrs = fired(entity)[-1][1]
+    assert attrs["event_type_cn"] == "已关门"
+
+
+def test_alert_fire_attributes_cn() -> None:
+    entity = make_alert(alerts("A"))
+    entity._process()
+    entity.coordinator.data = alerts("A", "B")
+    entity._process()
+    attrs = fired(entity)[0][1]
+    assert attrs["event_type_cn"] == "有告警"
+    assert attrs["event_time_utc"] == "2026-10-30 06:09:26"
+
+    entity.coordinator.data = alerts()
+    entity._process()
+    attrs = fired(entity)[-1][1]
+    assert attrs["event_type_cn"] == "已解除"
 
 
 def test_door_multiple_changes_merged() -> None:

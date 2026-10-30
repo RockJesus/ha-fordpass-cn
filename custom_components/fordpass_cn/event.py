@@ -30,6 +30,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 
 from .coordinator import FordPassCoordinator
 
@@ -71,6 +72,8 @@ class _FordPassEventBase(EventEntity, RestoreEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    # v6.3.1: 事件类型 → 中文显示名（属性 event_type_cn，纯增量不影响自动化）
+    _attr_event_type_cn: dict[str, str] = {}
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
@@ -135,8 +138,25 @@ class _FordPassEventBase(EventEntity, RestoreEntity):
         HA 的 ``_trigger_event`` 只更新内部记录、不落状态机
         （见 ``EventEntity._trigger_event``），必须紧跟一次
         ``async_write_ha_state`` 才会产生 state_changed，自动化才能触发。
+
+        v6.3.1: 属性补充事件时间（本地与 UTC 两个口径）与中文事件类型。
+        官方 event 实体的 state 就是「最近事件发射时间」（UTC 时间戳），
+        前端不保证转本地，用户看到的 state 常是 UTC 值——本地时间放在
+        ``event_time`` 属性里展示；``event_time_utc`` 保留 UTC 口径供
+        自动化/日志对照。恢复路径（_restore_last_event）不经过本方法，
+        因此不会伪造事件时刻。
         """
-        self._trigger_event(event_type, attributes)
+        now_utc = dt_util.utcnow()
+        attrs = dict(attributes or {})
+        attrs.setdefault(
+            "event_time",
+            dt_util.as_local(now_utc).strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        attrs.setdefault("event_time_utc", now_utc.strftime("%Y-%m-%d %H:%M:%S"))
+        cn = self._attr_event_type_cn.get(event_type)
+        if cn:
+            attrs.setdefault("event_type_cn", cn)
+        self._trigger_event(event_type, attrs)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -152,6 +172,7 @@ class FordPassAlertEvent(_FordPassEventBase):
     _attr_name = "车辆告警事件"
     _attr_icon = "mdi:alert-circle"
     _attr_event_types = ["alert", "cleared"]
+    _attr_event_type_cn = {"alert": "有告警", "cleared": "已解除"}
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         super().__init__(coordinator)
@@ -230,6 +251,7 @@ class FordPassDoorEvent(_FordPassEventBase):
     _attr_name = "车门开合事件"
     _attr_icon = "mdi:car-door"
     _attr_event_types = ["opened", "ajar", "closed"]
+    _attr_event_type_cn = {"opened": "已开门", "ajar": "未关紧", "closed": "已关门"}
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         super().__init__(coordinator)
