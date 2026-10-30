@@ -25,6 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import capability
 from .api import extract_remote_image_url
@@ -264,6 +265,11 @@ class _FordPassButtonBase(ButtonEntity):
     # 秒的平台默认轮询（按钮没有可轮询的远端状态，轮询只是白跑一次空 update）。
     _attr_should_poll = False
     _attr_state = "待命"
+    # v6.3.4: 操作结果记录（对齐福特派 App 的操作反馈——成功/失败/
+    # 时间一目了然；失败同时抛错给 HA 前端 toast）。
+    _last_cmd_time: str | None = None
+    _last_cmd_result: str | None = None
+    _last_cmd_error: str | None = None
 
     @property
     def state(self) -> str | None:
@@ -271,6 +277,36 @@ class _FordPassButtonBase(ButtonEntity):
         if st is None or st in ("unknown", "unavailable", ""):
             return "待命"
         return st
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "last_command": self._last_cmd_time,
+            "last_result": self._last_cmd_result,
+            "last_error": self._last_cmd_error,
+        }
+
+    def _set_cmd_result(self, ok: bool, err: str | None = None) -> None:
+        """记录最近一次操作结果（时间/成功或失败/错误摘要）。"""
+        self._last_cmd_time = dt_util.now().isoformat(timespec="seconds")
+        self._last_cmd_result = "成功" if ok else "失败"
+        self._last_cmd_error = None if ok else (err or "")
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    async def async_press(self) -> None:
+        """v6.3.4 统一执行入口：成功/失败统一记录并如实上报 UI。
+
+        子类实现 _do_press 承载具体命令；本层保证任何按钮按下后都留下
+        操作结果（last_command/last_result/last_error）——成功即时反馈，
+        失败除记录外抛 HomeAssistantError → HA 前端 toast（App 式体验）。
+        """
+        try:
+            await self._do_press()
+        except Exception as exc:
+            self._set_cmd_result(False, str(exc))
+            raise
+        self._set_cmd_result(True)
 
 
 class FordPassWallboxUnbindButton(_FordPassButtonBase):
@@ -312,7 +348,7 @@ class FordPassWallboxUnbindButton(_FordPassButtonBase):
                     return str(v)
         return None
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         wid = self._wallbox_id()
         if not wid:
             raise HomeAssistantError("未找到已绑定的家充桩")
@@ -362,7 +398,7 @@ class FordPassWallboxBleAddButton(_FordPassButtonBase):
                     return str(v)
         return None
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         wid = self._wallbox_id()
         if not wid:
             raise HomeAssistantError("未找到已绑定的家充桩")
@@ -389,7 +425,7 @@ class FordPassMarkReadButton(_FordPassButtonBase):
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:email-check-outline"
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         try:
             category_id: str | None = None
             message_id: str | None = None
@@ -424,7 +460,7 @@ class FordPassVideoStartButton(_FordPassButtonBase):
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:record-rec"
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         try:
             await self.coordinator.api.start_video_recording(self.coordinator.vin)
         except Exception as exc:
@@ -443,7 +479,7 @@ class FordPassVideoStopButton(_FordPassButtonBase):
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:stop"
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         try:
             await self.coordinator.api.stop_video_recording(self.coordinator.vin)
         except Exception as exc:
@@ -473,7 +509,7 @@ class FordPassButton(_FordPassButtonBase):
                 return str(inner["commandId"])
         return None
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         """Send the command, then refresh entities so the UI always moves.
 
         ForceRefresh (v2.7.1, verified from a live capture):
@@ -585,7 +621,7 @@ class FordPassManualRefreshButton(_FordPassButtonBase):
     def available(self) -> bool:
         return True  # v4.5.5: 手动刷新按钮保持恒可用（刷新失败时仍需可点以重试）
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         vin = self.coordinator.vin
         # v4.4.0: 点击立即写活动——完整流程（车机上报 30s + 拉取 + 刷新实体）
         # 需数十秒到数分钟，此前要等 force_refresh 完成才写摘要，用户点击后
@@ -670,7 +706,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
     def available(self) -> bool:
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         _LOGGER.info("FordPass 重置空调滤芯：PUT %s", self.coordinator.uid_key[-6:])
         try:
             resp = await self.coordinator.api.reset_air_filter(self.coordinator.vin)
@@ -710,7 +746,7 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
     def available(self) -> bool:
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         _LOGGER.info("FordPass 清空预约出发/充电：POST %s", self.coordinator.uid_key[-6:])
         try:
             resp = await self.coordinator.api.cevs_delete_all_departures(
@@ -813,7 +849,7 @@ class FordPassCevsSaveDepartureButton(_FordPassButtonBase):
             return _find_first_plan(inner)
         return None
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         struct = self._structure()
         if not struct:
             raise HomeAssistantError(
@@ -857,7 +893,7 @@ class FordPassCevsDeleteChargelogButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _pick_id(data, ("chargeLogId", "logId", "id", "recordId"))
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         log_id = self._log_id()
         if not log_id:
             raise HomeAssistantError("云端无充电记录可删除")
@@ -899,7 +935,7 @@ class FordPassAuthApproveButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _pick_id(data, ("authId", "approvalId", "applyId", "id"))
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         aid = self._auth_id()
         if not aid:
             raise HomeAssistantError("未找到待审批的授权申请")
@@ -937,7 +973,7 @@ class FordPassAuthRejectButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _pick_id(data, ("authId", "approvalId", "applyId", "id"))
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         aid = self._auth_id()
         if not aid:
             raise HomeAssistantError("未找到待审批的授权申请")
@@ -979,7 +1015,7 @@ class FordPassSrsSaveButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _find_profile(data)
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         prof = self._profile()
         if not prof:
             raise HomeAssistantError("云端无紧急联系人档案——请先在福特派 App 添加")
@@ -1024,7 +1060,7 @@ class FordPassWallboxUnshareButton(_FordPassButtonBase):
         sid = _pick_id(data, ("sharerId", "shareId", "sharerUserId", "targetUserId"))
         return wid, sid
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         wid, sid = self._share_target()
         if not wid:
             raise HomeAssistantError("未找到家充桩分享信息")
@@ -1066,7 +1102,7 @@ class FordPassEvssLockButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _pick_id(data, ("equipmentId", "equipmentGuid", "chargerId", "guid", "id"))
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         eid = self._equipment_id()
         try:
             resp = await self.coordinator.api.evss_charger_lock(
@@ -1102,7 +1138,7 @@ class FordPassEvssUnlockButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _pick_id(data, ("equipmentId", "equipmentGuid", "chargerId", "guid", "id"))
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         eid = self._equipment_id()
         try:
             resp = await self.coordinator.api.evss_charger_lock(
@@ -1142,7 +1178,7 @@ class FordPassMessageReadByIdButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _pick_id(data, ("messageId", "msgId", "id"))
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         mid = self._message_id()
         if not mid:
             raise HomeAssistantError("云端无未读消息")
@@ -1181,7 +1217,7 @@ class FordPassFposbCancelButton(_FordPassButtonBase):
             data = data.get("data", data)
         return _pick_id(data, ("orderId", "osbOrderId", "bookingId", "id"))
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         oid = self._order_id()
         if not oid:
             raise HomeAssistantError("云端无维保预约可取消")
@@ -1219,7 +1255,7 @@ class FordPassImageButton(_FordPassButtonBase):
     def available(self) -> bool:
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
-    async def async_press(self) -> None:
+    async def _do_press(self) -> None:
         car_id = getattr(self.coordinator, "car_id", None)
         if not car_id:
             raise HomeAssistantError(
