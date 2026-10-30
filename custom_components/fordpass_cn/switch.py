@@ -25,6 +25,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import capability
 from .const import (
@@ -114,6 +115,36 @@ async def async_setup_entry(
     except Exception:
         _LOGGER.debug("entity listener registration failed", exc_info=True)
 
+
+
+class FordPassCmdResultMixin:
+    """v6.3.5: 操作结果记录 mixin（对齐 button v6.3.4 反馈模式）。
+
+    远程启动与寻车三开关共用：每次操作后留下 last_command（时间戳）/
+    last_result（成功/失败）/last_error 三个属性；失败同时向上抛错 →
+    HA 前端 toast（App 式失败反馈）。寻车/远程启动为云端命令实体，
+    云端不回报过程状态，故结果属性是除乐观翻转外最直接的操作反馈。
+    """
+
+    _last_cmd_time: str | None = None
+    _last_cmd_result: str | None = None
+    _last_cmd_error: str | None = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "last_command": self._last_cmd_time,
+            "last_result": self._last_cmd_result,
+            "last_error": self._last_cmd_error,
+        }
+
+    def _set_cmd_result(self, ok: bool, err: str | None = None) -> None:
+        """记录最近一次操作结果（时间/成功或失败/错误摘要）。"""
+        self._last_cmd_time = dt_util.now().isoformat(timespec="seconds")
+        self._last_cmd_result = "成功" if ok else "失败"
+        self._last_cmd_error = None if ok else (err or "")
+        if self.hass is not None:
+            self.async_write_ha_state()
 
 
 class FordPassTaskTracker:
@@ -419,11 +450,16 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
         self.async_write_ha_state()
 
 
-class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
+class FordPassEngineSwitch(FordPassRestoreMixin, FordPassCmdResultMixin, SwitchEntity):
     """Remote engine start / stop."""
 
     # v6.1.6: 纯推送（同 FordPassMomentarySwitch 注释），轮询不产出新信息
     _attr_should_poll = False
+    # v6.3.5: 操作中乐观目标状态（None=无操作，读真实快照）——命令执行期间
+    # 开关立即显示目标状态（对齐 App「执行中」反馈，此前点了几十秒无反应），
+    # 命令完成由 run_command 内置 force_refresh 的真实快照纠正；失败回滚并
+    # 记录 last_command/last_result/last_error + 抛错 toast。
+    _pending: bool | None = None
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
@@ -439,18 +475,38 @@ class FordPassEngineSwitch(FordPassRestoreMixin, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
+        if self._pending is not None:  # v6.3.5: 操作中显示目标状态（乐观反馈）
+            return self._pending
         status = (self.coordinator.data or {}).get("vehiclestatus", {})
         value = status.get("remoteStartStatus", {}).get("value")
         return self._restore_bool(bool(value) if value is not None else None)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.run_command(CMD_ENGINE_START)
+        self._pending = True
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.run_command(CMD_ENGINE_START)
+        except Exception as exc:
+            self._pending = None
+            self._set_cmd_result(False, str(exc))
+            raise
+        self._pending = None
+        self._set_cmd_result(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.run_command(CMD_ENGINE_STOP)
+        self._pending = False
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.run_command(CMD_ENGINE_STOP)
+        except Exception as exc:
+            self._pending = None
+            self._set_cmd_result(False, str(exc))
+            raise
+        self._pending = None
+        self._set_cmd_result(True)
 
 
-class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEntity):
+class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCmdResultMixin, SwitchEntity):
     """声光寻车开关（v3.3.3）——由「声光寻车触发/取消」两按钮合并。
 
     App 的声光寻车（鸣笛+灯光共舞，VAType=4=panic）走 send-command 通道：
@@ -490,13 +546,15 @@ class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEnti
             )
         except Exception as exc:
             _LOGGER.warning("FordPass 声光寻车（开）失败: %s", exc)
+            self._set_cmd_result(False, str(exc))
             raise
         cid = self._command_id(resp)
         if cid:
             _LOGGER.info("FordPass 声光寻车已触发 commandId=%s（时长=%ss）", cid, duration)
             self._track_task(self._poll_cmd_status(CMD_VA_INIT, cid))
         self._state = True
-        self.async_write_ha_state()
+        # v6.3.5: 操作结果记录（成功即时反馈；失败路径在 except 内已记录并抛错）
+        self._set_cmd_result(True)
         # v5.8.10: 统一走 _schedule_auto_off（内部先取消上一轮计时器）
         self._schedule_auto_off(duration)
 
@@ -507,6 +565,7 @@ class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEnti
             )
         except Exception as exc:
             _LOGGER.warning("FordPass 声光寻车（关）失败: %s", exc)
+            self._set_cmd_result(False, str(exc))
             raise
         cid = self._command_id(resp)
         if cid:
@@ -514,10 +573,10 @@ class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEnti
             self._track_task(self._poll_cmd_status(CMD_VA_CANCEL, cid))
         self._cancel_auto_off()
         self._state = False
-        self.async_write_ha_state()
+        self._set_cmd_result(True)
 
 
-class FordPassLightSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEntity):
+class FordPassLightSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCmdResultMixin, SwitchEntity):
     """灯光寻车开关（ZoneLightingON / ZoneLightingOFF）。
 
     灯光寻车是瞬时命令、车辆不回报灯光状态，开关状态为记忆值（assumed）。
@@ -552,19 +611,29 @@ class FordPassLightSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchE
         return self._restore_bool(self._state)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.run_command(CMD_LIGHT_FIND_ON)
+        try:
+            await self.coordinator.run_command(CMD_LIGHT_FIND_ON)
+        except Exception as exc:
+            # v6.3.5: 操作结果记录 + 抛错 toast（此前直接抛无记录）
+            self._set_cmd_result(False, str(exc))
+            raise
         self._state = True
-        self.async_write_ha_state()
+        # v6.3.5: 成功即时反馈（属性随本次状态写一并落盘）
+        self._set_cmd_result(True)
         self._schedule_auto_off(LIGHT_FIND_AUTO_OFF_SECONDS)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.run_command(CMD_LIGHT_FIND_OFF)
+        try:
+            await self.coordinator.run_command(CMD_LIGHT_FIND_OFF)
+        except Exception as exc:
+            self._set_cmd_result(False, str(exc))
+            raise
         self._cancel_auto_off()
         self._state = False
-        self.async_write_ha_state()
+        self._set_cmd_result(True)
 
 
-class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEntity):
+class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCmdResultMixin, SwitchEntity):
     """鸣笛寻车开关（v3.0.7，真实开/关双通道）。
 
     开 = 车辆 v5 鸣笛通道（ChirpOrHonkDuration / IntervalBetweenRequests /
@@ -628,6 +697,8 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEn
                 )
         except Exception as exc:
             _LOGGER.warning("FordPass 鸣笛寻车失败（类型=%s）: %s", chirp_name, exc)
+            # v6.3.5: 操作结果记录 + 抛错 toast
+            self._set_cmd_result(False, str(exc))
             raise
         # 类型 0-3（V5 honk 通道）：commandId 走 V5 announcestatus 轮询；
         # 类型 4（InitialVA）已在分支内用 command-execution-status 轮询，跳过。
@@ -641,7 +712,8 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEn
             # coordinator.announce_status 供「鸣笛命令状态」传感器读取。
             self._track_task(self._poll_announce(self.coordinator.vin, resp["commandId"]))
         self._state = True
-        self.async_write_ha_state()
+        # v6.3.5: 成功即时反馈
+        self._set_cmd_result(True)
         # 按本次触发时长自动结束，开关同步复位（v3.3.6: 跟随设置时长而非固定 30s）
         self._schedule_auto_off(duration)
 
@@ -689,9 +761,10 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, SwitchEn
                 resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
         except Exception as exc:
             _LOGGER.warning("FordPass 鸣笛寻车（关）失败: %s", exc)
+            self._set_cmd_result(False, str(exc))
             raise
         if isinstance(resp, dict) and resp.get("commandId"):
             _LOGGER.info("FordPass 鸣笛寻车已停止 commandId=%s", resp["commandId"])
         self._cancel_auto_off()
         self._state = False
-        self.async_write_ha_state()
+        self._set_cmd_result(True)
