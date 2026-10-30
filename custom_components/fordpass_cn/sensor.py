@@ -218,7 +218,11 @@ async def async_setup_entry(
     sensor_regs = [e for e in reg_entries if e.entity_id.startswith("sensor.")]
     _LOGGER.debug("sensor cleanup: entry=%s registry=%d new_ids=%d", entry.entry_id, len(sensor_regs), len(new_ids))
     for entry_ in sensor_regs:
-        if entry_.disabled_by is not None:
+        # v6.2.8: disabled_by=="integration"（集成自身停用的实体，如旧
+        # 「云端最后刷新」last_poll）在集成不再创建时应一并清理——否则
+        # registry 残留永远 unavailable。仅跳过用户手动禁用的（"user"，
+        # 用户选择不可被集成覆盖）。
+        if entry_.disabled_by == "user":
             continue
         if entry_.unique_id not in new_ids:
             _LOGGER.debug("sensor cleanup: removing stale %s", entry_.entity_id)
@@ -663,9 +667,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                     _pri.append(_s)
                     sensors.remove(_s)
         sensors = _pri + sensors
-    # v5.9.8: last_poll 从全部实体属性收口到唯一的诊断实体（默认停用，
-    # 需要的自动化场景手动启用——启用后它自己每轮变化，但只此一个）
-    sensors.append(FordPassLastPollSensor(coordinator))
+    # v6.2.8: 「车辆数据时间」替代「云端最后刷新」——取云端顶层
+    # lastModifiedDate/lastRefresh（车辆数据在云端侧的最后更新时间，
+    # 数据未变则值不变），每车一个、默认启用。
+    sensors.append(FordPassVehicleDataTimeSensor(coordinator))
     return sensors
 
 
@@ -823,40 +828,53 @@ class FordPassRestoreMixin(RestoreEntity):
         return self._restored
 
 
-class FordPassLastPollSensor(SensorEntity):
-    """云端最后刷新时间（v5.9.8，诊断实体，默认停用）。
+class FordPassVehicleDataTimeSensor(SensorEntity):
+    """车辆数据时间——云端 vehicle-status 顶层的最后数据时间（v6.2.8）。
 
-    v5.9.8: last_poll 从全部实体属性中移除——该值每轮刷新都变，会把
-    值未变化的实体也拉进 state_changed，recorder 行数随实体数线性增长
-    （实测一次刷新 80 个实体同时写入、每天上万行）。全局唯一权威来源
-    收口到本实体：依赖「最后刷新时间」的自动化迁移到本实体
-    （device_class=TIMESTAMP，前端显示相对时间、可直接做时间比较）。
-
-    本实体默认停用（_attr_entity_registry_enabled_default=False）：
-    启用后它自己每轮变化写 recorder，但只此一个，不再有 80 倍噪音。
+    v6.2.8: 替代「云端最后刷新」。后者是本机轮询完成时间（每轮都变、
+    与车辆数据无关）；本实体取云端返回的 ``lastModifiedDate`` /
+    ``lastRefresh``（车辆数据在云端侧的最后更新时间），才是数据真正的
+    新鲜度。数据未变化时值不变（比 last_poll 安静，recorder 写入少）；
+    拉取失败时保留最后已知值（available 恒随 coordinator.data）。
+    秒/毫秒时间戳自适应（13 位毫秒 / 10 位秒），占位值（早于
+    2000-01-01）视为无效显示 unknown。
     """
 
     _attr_should_poll = False  # coordinator listener 驱动
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_entity_registry_enabled_default = False
-    _attr_icon = "mdi:cloud-clock"
+    _attr_icon = "mdi:clock-outline"
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.uid_key}-last_poll"
-        self._attr_name = "云端最后刷新"
+        self._attr_unique_id = f"{coordinator.uid_key}-vehicle_data_time"
+        self._attr_name = "车辆数据时间"
         self._attr_device_info = coordinator.device_info
+
+    @staticmethod
+    def _raw(status: dict[str, Any]) -> Any:
+        """云端顶层最后数据时间（lastModifiedDate 优先，lastRefresh 兜底）。"""
+        return status.get("lastModifiedDate") or status.get("lastRefresh")
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_poll is not None
+        return bool(self.coordinator.data)  # 保留最后已知状态，失败不置不可用
 
     @property
     def native_value(self) -> datetime | None:
-        lp = self.coordinator.last_poll
-        return dt_util.as_utc(lp) if lp else None
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
+        if not isinstance(status, dict):
+            return None
+        return _ts_to_dt(self._raw(status))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        status = (self.coordinator.data or {}).get("vehiclestatus", {})
+        if not isinstance(status, dict):
+            return {}
+        raw = self._raw(status)
+        return {"raw_timestamp": raw} if raw is not None else {}
 
 
 class FordPassSensor(FordPassRestoreMixin, SensorEntity):
@@ -1148,6 +1166,26 @@ class FordPassActiveAlertListSensor(SensorEntity):
                     if a.get(key):
                         attrs[f"alert_{i}_{key}"] = a[key]
         return attrs
+
+
+def _ts_to_dt(v):
+    """云端时间戳（秒或毫秒）→ aware UTC datetime；占位/无效返回 None。
+
+    v6.2.8: 车辆数据时间实体用。13 位毫秒 / 10 位秒自适应；早于
+    2000-01-01（946684800 秒）的时间戳为云端占位（实测命令执行中
+    返回 01-01-0001），一律视为无效。
+    """
+    if not v:
+        return None
+    try:
+        ts = int(v)
+        if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
+            return None
+        if ts >= 1_000_000_000_000:  # 13 位毫秒
+            ts /= 1000
+        return dt_util.utc_from_timestamp(ts)
+    except (TypeError, ValueError, OSError):
+        return None
 
 
 def _ts_to_local(v):

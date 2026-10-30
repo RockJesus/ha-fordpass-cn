@@ -1,9 +1,12 @@
-"""v5.9.8: 云端最后刷新诊断实体（last_poll 收口）的行为测试。
+"""v6.2.8: 车辆数据时间实体（取云端 lastModifiedDate/lastRefresh）的行为测试。
 
 回归保护点：
-- 诊断实体声明（DIAGNOSTIC / TIMESTAMP / 默认停用 / 不轮询）；
-- last_poll 为空时 available=False 且状态为 None；
-- native_value 直接透传 coordinator.last_poll（UTC 语义由 dt_util.as_utc 承担）。
+- 实体声明（DIAGNOSTIC / TIMESTAMP / 不轮询 / 默认启用 / has_entity_name）；
+- native_value 从 vehiclestatus 顶层 lastModifiedDate/lastRefresh 解析
+  （秒/毫秒自适应、2000 年前占位视为无效）；
+- lastModifiedDate 缺失时回退 lastRefresh；
+- available 随 coordinator.data（保留最后已知状态，失败不置不可用）；
+- extra_state_attributes 透传原始时间戳 raw_timestamp。
 """
 from __future__ import annotations
 
@@ -56,6 +59,7 @@ def _install_fake_modules() -> None:
 
     _dt = mk("homeassistant.util.dt")
     _dt.as_utc = lambda value: value.astimezone(timezone.utc)
+    _dt.utc_from_timestamp = lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc)
 
     for name in ("homeassistant", "homeassistant.components",
                  "homeassistant.helpers", "homeassistant.util"):
@@ -89,34 +93,59 @@ def _install_fake_modules() -> None:
 
 def load_sensor_cls():
     _install_fake_modules()
-    return sys.modules["fpcn.sensor"].FordPassLastPollSensor
+    return sys.modules["fpcn.sensor"].FordPassVehicleDataTimeSensor
+
+
+def _mk_coord(data: dict | None = None) -> MagicMock:
+    coord = MagicMock()
+    coord.uid_key = "VIN123"
+    coord.data = data
+    return coord
 
 
 def test_diag_sensor_defaults():
     cls = load_sensor_cls()
-    coord = MagicMock()
-    coord.uid_key = "VIN123"
-    ent = cls(coord)
-    assert ent._attr_unique_id == "VIN123-last_poll"
+    ent = cls(_mk_coord({"vehiclestatus": {}}))
+    assert ent._attr_unique_id == "VIN123-vehicle_data_time"
     # 假 SensorEntity 没有 HA 的 property 转发，直接断言 _attr_* 类属性
     assert cls._attr_entity_category == "diagnostic"
     assert cls._attr_should_poll is False
-    assert cls._attr_entity_registry_enabled_default is False
     assert cls._attr_device_class == "timestamp"
-    assert ent._attr_name == "云端最后刷新"
+    assert cls._attr_has_entity_name is True
+    # v6.2.8: 默认启用（不设 enabled_default=False，与旧 last_poll 相反）
+    assert getattr(cls, "_attr_entity_registry_enabled_default", True) is not False
+    assert ent._attr_name == "车辆数据时间"
 
 
-def test_diag_sensor_value_and_availability():
+def test_native_value_last_modified_date_seconds():
     cls = load_sensor_cls()
-    coord = MagicMock()
-    coord.uid_key = "VIN123"
-    ent = cls(coord)
-
-    coord.last_poll = None
-    assert ent.available is False
-    assert ent.native_value is None
-
-    stamp = datetime(2026, 10, 28, 0, 30, tzinfo=timezone.utc)
-    coord.last_poll = stamp
+    # 10 位秒时间戳
+    ent = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": 1730075400}}))
+    assert ent.native_value == datetime.fromtimestamp(1730075400, tz=timezone.utc)
     assert ent.available is True
-    assert ent.native_value is stamp
+
+
+def test_native_value_millis_fallback_last_refresh():
+    cls = load_sensor_cls()
+    # lastModifiedDate 缺失 → 回退 lastRefresh；13 位毫秒自适应
+    ent = cls(_mk_coord({"vehiclestatus": {"lastRefresh": 1730075400123}}))
+    assert ent.native_value == datetime.fromtimestamp(1730075400.123, tz=timezone.utc)
+
+
+def test_placeholder_and_missing_value_invalid():
+    cls = load_sensor_cls()
+    # 2000-01-01 前占位值视为无效
+    ent = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": 0}}))
+    assert ent.native_value is None
+    # 顶层字段缺失
+    ent2 = cls(_mk_coord({"vehiclestatus": {}}))
+    assert ent2.native_value is None
+
+
+def test_availability_and_raw_attribute():
+    cls = load_sensor_cls()
+    ent = cls(_mk_coord(None))
+    assert ent.available is False
+    ent2 = cls(_mk_coord({"vehiclestatus": {"lastModifiedDate": 1730075400}}))
+    assert ent2.available is True
+    assert ent2.extra_state_attributes == {"raw_timestamp": 1730075400}
