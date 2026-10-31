@@ -444,7 +444,6 @@ content: >-
 - **活动历史不落隐私**：VIN、车牌号、车辆定位三个实体的状态值不写入 logbook（按 `unique_id` 尾缀精确跳过）；定位 `device_tracker` 状态为 zone（`home` / `not_home`），坐标仅在属性中。
 - **日志掩码**：debug 日志对 VIN、经纬度、地址做掩码（VIN 保留首 4 末 4）；车辆图片缓存文件名用摘要，不含 VIN。
 - **仓库自带审计脚本**：`docs/privacy_audit.py` 覆盖全 git 可达历史、commit message、Releases body、codeload 归档与 dangling commit，输出 PASS 方可发布。
-- **互操作固定值随数据包下发（v6.2.1）**：云端互操作所需的 App 固定值（LBS 网关标识、应用 ID、客户端/OS 标识、签名密钥等）不再硬编码于集成代码，随运行时数据包 `app_constants.json` 下发并按 SHA-256 校验，缺失时按既有降级策略处理。
 - **数据本地**：车辆数据仅保存在你自己的 Home Assistant 中，集成除福特 / 林肯官方服务端外不向任何第三方传输。首次启动会自动获取运行时互操作数据（请求不携带 VIN、账号或任何车辆信息），校验通过后缓存本地，之后不再重复获取。
 
 > **建议把隐私实体排除出历史库**：集成保证这三个实体不写 logbook 活动，但它们的**状态与属性仍会进入 HA 数据库**（recorder）。若不希望车牌、VIN、定位坐标留在历史记录里，在 `configuration.yaml` 中追加下面的配置：
