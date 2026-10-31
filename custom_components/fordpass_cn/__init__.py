@@ -196,7 +196,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             # 自动化/脚本可感知（HomeAssistantError 在服务调用处显示失败原因）。
             # v5.7.9: 异常消息掩码 VIN 尾段（完整 VIN 曾进错误消息/日志）
             raise HomeAssistantError(
-                f"fordpass_cn refresh_status: VIN …{vin[-6:]} 不在当前账号车辆中"
+                f"fordpass_cn refresh_status: VIN …{vin[-6:] if vin else ''} 不在当前账号车辆中"
             )
         for coord in targets:
             # v5.7.9: 服务日志掩码 VIN 尾段（info 级曾打印完整 VIN）

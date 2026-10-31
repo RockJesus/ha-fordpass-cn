@@ -86,8 +86,10 @@ async def async_setup_entry(
             isinstance(_wl0, list) and any("RemoteStart" in c for c in _wl0)
         ):
             switches.append(FordPassEngineSwitch(coordinator))
-        # 远程控车能力 crccFlag 有效才创建寻车类开关
-        if capability.usable(status, [["crccFlag"]]):
+        # 远程控车能力 crccFlag 开启（ON）才创建寻车类开关
+        # P1-9: usable→is_on——OFF（未开通远程控车）也属"有效值"，
+        # 此前会创建三个点了必失败的寻车开关。
+        if capability.is_on(status, [["crccFlag"]]):
             # v3.1.10: 恢复灯光寻车（v3.1.8 曾因实测网关 228205 移除；
             # 其他车型云端可能支持——登录后按能力创建）
             # v5.8.3: 按车型创建——灯光寻车命令被云端确定性拒绝（实测
@@ -414,6 +416,19 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
         self._state: bool | None = None
         self._task_id: str | None = None
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # P1-7: 订阅 coordinator 刷新——每轮刷新后清乐观态 _state，让
+        # 探测值重新生效。此前 _state 一旦写入永久粘滞，云端/App 侧变更
+        # （或命令实际失败）永不反映。
+        self.async_on_remove(
+            self.coordinator.async_add_listener(self._handle_coordinator_update)
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        self._state = None
+        self.async_write_ha_state()
+
     def _probe(self) -> dict | None:
         ep = self.coordinator.extra_probes or {}
         return ep.get("departuretimes") if isinstance(ep, dict) else None
@@ -487,7 +502,6 @@ class FordPassEngineSwitch(FordPassRestoreMixin, FordPassCmdResultMixin, SwitchE
     # 开关立即显示目标状态（对齐 App「执行中」反馈，此前点了几十秒无反应），
     # 命令完成由 run_command 内置 force_refresh 的真实快照纠正；失败回滚并
     # 记录 last_command/last_result/last_error + 抛错 toast。
-    _pending: bool | None = None
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
@@ -496,6 +510,44 @@ class FordPassEngineSwitch(FordPassRestoreMixin, FordPassCmdResultMixin, SwitchE
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:engine"
+        self._pending: bool | None = None
+        # P1-6: 快照确认任务（对齐门锁模式）——命令成功后云端
+        # remoteStartStatus 滞后翻转，立即清乐观态会被旧快照回跳。
+        self._confirm_task: asyncio.Task | None = None
+        self.async_on_remove(self._cancel_confirm)
+
+    def _cancel_confirm(self) -> None:
+        if self._confirm_task is not None:
+            self._confirm_task.cancel()
+            self._confirm_task = None
+
+    async def _confirm_engine_snapshot(self, target: bool) -> bool:
+        """每 10s force_refresh 核对 remoteStartStatus，直到与目标一致或超时。"""
+        for _ in range(6):
+            status = (self.coordinator.data or {}).get("vehiclestatus", {}) or {}
+            if _as_bool(capability.leaf(status, "remoteStartStatus")) is target:
+                return True
+            await asyncio.sleep(10)
+            try:
+                await self.coordinator.force_refresh()
+            except Exception as exc:  # noqa: BLE001 - 保留乐观状态，10s 后循环下一轮再试
+                _LOGGER.debug("engine snapshot confirm refresh failed: %s", exc)
+        return False
+
+    def _schedule_confirm(self, target: bool) -> None:
+        self._cancel_confirm()
+        self._confirm_task = self.hass.async_create_task(self._async_confirm(target))
+
+    async def _async_confirm(self, target: bool) -> None:
+        try:
+            await self._confirm_engine_snapshot(target)
+        finally:
+            # 仅当本任务仍是当前确认任务时才清理——连续开/关时旧任务被
+            # 取消后其 finally 可能晚于新任务启动（同 lock.py v6.3.7 守卫）。
+            if self._confirm_task is asyncio.current_task():
+                self._confirm_task = None
+                self._pending = None
+                self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
@@ -509,28 +561,32 @@ class FordPassEngineSwitch(FordPassRestoreMixin, FordPassCmdResultMixin, SwitchE
         return self._restore_bool(_as_bool(capability.leaf(status, "remoteStartStatus")))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        self._cancel_confirm()  # P1-6: 新操作先取消旧确认任务（同门锁 P1-5）
         self._pending = True
         self.async_write_ha_state()
         try:
             await self.coordinator.run_command(CMD_ENGINE_START)
         except Exception as exc:
             self._pending = None
+            self.async_write_ha_state()
             self._set_cmd_result(False, str(exc))
             raise
-        self._pending = None
         self._set_cmd_result(True)
+        self._schedule_confirm(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        self._cancel_confirm()
         self._pending = False
         self.async_write_ha_state()
         try:
             await self.coordinator.run_command(CMD_ENGINE_STOP)
         except Exception as exc:
             self._pending = None
+            self.async_write_ha_state()
             self._set_cmd_result(False, str(exc))
             raise
-        self._pending = None
         self._set_cmd_result(True)
+        self._schedule_confirm(False)
 
 
 class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCmdResultMixin, SwitchEntity):

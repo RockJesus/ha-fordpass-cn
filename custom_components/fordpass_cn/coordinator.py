@@ -290,20 +290,30 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._consecutive_failures = 0
         self._last_error_detail = None
 
-    def _log_exception(self, err: Exception, message: str) -> None:
-        """覆盖 DataUpdateCoordinator 失败日志：网络/云端不可用只警告一次。
+    async def _async_refresh(
+        self,
+        log_failures: bool = True,
+        raise_on_auth_failed: bool = False,
+        scheduled: bool = False,
+        raise_on_entry_error: bool = False,
+    ) -> None:
+        """网络/云端不可用只警告一次（quality_scale silver）。
 
-        silver 要求「Log a warning once when unavailable, log once when
-        reconnected」。首次失败走父类（error 级）；重复失败（默认 30 分钟
-        一轮轮询）降级为 debug，不刷屏。活动日志不受影响——每轮活动显示
-        各实体刷新状态由 _log_activity 负责，独立于本方法。恢复提示在
-        _async_update_data 成功路径发出。
+        覆盖父类入口：已警告过的后续失败轮传 log_failures=False，
+        抑制父类每轮重复的 error 日志（30 分钟一轮轮询会刷屏）；
+        父类本身只在「成功→首败」转换时记一次失败日志，本覆盖在其
+        之上再加去重。恢复提示在 _async_update_data 成功路径发出。
         """
         if self._update_failure_warned:
-            self.logger.debug("%s (suppressed repeat): %s", message, err)
-            return
-        self._update_failure_warned = True
-        super()._log_exception(err, message)
+            log_failures = False
+        await super()._async_refresh(
+            log_failures=log_failures,
+            raise_on_auth_failed=raise_on_auth_failed,
+            scheduled=scheduled,
+            raise_on_entry_error=raise_on_entry_error,
+        )
+        if not self.last_update_success:
+            self._update_failure_warned = True
 
     def _cache_hit(self, key: str, account: bool = False) -> tuple[bool, Any]:
         store = self.account_cache if account else self._cache

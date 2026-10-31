@@ -197,6 +197,9 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         return self._restore_bool(_lock_state(status))
 
     async def async_lock(self, **kwargs: Any) -> None:
+        # P1-5: 新操作前先取消上一轮的快照确认任务——旧任务在新命令执行
+        # 期间仍可能读到快照并合法翻转，清掉本次的乐观状态（竞态）。
+        self._cancel_confirm()
         self._set_pending(True)
         try:
             await self.coordinator.run_command(CMD_LOCK)
@@ -208,6 +211,7 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         self._schedule_confirm(True)
 
     async def async_unlock(self, **kwargs: Any) -> None:
+        self._cancel_confirm()  # P1-5: 同 async_lock，先取消旧确认任务
         self._set_pending(False)
         try:
             await self.coordinator.run_command(CMD_UNLOCK)

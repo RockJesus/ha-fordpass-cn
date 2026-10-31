@@ -2260,11 +2260,21 @@ class FordPassAnnounceStatusSensor(SensorEntity):
         s = st.get("status") or st.get("commandStatus") or "已发送"
         return str(s)
 
+    # P1-10: 属性白名单——announce_status 可能带完整 vehiclestatus（含
+    # 明文 VIN 等敏感字段），整体进 attributes 会写入 recorder/logbook。
+    _ATTR_WHITELIST = ("command_id", "command_type", "status", "commandStatus",
+                       "error", "vehicleCommandStatus", "completionStatus")
+
     @property
     def extra_state_attributes(self) -> dict:
         st = getattr(self.coordinator, "announce_status", None) or {}
-        attrs = dict(st) if isinstance(st, dict) else {}
-        return attrs
+        if not isinstance(st, dict):
+            return {}
+        return {
+            k: v for k, v in st.items()
+            if k in self._ATTR_WHITELIST
+            and isinstance(v, (str, int, float, bool))
+        }
 
 def _swb_find(node, key: str):
     """递归宽松提取 smartwallbox 响应字段（key 大小写不敏感，v3.4.5）。
@@ -2848,7 +2858,10 @@ class FordPassProbeSensor(SensorEntity):
                               "evss_payment_summary", "evss_invoiceables",
                               "evss_events_v3", "evss_evaluate_url",
                               "wallbox_ble_vehicles", "app_init_settings",
-                              "vehicle_model_masterdata", "user_login_status"):
+                              "vehicle_model_masterdata", "user_login_status",
+                              # P1-8: 林肯专属端点同样「暂无数据」而非 unknown
+                              "lincoln_member", "lincoln_page",
+                              "lwosb_bookings", "lwosb_status"):
                 return "暂无数据"
             return None
         try:
@@ -3410,6 +3423,40 @@ class FordPassProbeSensor(SensorEntity):
                 if v is not None:
                     return str(v)
                 return "分享条款已连接"
+            # ---- v4.8.1: 林肯之道专属端点（P1-8：此前无分支，恒 unknown）----
+            if self._kind == "lincoln_member":
+                lv = (_swb_find(data, "memberLevel") or _swb_find(data, "levelName")
+                      or _swb_find(data, "level") or _swb_find(data, "gradeName"))
+                pts = (_swb_find(data, "points") or _swb_find(data, "point")
+                       or _swb_find(data, "integral"))
+                parts = []
+                if lv is not None:
+                    parts.append(str(lv))
+                if pts is not None:
+                    parts.append(f"积分 {pts}")
+                if parts:
+                    return " / ".join(parts)
+                return "会员信息已连接"
+            if self._kind == "lincoln_page":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 项页面数据"
+                nm = (_swb_find(data, "nickName") or _swb_find(data, "userName")
+                      or _swb_find(data, "name"))
+                if nm is not None:
+                    return str(nm)
+                return "我的页面已连接"
+            if self._kind == "lwosb_bookings":
+                lst = _swb_list(data)
+                if lst:
+                    return f"{len(lst)} 条取送车预约"
+                return "暂无取送车预约"
+            if self._kind == "lwosb_status":
+                st = (_swb_find(data, "orderStatus") or _swb_find(data, "status")
+                      or _swb_find(data, "statusDesc") or _swb_find(data, "orderStatusDesc"))
+                if st is not None:
+                    return str(st)
+                return "暂无取送车订单"
         except Exception:  # noqa: BLE001 - 解析失败不抛给 HA
             return "解析失败"
         return None

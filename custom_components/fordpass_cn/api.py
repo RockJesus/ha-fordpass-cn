@@ -744,9 +744,9 @@ class FordPassApi:
                         self.on_token_refresh(new["access_token"])
                 except Exception as exc:  # noqa: BLE001 - 刷新失败才置 refresh_failed
                     self._log.error("FordPass concurrent token refresh failed: %s", exc)
-                    raise FordPassApiError(
-                        401, f"token refresh failed: {exc}", refresh_failed=True
-                    ) from exc
+                    # 分类与主分支一致：5xx/网络异常不置 refresh_failed（避免
+                    # 网关抖动误触 reauth），仅 401/403/600 触发重新认证。
+                    raise _as_refresh_failed(exc) from exc
                 return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
@@ -926,9 +926,9 @@ class FordPassApi:
                 self.on_token_refresh(new["access_token"])
         except Exception as exc:  # noqa: BLE001 - 刷新失败才置 refresh_failed
             self._log.error("FordPass concurrent token refresh failed: %s", exc)
-            raise FordPassApiError(
-                401, f"token refresh failed: {exc}", refresh_failed=True
-            ) from exc
+            # 分类与主分支一致：5xx/网络异常不置 refresh_failed（避免
+            # 网关抖动误触 reauth），仅 401/403/600 触发重新认证。
+            raise _as_refresh_failed(exc) from exc
 
     async def refresh_token(self, refresh_token: str) -> dict[str, str]:
         # v5.3.1: 锁 + 5s 窗口结果缓存——并发 401 时多协程同时到达，锁保证
@@ -969,7 +969,15 @@ class FordPassApi:
                         allow_refresh=False,
                     )
                     break
-                except (FordPassApiError, OSError, asyncio.TimeoutError) as exc:
+                except FordPassApiError as exc:
+                    # P0-3：确定性错误（401/403/600 认证失败、其余 4xx 客户端
+                    # 错误）立即抛——重试不会改变结果，反而在持 _refresh_lock
+                    # 状态下退避最长约 4 分钟，阻塞其它协程。仅网关 5xx
+                    # （瞬时故障）进入退避重试。
+                    if exc.refresh_failed or not (
+                        isinstance(exc.code, int) and 500 <= exc.code < 600
+                    ):
+                        raise
                     _attempts += 1
                     if _attempts > 3:
                         raise
@@ -979,8 +987,21 @@ class FordPassApi:
                         PATH_REFRESH_TOKEN, _attempts + 1, delay, exc,
                     )
                     await asyncio.sleep(delay)
-            inner = data.get("data", {})
-            xjw2 = inner.get("xjw", xjw)
+                except (TimeoutError, OSError) as exc:
+                    _attempts += 1
+                    if _attempts > 3:
+                        raise
+                    delay = 2 ** (_attempts - 1)
+                    self._log.warning(
+                        "FordPass %s failed (attempt %d/4, retry in %ds): %s",
+                        PATH_REFRESH_TOKEN, _attempts + 1, delay, exc,
+                    )
+                    await asyncio.sleep(delay)
+            # P0-2：data/inner 可能为 None 或非 dict——isinstance 检查必须
+            # 先于 .get 解引用，否则异常响应（如网关 200 空 body）抛
+            # AttributeError，掩盖真实错误并绕过下方结构保护分支。
+            inner = data.get("data") if isinstance(data, dict) else None
+            xjw2 = inner.get("xjw", xjw) if isinstance(inner, dict) else xjw
             if not isinstance(inner, dict) or "encryptedAccessToken" not in inner:
                 # v5.7.7: 与 passcode_login 同等的响应结构保护——HTTP 200 但
                 # 无 token 字段（网关异常响应/结构变更/业务拒绝）抛带

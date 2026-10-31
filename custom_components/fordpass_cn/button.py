@@ -58,8 +58,10 @@ _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, lis
     # 「手动刷新车辆状态」（见 FordPassManualRefreshButton：先请求车机上报
     # 云端，延时 3 秒后拉取最新状态）——此处不再创建独立按钮。
     # 远程控车开启（crccFlag=ON）才有意义
+    # P1-9: 检测方式 "usable"→"on"——usable 只排除无效占位值，crccFlag=OFF
+    #（远程控车未开通）也判可用而创建按钮，点击必失败。
     ("central_lighting", "中央区灯光", "mdi:car-light-high", CMD_CENTRAL_LIGHTING,
-     [["crccFlag"]], "usable", None),
+     [["crccFlag"]], "on", None),
     # v3.3.3: 声光寻车（InitialVA/CancelVA）已由 v3.2.1 的两个按钮合并为
     # switch「声光寻车」（见 switch.py FordPassVAswitch）——此处不再创建
     # 按钮，避免重复入口；命令通道与 cmdSpec 完全一致。

@@ -89,26 +89,6 @@ class _FordPassEventBase(EventEntity, RestoreEntity):
         await super().async_added_to_hass()
         if self._unsub is None:
             self._unsub = self.coordinator.async_add_listener(self._on_update)
-        await self._restore_last_event()
-
-    async def _restore_last_event(self) -> None:
-        """重启后恢复最后一次事件（v6.1.2）。
-
-        只回填 ``EventEntity`` 的内部记录，事件类型必须命中本实体声明的
-        事件集，属性缺失/损坏时降级为空字典——恢复路径上宁可显示得少，
-        也不能抛错让实体添加失败。之后平台会做初始写入，状态机里出现的
-        是 state_added 而不是 state_changed，所以 state 触发器不会因此
-        误触发。下一次真事件照常覆盖。
-        """
-        last = await self.async_get_last_state()
-        if last is None or not isinstance(last.state, str):
-            return
-        if last.state not in (self._attr_event_types or []):
-            return
-        attrs = last.attributes.get("last_event_attributes")
-        self._trigger_event(
-            last.state, dict(attrs) if isinstance(attrs, dict) else {}
-        )
 
     async def async_will_remove_from_hass(self) -> None:
         if self._unsub is not None:
@@ -143,8 +123,8 @@ class _FordPassEventBase(EventEntity, RestoreEntity):
         官方 event 实体的 state 就是「最近事件发射时间」（UTC 时间戳），
         前端不保证转本地，用户看到的 state 常是 UTC 值——本地时间放在
         ``event_time`` 属性里展示；``event_time_utc`` 保留 UTC 口径供
-        自动化/日志对照。恢复路径（_restore_last_event）不经过本方法，
-        因此不会伪造事件时刻。
+        自动化/日志对照。事件恢复由 HA EventEntity 内部机制完成，
+        不经过本方法，因此不会伪造事件时刻。
         """
         now_utc = dt_util.utcnow()
         attrs = dict(attributes or {})
