@@ -9,6 +9,7 @@ TrunkUnlock 被网关 228205「cmdSpec can not empty」拒绝（App 端该命令
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -112,6 +113,28 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         self._attr_is_unlocking = False
         self.async_write_ha_state()
 
+    async def _confirm_lock_snapshot(self, target: bool) -> bool:
+        """v6.3.6: 命令链路结束后云端快照可能尚未翻转（实测最迟 ~60s）。
+
+        保持乐观目标状态（_pending 不清），每 10s force_refresh 一次核对
+        lockStatus，直到与目标一致——消除「乐观解除→读到旧快照→回跳→
+        最长 30min 空窗」的不实时窗口；快照翻转后返回 True 由调用方清
+        乐观标记（此时读快照即为新状态）。超时（6 次仍未翻转）返回 False，
+        调用方照常 clear_pending 如实显示快照，由后台轮询兜底纠正——
+        不无限乐观，避免命令实际失败时状态永久失真。
+        """
+        want = "LOCKED" if target else "UNLOCKED"
+        for _ in range(6):
+            status = (self.coordinator.data or {}).get("vehiclestatus", {}) or {}
+            if status.get("lockStatus", {}).get("value") == want:
+                return True
+            await asyncio.sleep(10)
+            try:
+                await self.coordinator.force_refresh()
+            except Exception as exc:  # noqa: BLE001 - 保留乐观状态，10s 后循环下一轮再试
+                _LOGGER.debug("lock snapshot confirm refresh failed: %s", exc)
+        return False
+
     @property
     def available(self) -> bool:
         return bool(self.coordinator.data)  # v4.8.7: 有最后已知数据即可用——修复控制实体 unavailable（restored 残留）
@@ -131,6 +154,8 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         except Exception:
             self._clear_pending()
             raise
+        # v6.3.6: 快照未翻转则保持乐观（动画/目标态）直到云端确认，消除回跳
+        await self._confirm_lock_snapshot(True)
         self._clear_pending()
 
     async def async_unlock(self, **kwargs: Any) -> None:
@@ -140,6 +165,8 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         except Exception:
             self._clear_pending()
             raise
+        # v6.3.6: 同上——快照未翻转保持乐观直到确认，再读快照
+        await self._confirm_lock_snapshot(False)
         self._clear_pending()
 
     async def async_update(self) -> None:
