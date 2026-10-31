@@ -62,7 +62,8 @@
       "missing_deps": "Missing dependency packages. Confirm they were installed automatically when the integration installed, or retry later (see log)",
       "login_failed": "Login failed. Check that the verification code is correct (see log)",
       "unknown": "Unknown error. Check the fordpass_cn entries in the Home Assistant log",
-      "bad_code": "Invalid or expired authorization code. Please log in again in the browser and copy a fresh code."
+      "bad_code": "Invalid or expired authorization code. Please log in again in the browser and copy a fresh code.",
+      "crypto_data_missing": "The runtime data pack is missing, so the login link cannot be built. Allow the integration to fetch it online, or place the data pack manually as described in the notification and retry."
     },
     "abort": {
       "already_configured": "This phone number is already configured for this brand",

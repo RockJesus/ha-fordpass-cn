@@ -155,6 +155,15 @@ def _normalize_phone(raw: str) -> str:
     return phone
 
 
+def _mask_phone(raw: str | None) -> str:
+    """v6.3.7: 日志用手机号掩码（仅留尾号）——此前 reauth 不一致时把新旧
+    完整手机号写进 ERROR 日志（PII 泄露，用户会把日志贴进 issue）。"""
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if not digits:
+        return "****"
+    return f"****{digits[-4:]}" if len(digits) >= 4 else "****"
+
+
 class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     # v4.7.10: HA 2026.x 前端"重新配置"入口需 supports_reconfigure=True
@@ -338,7 +347,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not same:
                     _LOGGER.error(
                         "FordPass reauth phone mismatch: %s != %s",
-                        self._phone, old_phone,
+                        _mask_phone(self._phone), _mask_phone(old_phone),
                     )
                     return self.async_abort(reason="reauth_phone_mismatch")
             data = {
@@ -575,8 +584,15 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     # 粘贴的 authorization code），明文落盘徒增 .storage 泄露面。
                     return self._finish_login(LOGIN_MODE_PASSWORD, tokens)
         # v6.2.1: B2C 固定值来自运行时数据包——先确保数据包可用再构造 URL
-        await crypto_data.async_ensure_crypto_data(self.hass)
-        login_url = _build_b2c_login_url()
+        # v6.3.7: 检查返回值——此前忽略结果，数据包缺失时 client_id 为 None，
+        # 表单里给出一条无效登录链接且没有任何提示。
+        crypto_ok, crypto_note = await crypto_data.async_ensure_crypto_data(self.hass)
+        if not crypto_ok:
+            _LOGGER.warning("FordPass b2c login unavailable: %s", crypto_note)
+            errors.setdefault("base", "crypto_data_missing")
+            login_url = ""
+        else:
+            login_url = _build_b2c_login_url()
         return self.async_show_form(
             step_id="b2c",
             data_schema=STEP_B2C_CODE_SCHEMA,

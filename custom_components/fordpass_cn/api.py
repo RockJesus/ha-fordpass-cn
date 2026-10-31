@@ -624,6 +624,7 @@ class FordPassApi:
         headers: dict[str, str] | None = None,
         raw_body: bool = False,
         _retried: bool = False,
+        allow_refresh: bool = True,
     ) -> Any:
         url = base + path
         if body is not None:
@@ -705,7 +706,7 @@ class FordPassApi:
                     "FordPass %s -> HTTP %s 网关层故障（熔断/5xx，退避后自愈）: %s",
                     path, resp.status, _log_summary(text),
                 )
-            if resp.status == 401 and self._refresh_token:
+            if resp.status == 401 and self._refresh_token and allow_refresh:
                 # v5.3.3: 已重试过一次仍 401（刷新后新 token 仍被拒，或
                 # refresh 端点自身 401）——直接抛 refresh_failed 触发 reauth，
                 # 禁止继续递归（旧代码无条件 return await self._request(...)
@@ -724,7 +725,7 @@ class FordPassApi:
                         self._access_token = new["access_token"]
                         if self.on_token_refresh is not None:
                             self.on_token_refresh(new["access_token"])
-                        return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
+                        return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
                     except Exception as exc:
                         self._log.error("FordPass token refresh failed: %s", exc)
                         raise _as_refresh_failed(exc) from exc
@@ -746,7 +747,7 @@ class FordPassApi:
                     raise FordPassApiError(
                         401, f"token refresh failed: {exc}", refresh_failed=True
                     ) from exc
-                return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
+                return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
             if resp.status >= 400:
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
@@ -784,6 +785,7 @@ class FordPassApi:
             if (
                 status in (401, 600)
                 and self._refresh_token
+                and allow_refresh
             ):
                 # v5.3.3: 与 HTTP 401 分支同款防递归——刷新后重试仍返回
                 # 401/600 业务 token 错误时直接 refresh_failed 触发 reauth，
@@ -803,16 +805,16 @@ class FordPassApi:
                         self._access_token = new["access_token"]
                         if self.on_token_refresh is not None:
                             self.on_token_refresh(new["access_token"])
-                        return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
+                        return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
                     except Exception as exc:
                         self._log.error("FordPass token refresh failed: %s", exc)
                         raise _as_refresh_failed(exc) from exc
                     finally:
                         self._retrying = False
-                # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
-                # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
-                return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True)
+                # v6.3.7: 等待正在进行的刷新（单飞锁 + 结果缓存），拿到新
+                # token 再重试——不再 sleep 后用旧 token 重试造成二次 401。
+                await self._await_concurrent_refresh()
+                return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
             code = data.get("code")
             if code not in (None, 0, "0", 200, "200", "0000"):
                 raise FordPassApiError(
@@ -909,6 +911,25 @@ class FordPassApi:
             )),
         }
 
+    async def _await_concurrent_refresh(self) -> None:
+        """并发 401：等待正在进行的刷新，复用其结果后再重试请求（v6.3.7）。
+
+        此前用 ``sleep(0.5)`` 后拿**旧 token** 重试——刷新通常 >0.5s，重试
+        必然再 401，且重试分支把第二次 401 当 refresh_failed 误触 reauth。
+        refresh_token 内部有单飞锁 + 5 秒结果缓存，这里直接 await 即可，
+        不会发起第二次云端刷新。
+        """
+        try:
+            new = await self.refresh_token(self._refresh_token)
+            self._access_token = new["access_token"]
+            if self.on_token_refresh is not None:
+                self.on_token_refresh(new["access_token"])
+        except Exception as exc:  # noqa: BLE001 - 刷新失败才置 refresh_failed
+            self._log.error("FordPass concurrent token refresh failed: %s", exc)
+            raise FordPassApiError(
+                401, f"token refresh failed: {exc}", refresh_failed=True
+            ) from exc
+
     async def refresh_token(self, refresh_token: str) -> dict[str, str]:
         # v5.3.1: 锁 + 5s 窗口结果缓存——并发 401 时多协程同时到达，锁保证
         # 串行，窗口缓存让后续协程直接复用第一次的刷新结果，避免重复请求
@@ -926,45 +947,38 @@ class FordPassApi:
             # 带旧 access token 致网关 401/600 业务拒绝——这是 v5.6.6 刷新
             # 失败的真根因；v5.6.7 误删 brand 反把 401/600 改成 400 必填）。
             enc, xjw = await asyncio.to_thread(lambda: self.crypto.encrypt_field(refresh_token))
-            # v5.8.4: 防 refresh 端点自身 401/600 时 _request 递归刷新死锁——
-            # refresh_token 已持有 _refresh_lock（asyncio.Lock 不可重入），若
-            # refresh-dlt-token 响应业务 401/600 且 _retrying=False（直接调用
-            # 场景如 config flow / coordinator），_request 会再调 refresh_token
-            # 二次拿锁 → 永久阻塞。置空 self._refresh_token 使 _request 的
-            # HTTP 401 / 业务 401/600 分支都因「无 refresh_token」直接抛错
-            # （不触发刷新），由下方退避循环负责重试；finally 恢复。
-            _saved_rt = self._refresh_token
-            self._refresh_token = None
-            try:
-                # v5.8.4: refresh-dlt-token 失败退避重试——福特云对密集命令/会话
-                # 敏感端点有窗口式风控（2026-10-25 实测：命令路径 401/600 时
-                # refresh 端点同步被拒，但同一 access token 后台轮询成功 →
-                # 非 token 失效而是网关瞬时拒绝）。sleep 1/2/4s 有限重试 3 次
-                # （共 4 次尝试），仍失败抛最后异常由 _request 401 分支按
-                # refresh_failed 处理。与 lessons「失败退避与抑制」一致：有限
-                # 重试、不无限轰炸。
-                _attempts = 0
-                while True:
-                    try:
-                        data = await self._request(
-                            "POST",
-                            PATH_REFRESH_TOKEN,
-                            {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
-                            headers={"auth-token": None},
-                        )
-                        break
-                    except (FordPassApiError, OSError, asyncio.TimeoutError) as exc:
-                        _attempts += 1
-                        if _attempts > 3:
-                            raise
-                        delay = 2 ** (_attempts - 1)
-                        self._log.warning(
-                            "FordPass %s failed (attempt %d/4, retry in %ds): %s",
-                            PATH_REFRESH_TOKEN, _attempts + 1, delay, exc,
-                        )
-                        await asyncio.sleep(delay)
-            finally:
-                self._refresh_token = _saved_rt
+            # v6.3.7: 用 allow_refresh=False 让 _request 的 401/600 分支不再
+            # 递归调用本函数（此前靠临时置 self._refresh_token=None 来打断，
+            # 但这会让并发协程读到 None 并以 None 加密 → 抛错 → 误触 reauth）。
+            # 现在 _refresh_token 全程保持不变。
+            # v5.8.4: refresh-dlt-token 失败退避重试——福特云对密集命令/会话
+            # 敏感端点有窗口式风控（2026-10-25 实测：命令路径 401/600 时
+            # refresh 端点同步被拒，但同一 access token 后台轮询成功 →
+            # 非 token 失效而是网关瞬时拒绝）。sleep 1/2/4s 有限重试 3 次
+            # （共 4 次尝试），仍失败抛最后异常由 _request 401 分支按
+            # refresh_failed 处理。与 lessons「失败退避与抑制」一致：有限
+            # 重试、不无限轰炸。
+            _attempts = 0
+            while True:
+                try:
+                    data = await self._request(
+                        "POST",
+                        PATH_REFRESH_TOKEN,
+                        {"encryptedRefreshToken": enc, "brand": self._brand_code, "xjw": xjw},
+                        headers={"auth-token": None},
+                        allow_refresh=False,
+                    )
+                    break
+                except (FordPassApiError, OSError, asyncio.TimeoutError) as exc:
+                    _attempts += 1
+                    if _attempts > 3:
+                        raise
+                    delay = 2 ** (_attempts - 1)
+                    self._log.warning(
+                        "FordPass %s failed (attempt %d/4, retry in %ds): %s",
+                        PATH_REFRESH_TOKEN, _attempts + 1, delay, exc,
+                    )
+                    await asyncio.sleep(delay)
             inner = data.get("data", {})
             xjw2 = inner.get("xjw", xjw)
             if not isinstance(inner, dict) or "encryptedAccessToken" not in inner:
@@ -1195,7 +1209,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request(
                     "POST", url, headers=self._headers(), json=body
                 ) as resp2:
@@ -1306,7 +1320,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request(
                     method, url, headers=self._headers()
                 ) as resp2:
@@ -1377,7 +1391,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request("DELETE", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
@@ -1436,7 +1450,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request("GET", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
@@ -1502,7 +1516,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request("PUT", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
@@ -1561,7 +1575,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request("GET", url, headers=self._headers()) as resp2:
                     text2 = await resp2.text()
                     if resp2.status >= 400:
@@ -1634,7 +1648,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request(
                     "DELETE", url, headers=self._headers()
                 ) as resp2:
@@ -1712,7 +1726,7 @@ class FordPassApi:
                         self._retrying = False
                 # v5.3.2: 已有协程正在刷新（_retrying=True）——短等后重试本次请求，
                 # 复用新 token（此前并发 401 时非首个协程直接抛错，多车账号该轮失败）
-                await asyncio.sleep(0.5)
+                await self._await_concurrent_refresh()
                 async with self._session.request(
                     "GET", url, headers=self._headers()
                 ) as resp2:

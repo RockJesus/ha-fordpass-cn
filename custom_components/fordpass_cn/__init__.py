@@ -159,15 +159,20 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     return config_entry.version <= 1
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """注册集成级服务（v5.6.0，P1-6）。
+async def _async_register_services(hass: HomeAssistant) -> None:
+    """注册集成级服务（幂等，v6.3.7）。
 
-    此前服务在 async_setup_entry 内按 entry 注册——第二个 entry 会覆盖
-    第一个的 handler（refresh_status 只刷新最后注册的 entry），卸载任一
-    entry 都会 async_remove 掉全局服务。改为 async_setup 注册一次、遍历
-    全部已加载 entry 的 runtime_data；最后一个 entry 卸载时再移除服务
-    （见 async_unload_entry）。
+    此前服务只在 async_setup 注册，async_unload_entry 又按「无 LOADED
+    entry」判断移除——但 HA 调用 async_unload_entry 时该 entry 状态是
+    UNLOAD_IN_PROGRESS，即**单 entry 的任意一次重载**都会移除全部服务，
+    而 reload 不会重新执行 async_setup → 服务永久丢失到 HA 重启。
+
+    现改为：注册逻辑抽成幂等 helper，async_setup 与 async_setup_entry
+    都调用（后者保证重载后服务存在）；卸载/重载不再移除服务，仅在
+    entry 被真正删除且无其它同域 entry 时由 async_remove_entry 清理。
     """
+    if hass.services.has_service(DOMAIN, SERVICE_REFRESH_STATUS):
+        return
 
     def _all_coordinators() -> list[FordPassCoordinator]:
         out: list[FordPassCoordinator] = []
@@ -367,6 +372,11 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             {vol.Optional("vin"): cv.string, vol.Optional("approve"): cv.boolean}
         ),
     )
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """集成级 setup：注册全局服务（注册逻辑幂等，重载亦由 entry setup 兜底）。"""
+    await _async_register_services(hass)
     return True
 
 
@@ -398,6 +408,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # v6.1.2: 数据已齐（含自动重试成功的情况），清掉可能挂着的缺失通知。
     # dismiss 不存在的通知是幂等的，无需先查询。
     persistent_notification.async_dismiss(hass, _NOTIFICATION_CRYPTO_MISSING)
+
+    # v6.3.7: 幂等兜底——重载 entry 不会重跑 async_setup，此处确保服务仍在
+    # （此前修复前重载后服务永久丢失，见 _async_register_services 注释）。
+    await _async_register_services(hass)
 
     session = async_get_clientsession(hass)
     api = FordPassApi(session, _LOGGER, brand=entry.data.get(CONF_BRAND, DEFAULT_BRAND))
@@ -610,6 +624,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("fordpass_cn capability probe skipped: %s", exc)
         try:
             await coordinator.async_config_entry_first_refresh()
+        except ConfigEntryAuthFailed:
+            # v6.3.7: 认证失败必须上抛——此前被下面的宽泛 except 吞掉，
+            # HA 不会启动 reauth flow，用户只能看着集成一直报错。
+            raise
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning(
                 "fordpass_cn 首次刷新失败（保留最后已知状态，后台自动重试）: %s",
@@ -766,30 +784,42 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # 写无意义 logbook 活动。先逐任务 cancel（done_callback 自动
                 # discard 清理集合），再 shutdown。落盘任务被取消丢一次
                 # 落盘，卸载场景可接受。
-                for t in list(coord._persist_tasks):
+                # v6.3.7: cancel 后 await gather——此前只 cancel 不等待，
+                # 任务可能在被取消后仍跑一拍（访问已关闭的 session）。
+                tasks = list(coord._persist_tasks)
+                for t in tasks:
                     t.cancel()
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
                 await coord.async_shutdown()
             except Exception as exc:  # noqa: BLE001 - 关闭失败不阻断卸载
                 _LOGGER.warning("fordpass_cn coordinator shutdown failed: %s", exc)
     # v5.3.0: runtime_data 由 HA 生命周期管理，无需手动 pop hass.data
-    # v5.6.0（P1-6）：服务注册在 async_setup（集成级）；最后一个 entry
-    # 卸载后移除服务，避免残留服务调用时遍历不到任何 coordinator。
-    if not any(
-        e.state == ConfigEntryState.LOADED
+    # v5.6.0（P1-6）：服务注册在 async_setup（集成级）。
+    # v6.3.7: 卸载/重载**不再移除服务**——HA 调用本钩子时 entry 仍为
+    # UNLOAD_IN_PROGRESS，无法据此判断「最后一个 entry」；误删后 reload
+    # 不重跑 async_setup，服务将永久消失。真正删除 entry 时由
+    # async_remove_entry 在无其它同域 entry 的情况下清理。
+    return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """entry 被真正删除时清理集成级服务（v6.3.7）。
+
+    仅在删除后不存在其他同域 entry 时移除，避免多账号场景误删共用服务。
+    """
+    if any(
+        e.entry_id != entry.entry_id
         for e in hass.config_entries.async_entries(DOMAIN)
     ):
-        # v5.9.6: 六个服务全部移除。此前只移除前两个，卸载集成后
-        # share_wallbox / create_departure / update_srs / approve_auth
-        # 仍留在服务目录里，调用时报的是「遍历不到 coordinator」而不是
-        # 「服务不存在」，且重新安装前一直占着开发者工具的服务列表。
-        for _service in (
-            SERVICE_REFRESH_STATUS,
-            SERVICE_CLEAR_TOKENS,
-            SERVICE_SHARE_WALLBOX,
-            SERVICE_CREATE_DEPARTURE,
-            SERVICE_UPDATE_SRS,
-            SERVICE_APPROVE_AUTH,
-        ):
-            if hass.services.has_service(DOMAIN, _service):
-                hass.services.async_remove(DOMAIN, _service)
-    return unload_ok
+        return
+    for _service in (
+        SERVICE_REFRESH_STATUS,
+        SERVICE_CLEAR_TOKENS,
+        SERVICE_SHARE_WALLBOX,
+        SERVICE_CREATE_DEPARTURE,
+        SERVICE_UPDATE_SRS,
+        SERVICE_APPROVE_AUTH,
+    ):
+        if hass.services.has_service(DOMAIN, _service):
+            hass.services.async_remove(DOMAIN, _service)
