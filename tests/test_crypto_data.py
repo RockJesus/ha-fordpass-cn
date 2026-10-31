@@ -37,10 +37,23 @@ class _FakeConfig:
         return str(self._root.joinpath(*parts))
 
 
+class _FakeContent:
+    """模拟 aiohttp 流式响应体（v6.3.7 起按块读取）。"""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    async def iter_chunked(self, size: int):
+        for start in range(0, len(self._body), size):
+            yield self._body[start : start + size]
+
+
 class _FakeResponse:
     def __init__(self, status: int, body: bytes) -> None:
         self.status = status
         self._body = body
+        self.headers: dict[str, str] = {}
+        self.content = _FakeContent(body)
 
     async def read(self) -> bytes:
         return self._body

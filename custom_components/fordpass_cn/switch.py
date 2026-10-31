@@ -51,6 +51,24 @@ _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
 
+# v6.3.7: 云端布尔字段解析——此前 bool(value) 把 "0"/"false" 判为真，
+# 导致「远程启动」关着也显示已开启。None 保持未知（交给 _restore_bool）。
+_UNKNOWN_VALUES = {"null", "none", "not_supported", "notsupported", ""}
+
+
+def _as_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value).strip().lower()
+    if text in _UNKNOWN_VALUES:
+        return None
+    return text not in ("false", "0", "no", "off")
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -400,42 +418,51 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
         ep = self.coordinator.extra_probes or {}
         return ep.get("departuretimes") if isinstance(ep, dict) else None
 
+    def _probe_payload(self) -> dict | None:
+        data = self._probe()
+        if not isinstance(data, dict):
+            return None
+        payload = data.get("data") if isinstance(data, dict) else None
+        return payload if isinstance(payload, dict) else None
+
+    def _probe_state(self) -> bool | None:
+        """v6.3.7: 从探测结果解析开关状态。
+
+        此前状态只在 async_update 里初始化，而 _attr_should_poll=False 后
+        该钩子永不调用 → 实体恒 unknown。改为读取时直接从探测缓存解析。
+        """
+        payload = self._probe_payload()
+        if not payload:
+            return None
+        for k in ("switchStatus", "toggleStatus", "enabled", "status", "onOffStatus"):
+            v = payload.get(k)
+            if v is not None:
+                return _as_bool(v)
+        return None
+
+    def _probe_task_id(self) -> str | None:
+        payload = self._probe_payload()
+        if not payload:
+            return None
+        lst = payload.get("list") or payload.get("departureTimes") or payload.get("tasks")
+        if isinstance(lst, list) and lst and isinstance(lst[0], dict):
+            return str(
+                lst[0].get("departureTimesColumUpdateId") or lst[0].get("id") or ""
+            ) or None
+        return None
+
     @property
     def available(self) -> bool:
         return bool(self.coordinator.data)  # v4.8.7: 有最后已知数据即可用——修复控制实体 unavailable（restored 残留）
 
     @property
     def is_on(self) -> bool | None:
-        return self._restore_bool(self._state)
-
-    async def async_update(self) -> None:
-        # v5.8.7: 与 lock v5.8.5 同源——HA 2026.10 重启/重载初始窗口
-        # （coordinator.data=None）叠加云端慢时，实体 update 挂起会触发
-        # "Updating fordpass_cn switch took longer than the scheduled
-        # update interval 0:00:30" 警告。data 未就绪时后台调度刷新并
-        # 立即返回（coordinator 自带去抖 + 30min 调度兜底）。
-        if self.coordinator.data is None:
-            self.hass.async_create_task(
-                self.coordinator.async_request_refresh()
-            )
-            return
-        data = self._probe()
-        if not isinstance(data, dict):
-            return
-        payload = data.get("data") if isinstance(data, dict) else None
-        if not isinstance(payload, dict):
-            return
-        for k in ("switchStatus", "toggleStatus", "enabled", "status", "onOffStatus"):
-            v = payload.get(k)
-            if v is not None:
-                self._state = str(v).lower() in ("1", "true", "on", "yes", "open")
-                break
-        lst = payload.get("list") or payload.get("departureTimes") or payload.get("tasks")
-        if isinstance(lst, list) and lst and isinstance(lst[0], dict):
-            self._task_id = str(lst[0].get("departureTimesColumUpdateId")
-                               or lst[0].get("id") or "")
+        if self._state is not None:
+            return self._state
+        return self._restore_bool(self._probe_state())
 
     async def async_turn_on(self) -> None:
+        self._task_id = self._task_id or self._probe_task_id()
         await self.coordinator.api.departure_toggle(
             self.coordinator.vin, True, self._task_id or None
         )
@@ -443,6 +470,7 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
         self.async_write_ha_state()
 
     async def async_turn_off(self) -> None:
+        self._task_id = self._task_id or self._probe_task_id()
         await self.coordinator.api.departure_toggle(
             self.coordinator.vin, False, self._task_id or None
         )
@@ -478,8 +506,7 @@ class FordPassEngineSwitch(FordPassRestoreMixin, FordPassCmdResultMixin, SwitchE
         if self._pending is not None:  # v6.3.5: 操作中显示目标状态（乐观反馈）
             return self._pending
         status = (self.coordinator.data or {}).get("vehiclestatus", {})
-        value = status.get("remoteStartStatus", {}).get("value")
-        return self._restore_bool(bool(value) if value is not None else None)
+        return self._restore_bool(_as_bool(capability.leaf(status, "remoteStartStatus")))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         self._pending = True

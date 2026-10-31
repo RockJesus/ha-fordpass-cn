@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.lock import LockEntity
@@ -26,6 +27,31 @@ from .sensor import FordPassRestoreMixin
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
+
+# v6.3.7: lockStatus 云端既可能是 dict（{"value": "LOCKED"}），也可能是
+# 标量 "LOCKED"/bool/1/0（sensor.py 的 enum_map 实证）。统一归一化——
+# 直接 ``status.get("lockStatus", {}).get(...)`` 在标量时 AttributeError，
+# 且 "1"/"0" 此前永远判为未锁定。
+_LOCKED_VALUES = {"locked", "lock", "1", "true", "yes", "on"}
+_UNLOCKED_VALUES = {"unlocked", "unlock", "0", "false", "no", "off"}
+# 后备箱记忆状态有效期（秒）：超过后回落到云端快照纠正。
+_TRUNK_STATE_TTL = 60
+
+
+def _lock_state(status: dict | None) -> bool | None:
+    """从未知结构的 lockStatus 解析出 True=锁定 / False=解锁 / None=未知。"""
+    raw = capability.leaf(status, "lockStatus")
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return None
+    text = str(raw).strip().lower()
+    if text in _LOCKED_VALUES:
+        return True
+    if text in _UNLOCKED_VALUES:
+        return False
+    return None
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -99,6 +125,10 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         # 「正在锁定/解锁」动画（对齐福特派 App 的执行中反馈）。
         self._attr_is_locking = False
         self._attr_is_unlocking = False
+        # v6.3.7: 快照确认改后台任务（见 async_lock/unlock）——避免服务
+        # 调用被 PARALLEL_UPDATES=1 的信号量堵住最长 60s+。
+        self._confirm_task: asyncio.Task | None = None
+        self.async_on_remove(self._cancel_confirm)
 
     def _set_pending(self, target: bool) -> None:
         """置操作中标记：乐观目标状态 + is_locking/is_unlocking 动画。"""
@@ -113,6 +143,11 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         self._attr_is_unlocking = False
         self.async_write_ha_state()
 
+    def _cancel_confirm(self) -> None:
+        if self._confirm_task is not None:
+            self._confirm_task.cancel()
+            self._confirm_task = None
+
     async def _confirm_lock_snapshot(self, target: bool) -> bool:
         """v6.3.6: 命令链路结束后云端快照可能尚未翻转（实测最迟 ~60s）。
 
@@ -123,10 +158,9 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         调用方照常 clear_pending 如实显示快照，由后台轮询兜底纠正——
         不无限乐观，避免命令实际失败时状态永久失真。
         """
-        want = "LOCKED" if target else "UNLOCKED"
         for _ in range(6):
             status = (self.coordinator.data or {}).get("vehiclestatus", {}) or {}
-            if status.get("lockStatus", {}).get("value") == want:
+            if _lock_state(status) is target:
                 return True
             await asyncio.sleep(10)
             try:
@@ -134,6 +168,22 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
             except Exception as exc:  # noqa: BLE001 - 保留乐观状态，10s 后循环下一轮再试
                 _LOGGER.debug("lock snapshot confirm refresh failed: %s", exc)
         return False
+
+    def _schedule_confirm(self, target: bool) -> None:
+        """v6.3.7: 后台确认快照并清乐观标记——服务调用立即返回。"""
+        self._cancel_confirm()
+        self._confirm_task = self.hass.async_create_task(self._async_confirm(target))
+
+    async def _async_confirm(self, target: bool) -> None:
+        try:
+            await self._confirm_lock_snapshot(target)
+        finally:
+            # v6.3.7: 仅当本任务仍是当前确认任务时才清理——连续 lock→unlock
+            # 时旧任务被取消后其 finally 可能晚于新任务启动，无条件清理会把
+            # 新操作的乐观状态/动画清掉。
+            if self._confirm_task is asyncio.current_task():
+                self._confirm_task = None
+                self._clear_pending()
 
     @property
     def available(self) -> bool:
@@ -144,8 +194,7 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         if self._pending is not None:  # v5.8.3: 操作中显示目标状态（乐观反馈）
             return self._pending
         status = (self.coordinator.data or {}).get("vehiclestatus", {})
-        value = status.get("lockStatus", {}).get("value")
-        return self._restore_bool(value == "LOCKED" if value else None)
+        return self._restore_bool(_lock_state(status))
 
     async def async_lock(self, **kwargs: Any) -> None:
         self._set_pending(True)
@@ -154,9 +203,9 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         except Exception:
             self._clear_pending()
             raise
-        # v6.3.6: 快照未翻转则保持乐观（动画/目标态）直到云端确认，消除回跳
-        await self._confirm_lock_snapshot(True)
-        self._clear_pending()
+        # v6.3.7: 快照确认转后台任务——保持乐观态直到云端确认或超时，
+        # 但不再阻塞本服务调用（原实现最长等 60s+ 且堵住后备箱锁）。
+        self._schedule_confirm(True)
 
     async def async_unlock(self, **kwargs: Any) -> None:
         self._set_pending(False)
@@ -165,9 +214,7 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
         except Exception:
             self._clear_pending()
             raise
-        # v6.3.6: 同上——快照未翻转保持乐观直到确认，再读快照
-        await self._confirm_lock_snapshot(False)
-        self._clear_pending()
+        self._schedule_confirm(False)
 
     async def async_update(self) -> None:
         # v3.8.0: 锁状态由 coordinator 定时刷新驱动，实体轮询不再强制
@@ -206,6 +253,9 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool | None = None  # True=锁定
+        # v6.3.7: 记忆状态的时效——超时后回落到云端快照，避免命令实际
+        # 未生效时永久显示错误状态（此前 _state 永久记忆，不再纠正）。
+        self._state_at: float | None = None
         # v6.3.4: 操作中动画（对齐 App 执行中反馈，同门锁）
         self._attr_is_locking = False
         self._attr_is_unlocking = False
@@ -226,16 +276,16 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
 
     @property
     def is_locked(self) -> bool | None:
-        # 优先返回记忆状态（用户操作后）
-        if self._state is not None:
-            return self._state
+        # 优先返回记忆状态（用户操作后），但仅在有效期内（v6.3.7）——
+        # 超时后回落到云端快照，命令未生效时也能被纠正。
+        if self._state is not None and self._state_at is not None:
+            if time.monotonic() - self._state_at < _TRUNK_STATE_TTL:
+                return self._state
         # 初始/重启后从门锁状态推断：LOCKED → 锁定(True)，UNLOCKED → 解锁(False)
         status = (self.coordinator.data or {}).get("vehiclestatus", {})
-        lock = capability.leaf(status, "lockStatus")
-        if lock == "LOCKED":
-            return True
-        if lock == "UNLOCKED":
-            return False
+        lock = _lock_state(status)
+        if lock is not None:
+            return lock
         return self._restore_bool(None)
 
     async def async_lock(self, **kwargs: Any) -> None:
@@ -247,6 +297,7 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
             self._clear_pending()
             raise
         self._state = True
+        self._state_at = time.monotonic()
         self._clear_pending()
 
     async def async_unlock(self, **kwargs: Any) -> None:
@@ -258,5 +309,6 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
             self._clear_pending()
             raise
         self._state = False
+        self._state_at = time.monotonic()
         self._clear_pending()
 

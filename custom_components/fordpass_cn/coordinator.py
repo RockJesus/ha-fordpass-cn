@@ -444,6 +444,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._probe_save_task = asyncio.create_task(
                     self._probe_save_delayed()
                 )
+                # v6.3.7: 纳入 _persist_tasks——卸载时统一 cancel/await，
+                # 此前该任务游离于任务集合之外，卸载后仍会跑一拍写盘。
+                self._persist_tasks.add(self._probe_save_task)
+                self._probe_save_task.add_done_callback(self._persist_tasks.discard)
             return
         self._probe_save_ts = now
         try:

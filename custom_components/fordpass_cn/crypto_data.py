@@ -158,7 +158,34 @@ async def _async_fetch(hass: HomeAssistant) -> bytes | None:
                             "FordPass 数据包获取 %s 返回 HTTP %s", url, resp.status
                         )
                         continue
-                    blob = await resp.read()
+                    # v6.3.7: 先看 Content-Length，再流式分块累计——
+                    # 此前 ``await resp.read()`` 一次性读入后才校验 8MB，
+                    # 异常响应可在校验前把内存撑爆。
+                    length = resp.headers.get("Content-Length")
+                    if length:
+                        try:
+                            if int(length) > _MAX_BYTES:
+                                _LOGGER.warning(
+                                    "FordPass 数据包响应过大（Content-Length=%s），已忽略 %s",
+                                    length, url,
+                                )
+                                continue
+                        except ValueError:
+                            pass
+                    buf = bytearray()
+                    too_big = False
+                    async for chunk in resp.content.iter_chunked(64 * 1024):
+                        buf.extend(chunk)
+                        if len(buf) > _MAX_BYTES:
+                            too_big = True
+                            break
+                    if too_big:
+                        _LOGGER.warning(
+                            "FordPass 数据包响应超过 %d 字节上限，已忽略 %s",
+                            _MAX_BYTES, url,
+                        )
+                        continue
+                    blob = bytes(buf)
         except (TimeoutError, OSError) as err:
             _LOGGER.debug("FordPass 数据包获取失败 %s：%s", url, err)
             continue
