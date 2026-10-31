@@ -2097,7 +2097,7 @@ class FordPassApi:
 
     async def wait_command_complete(
         self, vin: str, command_id: str, command_type: str,
-        timeout: float = 30.0, poll: float = 3.0,
+        timeout: float = 60.0, poll: float = 3.0,
     ) -> tuple[bool, dict[str, Any] | None]:
         """Poll command-execution-status until ForceRefresh finishes (v2.7.1).
         v3.8.0: poll 2s→5s（单命令最多 12 次而非 30 次，防福特云限流）。
@@ -2109,6 +2109,12 @@ class FordPassApi:
         上限压到 30s，到点由 coordinator.run_command 的 fallback 立即全量
         刷新（force_all=False 无冷却），感知延迟压到 ~30-40s；云端翻转快
         （~15s）时行为不变。
+        v6.3.6: timeout 30s→60s（恢复 v6.3.3 前基线）——v6.3.3 的 30s
+        上限虽把感知压到 30-40s，但 30s 时云端快照常尚未翻转，fallback
+        force_refresh 拉到旧快照会让 lock 实体「乐观状态回跳」（用户实测
+        「状态返回不够实时」）。60s 轻量轮询等快照真正翻转再返回，配合
+        lock.py 的乐观保持（_confirm_lock_snapshot）消除回跳窗口；单命令
+        轮询上限 20 次与 v6.3.3 前基线一致，风控可控。
 
         Verified from a live capture (2026-09-29): after
         send-command returns a commandId, the gateway polls
