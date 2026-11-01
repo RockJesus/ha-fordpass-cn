@@ -16,6 +16,7 @@ v6.2.3 扩展词表：逆向 / 抓包 / 破解 / 法律风险 / 自认 / 数据�
 """
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,16 +46,48 @@ SUFFIXES = {".py", ".md", ".yaml", ".yml", ".json", ".html"}
 SKIP_DIRS = {".git", "__pycache__", ".ruff_cache", ".venv", "node_modules"}
 
 
+def _tracked_files() -> list[Path] | None:
+    """git 已跟踪的文件列表；git 不可用时返回 None。
+
+    这两条检查的语义是「入库即承诺不含违规叙述与个人信息」。运行时数据
+    文件（如 ``data/whitebox_keys_for_prod.json``）已在 ``.gitignore`` 里，
+    不属于仓库内容；按目录遍历会把开发机上的落盘文件也扫进来，结果本地
+    永远红、CI 永远绿，反而掩盖真问题。
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z"],
+            capture_output=True,
+            check=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    names = [name for name in out.split("\0") if name]
+    return [ROOT / name for name in names] if names else None
+
+
 def _text_files() -> list[Path]:
+    """待检文本文件：优先 git 索引，退回目录遍历（解压安装、无 git 环境）。"""
+    candidates = _tracked_files()
+    if candidates is None:
+        candidates = [p for p in ROOT.rglob("*") if not p.is_dir()]
     out: list[Path] = []
-    for path in ROOT.rglob("*"):
-        if path.is_dir() or path.name == SELF:
+    for path in candidates:
+        if path.name == SELF or not path.is_file():
             continue
-        if SKIP_DIRS & set(path.parts):
+        if SKIP_DIRS & set(path.relative_to(ROOT).parts):
             continue
         if path.suffix in SUFFIXES or path.name == ".gitignore":
             out.append(path)
     return out
+
+
+def test_scan_corpus_is_not_empty() -> None:
+    """守住扫描器自身：git 解析失败不能退化成"零文件 → 全绿"。"""
+    files = _text_files()
+    assert len(files) > 10, f"待检文件仅 {len(files)} 个，扫描范围疑似失效"
 
 
 def test_no_removed_material_narrative() -> None:

@@ -8,19 +8,19 @@
 - 只有云端明确返回空列表才允许触发 ``cleared``；
 - 首次回调只建基线，不补发历史；
 - 车门事件多门合并、大小写兼容、``Unknown`` 忽略；
-- 重启恢复（v6.1.2）：合法事件类型回填内部记录，非法/缺失安全降级，
-  恢复后首次刷新仍只建基线。
+- 重启恢复交给 HA 原生 ``EventEntity``（v6.3.8 删除自实现），本集成
+  不得再自造一套，且非法事件类型仍被框架拒绝。
 """
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import sys
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
 
@@ -40,12 +40,12 @@ class _FakeEntity:
 class _FakeRestoreEntity(_FakeEntity):
     """替代 homeassistant.helpers.restore_state.RestoreEntity。
 
-    测试通过 ``entity._fake_last_state = ...`` 注入历史状态（不用类属性
-    默认值，因为 ``_FordPassEventBase.__init__`` 不调 super().__init__）。
+    event.py 只是把它列进基类；恢复由 HA 原生 EventEntity 完成，测试不再
+    注入历史状态（v6.3.8 起集成没有自实现恢复路径）。
     """
 
     async def async_get_last_state(self):
-        return getattr(self, "_fake_last_state", None)
+        return None
 
 
 class _FakeEventEntity(_FakeEntity):
@@ -299,70 +299,45 @@ def test_door_missing_key_ignored() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 重启恢复（v6.1.2）
+# 重启恢复：由 HA 原生 EventEntity 负责（v6.3.8 移除自实现）
 # ---------------------------------------------------------------------------
-def _last(state, **attrs):
-    return SimpleNamespace(state=state, attributes=attrs)
+def test_no_custom_restore_path() -> None:
+    """集成不得再自实现恢复逻辑。
+
+    HA 2026.10 的 ``EventEntity`` 自身继承 ``RestoreEntity``，并在
+    ``async_internal_added_to_hass`` 里用 ``ExtraStoredData`` 回填事件类型与
+    属性；恢复过程不经过 ``_trigger_event``，因此不写状态机、不会误触自动化。
+
+    旧的自实现（v6.1.2）读的是 ``last_event_attributes`` 这个属性——新版
+    HA 已不再输出，恢复恒为空，属死代码，故删除。这里守住"不要再长回来"：
+    一旦有人重新定义 ``_restore_last_event`` 或覆盖恢复入口，测试失败。
+    """
+    module = load_event()
+    classes = {
+        "_FordPassEventBase": module._FordPassEventBase,
+        "FordPassAlertEvent": module.FordPassAlertEvent,
+        "FordPassDoorEvent": module.FordPassDoorEvent,
+    }
+    for name, cls in classes.items():
+        assert "_restore_last_event" not in vars(cls), f"{name} 重新实现了旧恢复逻辑"
+        assert "async_internal_added_to_hass" not in vars(cls), (
+            f"{name} 覆盖了框架的恢复入口"
+        )
 
 
-def test_restore_alert_event() -> None:
-    entity = make_alert(alerts("A"))
-    entity._fake_last_state = _last("alert", last_event_attributes={"headline": "X"})
-    asyncio.run(entity._restore_last_event())
-    assert fired(entity) == [("alert", {"headline": "X"})]
+def test_restored_type_must_be_declared() -> None:
+    """损坏的恢复数据不会伪造事件：未声明的事件类型被框架拒绝。
 
+    HA 原生恢复把历史事件类型回填进内部记录，若状态机里残留的是旧版本
+    已废弃的类型，框架的 ``_trigger_event`` 会抛 ``ValueError``，而不是把
+    它写成一个谁也不认识的事件。
+    """
+    alert = make_alert(alerts("A"))
+    assert alert.event_types, "事件集不能为空，否则恢复与触发都失去约束"
+    with pytest.raises(ValueError):
+        alert._trigger_event("not_a_declared_type", {})
 
-def test_restore_door_event() -> None:
-    entity = make_door(doors(driverDoor="Closed"))
-    entity._fake_last_state = _last(
-        "opened", last_event_attributes={"door": "尾门", "count": 1}
-    )
-    asyncio.run(entity._restore_last_event())
-    assert fired(entity) == [("opened", {"door": "尾门", "count": 1})]
-
-
-def test_restore_missing_state_noop() -> None:
-    entity = make_alert(alerts("A"))
-    asyncio.run(entity._restore_last_event())
-    assert fired(entity) == []
-
-
-def test_restore_invalid_type_ignored() -> None:
-    """last_state 损坏（类型不在声明的事件集里）不得抛错、不得回填。"""
-    entity = make_alert(alerts("A"))
-    entity._fake_last_state = _last("opened", last_event_attributes={})
-    asyncio.run(entity._restore_last_event())
-    assert fired(entity) == []
-
-
-def test_restore_bad_attributes_degrades_to_empty() -> None:
-    entity = make_alert(alerts("A"))
-    entity._fake_last_state = _last("cleared")
-    asyncio.run(entity._restore_last_event())
-    assert fired(entity) == [("cleared", {})]
-
-    entity = make_alert(alerts("A"))
-    entity._fake_last_state = _last("cleared", last_event_attributes=["bad"])
-    asyncio.run(entity._restore_last_event())
-    assert fired(entity) == [("cleared", {})]
-
-
-def test_restore_then_first_pass_still_baselines() -> None:
-    """恢复只补显示，基线逻辑不受影响：恢复后首次刷新仍只建基线。"""
-    entity = make_alert(alerts("A"))
-    entity._fake_last_state = _last("alert", last_event_attributes={"headline": "X"})
-    asyncio.run(entity._restore_last_event())
-
-    entity._process()
-    assert len(fired(entity)) == 1  # 基线轮没有新事件
-
-    entity.coordinator.data = alerts("A", "B")
-    entity._process()
-    assert [e[0] for e in fired(entity)] == ["alert", "alert"]
-
-
-def test_restore_non_string_state_ignored() -> None:
-    entity = make_alert(alerts("A"))
-    entity._fake_last_state = SimpleNamespace(state=None, attributes={})
-    asyncio.run(entity._restore_last_event())
-    assert fired(entity) == []
+    door = make_door(doors(driverDoor="Closed"))
+    assert door.event_types
+    with pytest.raises(ValueError):
+        door._trigger_event("not_a_declared_type", {})
