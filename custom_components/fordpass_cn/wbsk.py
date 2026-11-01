@@ -45,6 +45,15 @@ TABLE_FILES: tuple[str, ...] = (
 _ROUNDS = 14
 
 
+class CryptoDataMissing(RuntimeError):
+    """运行时数据包缺失（v6.3.9）。
+
+    单独成类是为了让调用方能把它和「表数据损坏 / 长度异常」区分开：
+    前者可以自动获取后重试（配置流程会先兜一次下载），后者只能报错。
+    继承 RuntimeError 保持既有 ``except RuntimeError`` 的兼容性。
+    """
+
+
 def _load_key_hex(path: str, scene: str = "x_api") -> tuple[str, str]:
     """Read a key file. Supports the app's JSON (per-scene
     encrypt / decrypt, e.g. x_api / lbs / lbs_p2c) and the raw
@@ -205,7 +214,7 @@ class FordPassCrypto:
 
     def __init__(self, key_file: str | None = None, scene: str = "x_api") -> None:
         if not os.path.exists(key_file or _KEY_PATH):
-            raise RuntimeError(
+            raise CryptoDataMissing(
                 "FordPass 运行时数据包缺失："
                 f"{os.path.dirname(key_file or _KEY_PATH)} 下找不到所需文件。"
                 "集成 setup 会自动尝试获取；若已看到本错误，请查看持久通知"

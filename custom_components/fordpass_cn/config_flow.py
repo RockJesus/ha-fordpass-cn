@@ -28,6 +28,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import app_constants, crypto_data
 from .api import FordPassApi, FordPassApiError
+from .wbsk import CryptoDataMissing
 from .const import (
     B2C_AUTHORITY,
     B2C_PATH_AUTHORIZE,
@@ -448,12 +449,29 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             raise ValueError(f"reconfigure: entry {entry_id} not found")
         return entry
 
+    async def _async_ensure_crypto(self) -> bool:
+        """登录前确保运行时数据包可用（v6.3.9）。
+
+        首次安装时还没有 config entry，``__init__.py`` 的 setup 从未跑过，
+        也就没人触发数据包获取；而短信验证码链路第一步就要加密手机号
+        （``FordPassCrypto.get()``），缺包时抛 ``CryptoDataMissing``，前端
+        只能看到「未知错误」。v6.3.9 之前只有密码登录的 b2c 步骤兜了这一次。
+
+        命中本地任一级立刻返回、不发网络请求；只有全部落空才下载一次。
+        """
+        ok, note = await crypto_data.async_ensure_crypto_data(self.hass)
+        if not ok:
+            _LOGGER.warning("FordPass 运行时数据包不可用：%s", note)
+        return ok
+
     async def async_step_phone(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             self._phone = _normalize_phone(user_input[CONF_PHONE])
             if not self._phone.isdigit() or len(self._phone) != 11:
                 errors["base"] = "bad_phone"
+            elif not await self._async_ensure_crypto():
+                errors["base"] = "crypto_data_missing"
             else:
                 if not (self._reauth or self._reconfigure):
                     dup = self._check_duplicate_entry()
@@ -471,6 +489,11 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.warning(
                         "send passcode failed: code=%s msg=%s", err.code, err.message
                     )
+                except CryptoDataMissing:
+                    # 上面已兜过一次获取，仍缺包说明下载失败——给可执行的提示，
+                    # 不要让用户对着「未知错误」猜。
+                    errors["base"] = "crypto_data_missing"
+                    _LOGGER.warning("FordPass 运行时数据包缺失，验证码无法加密发送")
                 except Exception:
                     errors["base"] = "unknown"
                     _LOGGER.exception("unexpected error sending passcode")
@@ -490,6 +513,14 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_code(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
+            if not await self._async_ensure_crypto():
+                errors["base"] = "crypto_data_missing"
+                return self.async_show_form(
+                    step_id="code",
+                    data_schema=STEP_CODE_SCHEMA,
+                    errors=errors,
+                    description_placeholders={"phone": self._phone or ""},
+                )
             session = async_get_clientsession(self.hass)
             api = FordPassApi(session, _LOGGER, brand=self._brand)
             try:
@@ -509,6 +540,9 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.warning(
                     "login failed: code=%s msg=%s", err.code, err.message
                 )
+            except CryptoDataMissing:
+                errors["base"] = "crypto_data_missing"
+                _LOGGER.warning("FordPass 运行时数据包缺失，验证码无法加密提交")
             except Exception:
                 errors["base"] = "unknown"
                 _LOGGER.exception("unexpected error during login")
@@ -586,9 +620,8 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # v6.2.1: B2C 固定值来自运行时数据包——先确保数据包可用再构造 URL
         # v6.3.7: 检查返回值——此前忽略结果，数据包缺失时 client_id 为 None，
         # 表单里给出一条无效登录链接且没有任何提示。
-        crypto_ok, crypto_note = await crypto_data.async_ensure_crypto_data(self.hass)
-        if not crypto_ok:
-            _LOGGER.warning("FordPass b2c login unavailable: %s", crypto_note)
+        # v6.3.9: 统一走 _async_ensure_crypto（与短信链路共用同一兜底）
+        if not await self._async_ensure_crypto():
             errors.setdefault("base", "crypto_data_missing")
             login_url = ""
         else:
