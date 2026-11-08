@@ -96,6 +96,15 @@ class _FordPassEventBase(EventEntity, RestoreEntity):
             self._unsub = None
 
     @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """HA 2026.11: opt-in 原地改名（兼容期至 2027.11）。
+
+        实体状态与监听均不依赖 entity_id，无需移除重加；不实现该钩子时
+        HA 会走旧行为（移除实体再添加），导致协调器监听重注册、事件基线重置。
+        """
+        super().async_entity_id_changed(old_entity_id)
+
+    @callback
     def _on_update(self) -> None:
         """刷新广播 → 比对差异 → 触发事件。
 
@@ -149,7 +158,7 @@ class FordPassAlertEvent(_FordPassEventBase):
     把 ``trigger.to_state.attributes.headline`` 塞进通知。
     """
 
-    _attr_name = "车辆告警事件"
+    _attr_name = "告警事件"
     _attr_icon = "mdi:alert-circle"
     _attr_event_types = ["alert", "cleared"]
     _attr_event_type_cn = {"alert": "有告警", "cleared": "已解除"}
