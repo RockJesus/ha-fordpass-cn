@@ -8,6 +8,7 @@ Not_Supported / 空 或不符合条件时，对应的传感器/按钮/开关实�
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 # 无实际数据的占位值（与 sensor.py 保持一致）
@@ -78,6 +79,18 @@ def is_on(status: dict | None, paths: list[list[str]]) -> bool:
     if isinstance(val, str):
         return val.strip().lower() in {"1", "true", "on", "yes", "enabled"}
     return False
+
+
+def iso_or_none(value: Any) -> str | None:
+    """datetime 转 ISO 8601 串；其他类型（None / 方法对象 / 字符串）返回 None。
+
+    v6.4.9: 诊断接口此前用 str(getattr(...)) 取时间，取不到时输出字符串
+    "None"，与真实时间混在同一个字段里，排查时无法区分"没有记录"和
+    "记录值就是 None"。改为按类型判断：非 datetime 一律给空值。
+    """
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return None
 
 
 def ota_remote_enabled(ota_setting: dict | None) -> bool:

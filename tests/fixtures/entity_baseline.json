@@ -26,11 +26,6 @@
   },
   {
     "platform": "button",
-    "key": "ota_schedule",
-    "zh": "OTA 激活排程"
-  },
-  {
-    "platform": "button",
     "key": "asu_setting",
     "zh": "辅助设置"
   },
@@ -261,11 +256,6 @@
   },
   {
     "platform": "sensor",
-    "key": "life_cycle_mode",
-    "zh": "电池生命周期模式"
-  },
-  {
-    "platform": "sensor",
     "key": "out_and_about",
     "zh": "出行状态"
   },
@@ -283,11 +273,6 @@
     "platform": "sensor",
     "key": "firmware_upgrade",
     "zh": "固件升级中"
-  },
-  {
-    "platform": "sensor",
-    "key": "ota_setting",
-    "zh": "OTA 设置状态"
   },
   {
     "platform": "sensor",

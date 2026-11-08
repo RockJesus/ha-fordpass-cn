@@ -1236,6 +1236,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return data
 
 
+    @property
+    def last_success_time(self) -> datetime | None:
+        """最近一次成功刷新时间（v6.4.9：诊断接口读取用）。
+
+        `_last_success_time` 在成功刷新时写入；对外暴露只读属性，避免诊断
+        侧去猜 HA 内部字段名（官方 DataUpdateCoordinator 的相关字段已移除）。
+        """
+        return self._last_success_time
+
     def activity_entity_id(self) -> str | None:
         """v5.1.1: 实时查 registry 的"车辆识别码"传感器 entity_id（活动日志关联）。
 

@@ -1,12 +1,15 @@
 """Diagnostics support for the FordPass China integration (v4.9.5)."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from . import capability
 
 # 脱敏字段：任何含这些 key（或子串命中）的配置/选项值在诊断输出中被替换为 ***
 TO_REDACT = {
@@ -58,15 +61,24 @@ async def async_get_config_entry_diagnostics(
     try:
         data = getattr(entry, "runtime_data", None)  # v5.3.0
         if isinstance(data, dict) and (coord := data.get("coordinator")):
+            # v6.4.9: 取不到时间时不再输出字符串 "None"——按类型判断，
+            # 非 datetime 一律给空值，避免"没有记录"与"值是 None"被混为一谈。
+            success_time = None
+            for attr in (
+                "last_success_time",  # 集成自己的只读属性（首选）
+                "last_update_success_time",
+                "last_update",
+            ):
+                cand = getattr(coord, attr, None)
+                if isinstance(cand, datetime):
+                    success_time = cand
+                    break
             payload["coordinator"] = {
                 # v5.9.7: HA 早已移除 DataUpdateCoordinator.last_update，
                 # 取它永远是 None。改用集成自己的 last_poll（成功刷新时写入），
                 # 兼容性兜底再取 last_update_success_time / last_update。
-                "last_poll": str(getattr(coord, "last_poll", None)),
-                "last_success_time": str(
-                    getattr(coord, "last_update_success_time", None)
-                    or getattr(coord, "last_update", None)
-                ),
+                "last_poll": capability.iso_or_none(getattr(coord, "last_poll", None)),
+                "last_success_time": capability.iso_or_none(success_time),
                 "last_update_success": bool(
                     getattr(coord, "last_update_success", None)
                 ),
