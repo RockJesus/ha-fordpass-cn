@@ -676,6 +676,82 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
 
 
 
+
+# v6.4.2: 已完成核对的实体翻译键白名单；未列入的实体继续使用内置中文名，
+# 保证升级后实体名与旧版本完全一致（不漂移）。
+_TRANSLATED_KEYS = frozenset({
+    "active_alert_list",
+    "after_sales_number",
+    "air_filter",
+    "alarm_status",
+    "announce_status",
+    "auto_off_remaining",
+    "battery_health",
+    "battery_voltage",
+    "cevs_chargelogs",
+    "cevs_departure",
+    "chirp_cloud",
+    "cloud_probe",
+    "contact_number",
+    "crcc_flag",
+    "deep_sleep",
+    "distance_to_empty",
+    "driver_door",
+    "driver_window",
+    "firmware_upgrade",
+    "fuel_level",
+    "hood",
+    "ignition",
+    "inner_tailgate",
+    "last_charge_soc",
+    "left_rear_door",
+    "left_rear_window",
+    "lf_tire",
+    "lf_tire_status",
+    "license_plate",
+    "life_cycle_mode",
+    "location",
+    "lock_status",
+    "lr_tire",
+    "lr_tire_status",
+    "maintenance_plan",
+    "messages",
+    "odometer",
+    "oil_health",
+    "onlinernr",
+    "ota_setting",
+    "out_and_about",
+    "passenger_door",
+    "passenger_window",
+    "prognostic",
+    "prognostic_msg",
+    "prognostic_slowleak",
+    "recall",
+    "recommended_front_pressure",
+    "recommended_rear_pressure",
+    "remote_start",
+    "remote_start_duration",
+    "remote_start_time",
+    "rf_tire",
+    "rf_tire_status",
+    "right_rear_door",
+    "right_rear_window",
+    "rr_tire",
+    "rr_tire_status",
+    "rsa_number",
+    "sim_info",
+    "sync_health",
+    "tailgate",
+    "tpms_system_status",
+    "uservehicles",
+    "vehicle_alerts",
+    "vehicle_data_time",
+    "vehicle_nickname",
+    "vehicle_vin",
+    "video_manual",
+})
+
+
 class FordPassVehicleAttrSensor(SensorEntity):
     """Reads a fixed attribute stored on the coordinator (e.g. license plate)."""
 
@@ -683,7 +759,10 @@ class FordPassVehicleAttrSensor(SensorEntity):
         self.coordinator = coordinator
         self._attr_key = attr
         self._attr_unique_id = f"{coordinator.uid_key}-{key}"
-        self._attr_name = label
+        if key in _TRANSLATED_KEYS:
+            self._attr_translation_key = key
+        else:
+            self._attr_name = label
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         if icon:
@@ -718,7 +797,7 @@ class FordPassLocationSensor(SensorEntity):
         self._attr_unique_id = f"{coordinator.uid_key}-location"
         # v6.0.4: 与 device_tracker 区分（两者此前同名「车辆定位」）——
         # 本实体状态是地址文本，故命名「车辆定位地址」；device_tracker 为「车辆位置」。
-        self._attr_name = "定位地址"
+        self._attr_translation_key = "location"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
@@ -863,7 +942,7 @@ class FordPassVehicleDataTimeSensor(SensorEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-vehicle_data_time"
-        self._attr_name = "车机数据最后刷新时间"
+        self._attr_translation_key = "vehicle_data_time"
         self._attr_device_info = coordinator.device_info
 
     @staticmethod
@@ -925,7 +1004,10 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         # v3.5.7: 值为 0/停用 时不创建（如 dualRearWheel=0 = 非双后轮车型）
         self._skip_if_zero = skip_if_zero
         self._attr_unique_id = f"{coordinator.uid_key}-{key}"
-        self._attr_name = label
+        if key in _TRANSLATED_KEYS:
+            self._attr_translation_key = key
+        else:
+            self._attr_name = label
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
@@ -1031,7 +1113,7 @@ class FordPassAlertSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-vehicle_alerts"
-        self._attr_name = "异常警示"
+        self._attr_translation_key = "vehicle_alerts"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:alert"
@@ -1136,7 +1218,7 @@ class FordPassActiveAlertListSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-active_alert_list"
-        self._attr_name = "告警列表"
+        self._attr_translation_key = "active_alert_list"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -1363,7 +1445,7 @@ class FordPassAutoOffSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-auto_off_remaining"
-        self._attr_name = "距离自动熄火时间"
+        self._attr_translation_key = "auto_off_remaining"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:timer-sand"
@@ -1432,7 +1514,7 @@ class FordPassOtaSettingSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-ota_setting"
-        self._attr_name = "OTA 设置状态"
+        self._attr_translation_key = "ota_setting"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:update"
@@ -1478,7 +1560,10 @@ class _ServiceInfoSensor(SensorEntity):
         self.coordinator = coordinator
         self._data_key = key
         self._attr_unique_id = f"{coordinator.uid_key}-{uid or key}"
-        self._attr_name = label
+        if key in _TRANSLATED_KEYS:
+            self._attr_translation_key = key
+        else:
+            self._attr_name = label
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
 
@@ -1576,7 +1661,7 @@ class FordPassCloudProbeSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-cloud_probe"
-        self._attr_name = "云端能力探测"
+        self._attr_translation_key = "cloud_probe"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2182,7 +2267,7 @@ class FordPassChirpCloudSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-chirp_cloud"
-        self._attr_name = "鸣笛寻车设置云端状态"
+        self._attr_translation_key = "chirp_cloud"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2249,7 +2334,7 @@ class FordPassAnnounceStatusSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-announce_status"
-        self._attr_name = "鸣笛寻车命令状态"
+        self._attr_translation_key = "announce_status"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2381,7 +2466,7 @@ class FordPassLastChargeSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-last_charge_soc"
-        self._attr_name = "上次充电电量"
+        self._attr_translation_key = "last_charge_soc"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2417,7 +2502,7 @@ class FordPassSyncHealthSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-sync_health"
-        self._attr_name = "官网云端状态"
+        self._attr_translation_key = "sync_health"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2708,7 +2793,7 @@ class FordPassCevsDepartureSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-cevs-departure"
-        self._attr_name = "预约出发"
+        self._attr_translation_key = "cevs_departure"
         self._attr_device_info = coordinator.device_info
 
     @property
@@ -2748,7 +2833,7 @@ class FordPassCevsChargelogSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-cevs-chargelogs"
-        self._attr_name = "充电记录"
+        self._attr_translation_key = "cevs_chargelogs"
         self._attr_device_info = coordinator.device_info
 
     @property

@@ -332,7 +332,7 @@ class FordPassWallboxChargeSwitch(FordPassRestoreMixin, SwitchEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-wallbox_charge"
-        self._attr_name = "家充桩充电"
+        self._attr_translation_key = "wallbox_charge"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state = False
@@ -409,7 +409,7 @@ class FordPassDepartureSwitch(FordPassRestoreMixin, SwitchEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-departure_toggle"
-        self._attr_name = "预约充电"
+        self._attr_translation_key = "departure_toggle"
         self._attr_has_entity_name = True
         self._attr_icon = "mdi:calendar-clock"
         self._attr_device_info = coordinator.device_info
@@ -506,7 +506,7 @@ class FordPassEngineSwitch(FordPassRestoreMixin, FordPassCmdResultMixin, SwitchE
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-engine"
-        self._attr_name = "远程启动"
+        self._attr_translation_key = "engine"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:engine"
@@ -608,7 +608,7 @@ class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCm
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-va_switch"
-        self._attr_name = "声光寻车"
+        self._attr_translation_key = "va_switch"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool = False
@@ -680,7 +680,7 @@ class FordPassLightSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPas
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-light_find"
-        self._attr_name = "灯光寻车"
+        self._attr_translation_key = "light_find"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool = False
@@ -736,7 +736,7 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPass
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-honk"
-        self._attr_name = "鸣笛寻车"
+        self._attr_translation_key = "honk"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool = False

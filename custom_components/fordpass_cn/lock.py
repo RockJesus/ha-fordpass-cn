@@ -113,7 +113,7 @@ class FordPassLock(FordPassRestoreMixin, LockEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-lock"
-        self._attr_name = "门锁"
+        self._attr_translation_key = "lock"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:car-door-lock"
@@ -253,7 +253,7 @@ class FordPassTrunkLock(FordPassRestoreMixin, LockEntity):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-trunk"
-        self._attr_name = "后备箱锁"
+        self._attr_translation_key = "trunk"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool | None = None  # True=锁定

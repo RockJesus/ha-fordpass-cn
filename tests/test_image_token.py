@@ -17,6 +17,7 @@ import os
 import sys
 import tempfile
 import types
+import json
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,14 @@ from typing import Any
 SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
 
 TOKEN_HEX = "a" * 64  # core: hex(getrandbits(256))[2:] == 64 位十六进制
+
+
+_IMAGE_TRANSLATIONS = {
+    key: value["name"]
+    for key, value in json.loads(
+        (SRC / "translations" / "zh-Hans.json").read_text(encoding="utf-8")
+    )["entity"]["image"].items()
+}
 
 
 class _FakeImageEntity:
@@ -43,8 +52,11 @@ class _FakeImageEntity:
 
     @property
     def name(self) -> str | None:
-        """与 core Entity.name 同语义：返回 _attr_name（has_entity_name 下即实体名）。"""
-        return getattr(self, "_attr_name", None)
+        """与 core Entity.name 同语义：_attr_name 优先，否则取平台翻译键。"""
+        attr = getattr(self, "_attr_name", None)
+        if attr is not None:
+            return attr
+        return _IMAGE_TRANSLATIONS.get(getattr(self, "_attr_translation_key", None))
 
     def async_update_token(self) -> None:
         """core 原版：每次追加随机 token（子类应覆盖为只播种）。"""

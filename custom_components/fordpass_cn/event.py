@@ -158,7 +158,7 @@ class FordPassAlertEvent(_FordPassEventBase):
     把 ``trigger.to_state.attributes.headline`` 塞进通知。
     """
 
-    _attr_name = "告警事件"
+    _attr_translation_key = "vehicle_alert_event"
     _attr_icon = "mdi:alert-circle"
     _attr_event_types = ["alert", "cleared"]
     _attr_event_type_cn = {"alert": "有告警", "cleared": "已解除"}
@@ -237,7 +237,7 @@ class FordPassDoorEvent(_FordPassEventBase):
     过滤即可。
     """
 
-    _attr_name = "车门开合事件"
+    _attr_translation_key = "door_event"
     _attr_icon = "mdi:car-door"
     _attr_event_types = ["opened", "ajar", "closed"]
     _attr_event_type_cn = {"opened": "已开门", "ajar": "未关紧", "closed": "已关门"}

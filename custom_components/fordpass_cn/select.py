@@ -331,7 +331,7 @@ class FordPassHonkDurationSelect(_FordPassHonkSettingSelect):
     ) -> None:
         super().__init__(hass, entry, coordinator, settings)
         self._attr_unique_id = f"{coordinator.uid_key}-honk_duration"
-        self._attr_name = "鸣笛寻车持续时长"
+        self._attr_translation_key = "honk_duration"
         self._attr_device_info = coordinator.device_info
         self._attr_options = [f"{v} 秒" for v in HONK_DURATION_OPTIONS]
         self._attr_current_option = (
@@ -368,7 +368,7 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
     ) -> None:
         super().__init__(hass, entry, coordinator, settings)
         self._attr_unique_id = f"{coordinator.uid_key}-chirp_type"
-        self._attr_name = "鸣笛寻车类型"
+        self._attr_translation_key = "chirp_type"
         self._attr_device_info = coordinator.device_info
         self._attr_options = list(CHIRP_TYPE_OPTIONS)
         self._attr_current_option = settings.get(
@@ -426,7 +426,7 @@ class FordPassRemoteTempSelect(_FordPassHonkSettingSelect):
         )}
         super().__init__(hass, entry, coordinator, settings)
         self._attr_unique_id = f"{coordinator.uid_key}-remote_temp"
-        self._attr_name = "远程空调目标温度"
+        self._attr_translation_key = "remote_temp"
         self._attr_device_info = coordinator.device_info
         self._attr_options = [f"{v} °C" for v in REMOTE_CLIMATE_TEMP_OPTIONS]
         self._attr_current_option = f"{settings.get(CONF_REMOTE_TEMP, DEFAULT_REMOTE_TEMP)} °C"

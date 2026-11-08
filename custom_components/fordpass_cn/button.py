@@ -253,6 +253,16 @@ async def async_setup_entry(
 
 
 
+
+# v6.4.2: 已完成核对的实体翻译键白名单；未列入的实体继续使用内置中文名，
+# 保证升级后实体名与旧版本完全一致（不漂移）。
+_TRANSLATED_KEYS = frozenset({
+    "asu_setting",
+    "central_lighting",
+    "ota_schedule",
+})
+
+
 class _FordPassButtonBase(ButtonEntity):
     """未按下过的按钮显示「待命」兜底（v5.1.9 初版 → v5.2.0 决定性修复）。
 
@@ -324,7 +334,7 @@ class FordPassWallboxUnbindButton(_FordPassButtonBase):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-wallbox_unbind"
-        self._attr_name = "解绑家充桩"
+        self._attr_translation_key = "wallbox_unbind"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -374,7 +384,7 @@ class FordPassWallboxBleAddButton(_FordPassButtonBase):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-wallbox_ble_add"
-        self._attr_name = "家充桩 BLE 自动认证"
+        self._attr_translation_key = "wallbox_ble_add"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -422,7 +432,7 @@ class FordPassMarkReadButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-messages_read"
-        self._attr_name = "标记消息已读"
+        self._attr_translation_key = "messages_read"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:email-check-outline"
@@ -457,7 +467,7 @@ class FordPassVideoStartButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-video_start"
-        self._attr_name = "开始行车记录"
+        self._attr_translation_key = "video_start"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:record-rec"
@@ -476,7 +486,7 @@ class FordPassVideoStopButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-video_stop"
-        self._attr_name = "停止行车记录"
+        self._attr_translation_key = "video_stop"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:stop"
@@ -495,7 +505,10 @@ class FordPassButton(_FordPassButtonBase):
         self._command = command
         self._cmd_spec = cmd_spec
         self._attr_unique_id = f"{coordinator.uid_key}-{key}"
-        self._attr_name = label
+        if key in _TRANSLATED_KEYS:
+            self._attr_translation_key = key
+        else:
+            self._attr_name = label
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
@@ -615,7 +628,7 @@ class FordPassManualRefreshButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-manual_refresh"
-        self._attr_name = "手动刷新车辆状态"
+        self._attr_translation_key = "manual_refresh"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -700,7 +713,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-reset_air_filter"
-        self._attr_name = "重置空调滤芯"
+        self._attr_translation_key = "reset_air_filter"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -740,7 +753,7 @@ class FordPassCevsDeleteAllButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-cevs_deleteall"
-        self._attr_name = "清空预约出发/充电"
+        self._attr_translation_key = "cevs_deleteall"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -834,7 +847,7 @@ class FordPassCevsSaveDepartureButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-cevs_save_departure"
-        self._attr_name = "保存预约出发/充电计划"
+        self._attr_translation_key = "cevs_save_departure"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -879,7 +892,7 @@ class FordPassCevsDeleteChargelogButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-cevs_delete_chargelog"
-        self._attr_name = "删除充电记录"
+        self._attr_translation_key = "cevs_delete_chargelog"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -921,7 +934,7 @@ class FordPassAuthApproveButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-auth_approve"
-        self._attr_name = "批准授权申请"
+        self._attr_translation_key = "auth_approve"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -959,7 +972,7 @@ class FordPassAuthRejectButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-auth_reject"
-        self._attr_name = "拒绝授权申请"
+        self._attr_translation_key = "auth_reject"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -1001,7 +1014,7 @@ class FordPassSrsSaveButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-srs_save"
-        self._attr_name = "保存紧急联系人"
+        self._attr_translation_key = "srs_save"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -1044,7 +1057,7 @@ class FordPassWallboxUnshareButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-wallbox_unshare"
-        self._attr_name = "取消家充桩分享"
+        self._attr_translation_key = "wallbox_unshare"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -1088,7 +1101,7 @@ class FordPassEvssLockButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-evss_lock"
-        self._attr_name = "充电枪锁定"
+        self._attr_translation_key = "evss_lock"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -1124,7 +1137,7 @@ class FordPassEvssUnlockButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-evss_unlock"
-        self._attr_name = "充电枪解锁"
+        self._attr_translation_key = "evss_unlock"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -1164,7 +1177,7 @@ class FordPassMessageReadByIdButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-messages_read_byid"
-        self._attr_name = "单条消息已读"
+        self._attr_translation_key = "messages_read_byid"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -1203,7 +1216,7 @@ class FordPassFposbCancelButton(_FordPassButtonBase):
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-fposb_cancel"
-        self._attr_name = "取消最近维保预约"
+        self._attr_translation_key = "fposb_cancel"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
 
@@ -1249,7 +1262,7 @@ class FordPassImageButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._kind = kind
         self._attr_unique_id = f"{coordinator.uid_key}-{kind}_image"
-        self._attr_name = label
+        self._attr_translation_key = f"{self._kind}_image"
         self._attr_icon = icon
         self._attr_device_info = coordinator.device_info
 

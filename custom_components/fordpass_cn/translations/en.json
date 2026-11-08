@@ -83,5 +83,361 @@
         }
       }
     }
+  },
+  "entity": {
+    "lock": {
+      "lock": {
+        "name": "Lock"
+      },
+      "trunk": {
+        "name": "Trunk Lock"
+      }
+    },
+    "switch": {
+      "engine": {
+        "name": "Remote Start"
+      },
+      "light_find": {
+        "name": "Light Locate"
+      },
+      "honk": {
+        "name": "Horn Locate"
+      },
+      "va_switch": {
+        "name": "Visual & Audible Locate"
+      },
+      "wallbox_charge": {
+        "name": "Wallbox Charging"
+      },
+      "departure_toggle": {
+        "name": "Scheduled Charging"
+      }
+    },
+    "button": {
+      "central_lighting": {
+        "name": "Central Lighting"
+      },
+      "ota_schedule": {
+        "name": "OTA Activation Schedule"
+      },
+      "asu_setting": {
+        "name": "Assistant Settings"
+      },
+      "manual_refresh": {
+        "name": "Refresh Vehicle Status"
+      },
+      "reset_air_filter": {
+        "name": "Reset Cabin Air Filter"
+      },
+      "wallbox_unbind": {
+        "name": "Unbind Wallbox"
+      },
+      "wallbox_ble_add": {
+        "name": "Wallbox BLE Pairing"
+      },
+      "messages_read": {
+        "name": "Mark Messages Read"
+      },
+      "video_start": {
+        "name": "Start Drive Recording"
+      },
+      "video_stop": {
+        "name": "Stop Drive Recording"
+      },
+      "cevs_deleteall": {
+        "name": "Clear Departure/Charging"
+      },
+      "cevs_save_departure": {
+        "name": "Save Departure Plan"
+      },
+      "cevs_delete_chargelog": {
+        "name": "Delete Charge Record"
+      },
+      "auth_approve": {
+        "name": "Approve Authorization"
+      },
+      "auth_reject": {
+        "name": "Reject Authorization"
+      },
+      "srs_save": {
+        "name": "Save Emergency Contacts"
+      },
+      "wallbox_unshare": {
+        "name": "Stop Wallbox Sharing"
+      },
+      "evss_lock": {
+        "name": "Lock Charging Connector"
+      },
+      "evss_unlock": {
+        "name": "Unlock Charging Connector"
+      },
+      "messages_read_byid": {
+        "name": "Mark Message Read"
+      },
+      "fposb_cancel": {
+        "name": "Cancel Service Appointment"
+      },
+      "parking_image": {
+        "name": "Parking Image"
+      },
+      "traffic_image": {
+        "name": "Traffic Monitor Image"
+      }
+    },
+    "sensor": {
+      "fuel_level": {
+        "name": "Fuel Level"
+      },
+      "distance_to_empty": {
+        "name": "Remaining Range"
+      },
+      "odometer": {
+        "name": "Odometer"
+      },
+      "battery_voltage": {
+        "name": "Battery Voltage"
+      },
+      "lf_tire": {
+        "name": "Front Left Tire Pressure"
+      },
+      "rf_tire": {
+        "name": "Front Right Tire Pressure"
+      },
+      "lr_tire": {
+        "name": "Rear Left Tire Pressure"
+      },
+      "rr_tire": {
+        "name": "Rear Right Tire Pressure"
+      },
+      "lock_status": {
+        "name": "Lock Status"
+      },
+      "alarm_status": {
+        "name": "Alarm Status"
+      },
+      "remote_start": {
+        "name": "Remote Start Status"
+      },
+      "vehicle_alerts": {
+        "name": "Active Alerts"
+      },
+      "license_plate": {
+        "name": "License Plate"
+      },
+      "vehicle_nickname": {
+        "name": "Vehicle Nickname"
+      },
+      "vehicle_vin": {
+        "name": "VIN"
+      },
+      "location": {
+        "name": "Location Address"
+      },
+      "driver_door": {
+        "name": "Driver Door"
+      },
+      "passenger_door": {
+        "name": "Passenger Door"
+      },
+      "left_rear_door": {
+        "name": "Rear Left Door"
+      },
+      "right_rear_door": {
+        "name": "Rear Right Door"
+      },
+      "tailgate": {
+        "name": "Tailgate"
+      },
+      "hood": {
+        "name": "Hood"
+      },
+      "ignition": {
+        "name": "Ignition"
+      },
+      "driver_window": {
+        "name": "Driver Window"
+      },
+      "passenger_window": {
+        "name": "Passenger Window"
+      },
+      "left_rear_window": {
+        "name": "Rear Left Window"
+      },
+      "right_rear_window": {
+        "name": "Rear Right Window"
+      },
+      "oil_health": {
+        "name": "Oil Health"
+      },
+      "battery_health": {
+        "name": "Battery Health"
+      },
+      "tpms_system_status": {
+        "name": "TPMS Status"
+      },
+      "lf_tire_status": {
+        "name": "Front Left Tire Status"
+      },
+      "rf_tire_status": {
+        "name": "Front Right Tire Status"
+      },
+      "lr_tire_status": {
+        "name": "Rear Left Tire Status"
+      },
+      "rr_tire_status": {
+        "name": "Rear Right Tire Status"
+      },
+      "recommended_front_pressure": {
+        "name": "Recommended Front Pressure"
+      },
+      "recommended_rear_pressure": {
+        "name": "Recommended Rear Pressure"
+      },
+      "remote_start_duration": {
+        "name": "Remote Start Duration"
+      },
+      "remote_start_time": {
+        "name": "Remote Start Time"
+      },
+      "auto_off_remaining": {
+        "name": "Time to Auto Shutoff"
+      },
+      "crcc_flag": {
+        "name": "Remote Control Feature"
+      },
+      "life_cycle_mode": {
+        "name": "Battery Life Cycle Mode"
+      },
+      "out_and_about": {
+        "name": "Out and About"
+      },
+      "inner_tailgate": {
+        "name": "Inner Tailgate"
+      },
+      "deep_sleep": {
+        "name": "Deep Sleep Mode"
+      },
+      "firmware_upgrade": {
+        "name": "Firmware Upgrading"
+      },
+      "ota_setting": {
+        "name": "OTA Setting Status"
+      },
+      "maintenance_plan": {
+        "name": "Maintenance Plan"
+      },
+      "recall": {
+        "name": "Recall Information"
+      },
+      "sim_info": {
+        "name": "SIM Card"
+      },
+      "sync_health": {
+        "name": "Cloud Sync Status"
+      },
+      "chirp_cloud": {
+        "name": "Horn Cloud Setting"
+      },
+      "onlinernr": {
+        "name": "Online Status"
+      },
+      "uservehicles": {
+        "name": "Vehicle List"
+      },
+      "air_filter": {
+        "name": "Cabin Air Filter"
+      },
+      "cloud_probe": {
+        "name": "Cloud Capability Probe"
+      },
+      "rsa_number": {
+        "name": "Roadside Assistance Phone"
+      },
+      "contact_number": {
+        "name": "Support Phone"
+      },
+      "after_sales_number": {
+        "name": "After-sales Phone"
+      },
+      "video_manual": {
+        "name": "Video Manual"
+      },
+      "announce_status": {
+        "name": "Horn Command Status"
+      },
+      "prognostic": {
+        "name": "Oil Life"
+      },
+      "prognostic_slowleak": {
+        "name": "Slow Leak Tires"
+      },
+      "prognostic_msg": {
+        "name": "Prognostic Diagnostics"
+      },
+      "messages": {
+        "name": "Unread Messages"
+      },
+      "vehicle_data_time": {
+        "name": "Vehicle Data Last Updated"
+      },
+      "active_alert_list": {
+        "name": "Active Alert List"
+      },
+      "last_charge_soc": {
+        "name": "Last Charge Level"
+      },
+      "cevs_departure": {
+        "name": "Departure Schedule"
+      },
+      "cevs_chargelogs": {
+        "name": "Charging History"
+      }
+    },
+    "device_tracker": {
+      "tracker": {
+        "name": "Position"
+      }
+    },
+    "image": {
+      "vehicle_image": {
+        "name": "Side Vehicle View"
+      },
+      "vehicle_overlook_image": {
+        "name": "Overhead Vehicle View"
+      },
+      "parking_remote_image": {
+        "name": "Parking Snapshot"
+      },
+      "traffic_remote_image": {
+        "name": "Drive Snapshot"
+      },
+      "vehicle_3d_image": {
+        "name": "3D Vehicle Model"
+      }
+    },
+    "select": {
+      "honk_duration": {
+        "name": "Horn Duration"
+      },
+      "chirp_type": {
+        "name": "Horn Type"
+      },
+      "remote_temp": {
+        "name": "Climate Target Temperature"
+      }
+    },
+    "event": {
+      "door_event": {
+        "name": "Door Event"
+      },
+      "vehicle_alert_event": {
+        "name": "Alert Event"
+      }
+    },
+    "update": {
+      "firmware_update": {
+        "name": "Vehicle Firmware"
+      }
+    }
   }
 }

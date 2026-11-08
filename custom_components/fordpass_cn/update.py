@@ -32,6 +32,35 @@ PARALLEL_UPDATES = 0
 
 _FALSE_VALUES = {"false", "0", "null", "none", "not_supported", "notsupported", ""}
 
+# 云端 OTA 状态描述里表示「没有新版本」的措辞（命中才改判，不做模糊匹配）
+_LATEST_HINTS = (
+    "已是最新",
+    "已为最新",
+    "无可用更新",
+    "无需更新",
+    "up to date",
+    "up-to-date",
+    "already latest",
+    "no update available",
+)
+
+
+def _norm_version(value: str | None) -> str | None:
+    """版本号归一化：去空白、去前导 v、去数字段前导零。
+
+    云端同一版本可能写成 ``v1.2.0`` / ``1.2`` / ``01.002.0``，直接字符串
+    比较会把「已是最新」误判成有更新。
+    """
+    if not value:
+        return None
+    text = str(value).strip().lower()
+    text = text[1:] if text.startswith("v") else text
+    parts = []
+    for seg in text.split("."):
+        seg = seg.strip()
+        parts.append((seg.lstrip("0") or "0") if seg.isdigit() else seg)
+    return ".".join(parts)
+
 
 def _as_bool(value: Any) -> bool:
     """云端布尔字段解析（真布尔 / 0-1 / "true"-"false" 都能认）。"""
@@ -48,7 +77,7 @@ class FordPassFirmwareUpdate(UpdateEntity):
     """车机固件：已安装版本 vs 可升级版本，附带升级进行中状态。"""
 
     _attr_has_entity_name = True
-    _attr_name = "车机固件"
+    _attr_translation_key = "firmware_update"
     _attr_title = "车机系统"
     _attr_device_class = UpdateDeviceClass.FIRMWARE
     # 只读展示：固件下发需在车机/App 确认，不声明 INSTALL 能力。
@@ -114,6 +143,35 @@ class FordPassFirmwareUpdate(UpdateEntity):
     @property
     def latest_version(self) -> str | None:
         return self._text(self._ota.get("toBeVersion")) or self.installed_version
+
+    @property
+    def has_update(self) -> bool:
+        """是否有可用更新（HA 2026.11 允许 update 实体覆盖该属性）。
+
+        云端 ``ota_setting`` 没有可靠的布尔升级标志：``remoteOTAFlag`` 表示
+        该车是否开通远程 OTA（本车为 0，实体状态就是「未开通远程OTA」），
+        ``asuState`` / ``statusName`` 是流程状态而非「有无新版本」。因此以
+        版本号比较为主，并对云端同版本的不同书写格式做归一化；只有在版本
+        号缺失时才回落到框架默认判断。
+        """
+        if self.in_progress:
+            # 车机正在自行升级，此时不该再提示「有可用更新」
+            return False
+        status_text = " ".join(
+            filter(
+                None,
+                (
+                    self._text(self._ota.get("statusName")),
+                    self._text(self._ota.get("statusDescription")),
+                ),
+            )
+        ).lower()
+        if status_text and any(hint in status_text for hint in _LATEST_HINTS):
+            return False
+        latest, installed = self.latest_version, self.installed_version
+        if latest and installed:
+            return _norm_version(latest) != _norm_version(installed)
+        return super().has_update
 
     @property
     def release_summary(self) -> str | None:

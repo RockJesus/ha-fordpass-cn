@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import json
+
 import importlib.util
 import sys
 import types
@@ -19,6 +21,9 @@ from typing import Any
 from unittest.mock import MagicMock
 
 SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
+ZH_SENSOR = json.loads(
+    (SRC / "translations" / "zh-Hans.json").read_text(encoding="utf-8")
+)["entity"]["sensor"]
 
 
 def _install_fake_modules() -> None:
@@ -115,7 +120,9 @@ def test_diag_sensor_defaults():
     assert cls._attr_has_entity_name is True
     # v6.2.8: 默认启用（不设 enabled_default=False，与旧 last_poll 相反）
     assert getattr(cls, "_attr_entity_registry_enabled_default", True) is not False
-    assert ent._attr_name == "车机数据最后刷新时间"
+    # v6.4.2: 名称改为翻译键驱动，中文名由 translations/zh-Hans.json 提供
+    assert ent._attr_translation_key == "vehicle_data_time"
+    assert ZH_SENSOR["vehicle_data_time"]["name"] == "车机数据最后刷新时间"
 
 
 def test_native_value_last_modified_date_seconds():

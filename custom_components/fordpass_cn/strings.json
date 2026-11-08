@@ -76,5 +76,361 @@
         }
       }
     }
+  },
+  "entity": {
+    "lock": {
+      "lock": {
+        "name": "门锁"
+      },
+      "trunk": {
+        "name": "后备箱锁"
+      }
+    },
+    "switch": {
+      "engine": {
+        "name": "远程启动"
+      },
+      "light_find": {
+        "name": "灯光寻车"
+      },
+      "honk": {
+        "name": "鸣笛寻车"
+      },
+      "va_switch": {
+        "name": "声光寻车"
+      },
+      "wallbox_charge": {
+        "name": "家充桩充电"
+      },
+      "departure_toggle": {
+        "name": "预约充电"
+      }
+    },
+    "button": {
+      "central_lighting": {
+        "name": "中央区灯光"
+      },
+      "ota_schedule": {
+        "name": "OTA 激活排程"
+      },
+      "asu_setting": {
+        "name": "辅助设置"
+      },
+      "manual_refresh": {
+        "name": "手动刷新车辆状态"
+      },
+      "reset_air_filter": {
+        "name": "重置空调滤芯"
+      },
+      "wallbox_unbind": {
+        "name": "解绑家充桩"
+      },
+      "wallbox_ble_add": {
+        "name": "家充桩 BLE 自动认证"
+      },
+      "messages_read": {
+        "name": "标记消息已读"
+      },
+      "video_start": {
+        "name": "开始行车记录"
+      },
+      "video_stop": {
+        "name": "停止行车记录"
+      },
+      "cevs_deleteall": {
+        "name": "清空预约出发/充电"
+      },
+      "cevs_save_departure": {
+        "name": "保存预约出发/充电计划"
+      },
+      "cevs_delete_chargelog": {
+        "name": "删除充电记录"
+      },
+      "auth_approve": {
+        "name": "批准授权申请"
+      },
+      "auth_reject": {
+        "name": "拒绝授权申请"
+      },
+      "srs_save": {
+        "name": "保存紧急联系人"
+      },
+      "wallbox_unshare": {
+        "name": "取消家充桩分享"
+      },
+      "evss_lock": {
+        "name": "充电枪锁定"
+      },
+      "evss_unlock": {
+        "name": "充电枪解锁"
+      },
+      "messages_read_byid": {
+        "name": "单条消息已读"
+      },
+      "fposb_cancel": {
+        "name": "取消最近维保预约"
+      },
+      "parking_image": {
+        "name": "停车影像"
+      },
+      "traffic_image": {
+        "name": "行车监控"
+      }
+    },
+    "sensor": {
+      "fuel_level": {
+        "name": "燃油量"
+      },
+      "distance_to_empty": {
+        "name": "续航里程"
+      },
+      "odometer": {
+        "name": "总里程"
+      },
+      "battery_voltage": {
+        "name": "蓄电池电压"
+      },
+      "lf_tire": {
+        "name": "左前轮胎压"
+      },
+      "rf_tire": {
+        "name": "右前轮胎压"
+      },
+      "lr_tire": {
+        "name": "左后轮胎压"
+      },
+      "rr_tire": {
+        "name": "右后轮胎压"
+      },
+      "lock_status": {
+        "name": "门锁状态"
+      },
+      "alarm_status": {
+        "name": "报警状态"
+      },
+      "remote_start": {
+        "name": "远程启动状态"
+      },
+      "vehicle_alerts": {
+        "name": "异常警示"
+      },
+      "license_plate": {
+        "name": "车牌号"
+      },
+      "vehicle_nickname": {
+        "name": "车辆昵称"
+      },
+      "vehicle_vin": {
+        "name": "车辆识别码"
+      },
+      "location": {
+        "name": "定位地址"
+      },
+      "driver_door": {
+        "name": "主驾车门"
+      },
+      "passenger_door": {
+        "name": "副驾车门"
+      },
+      "left_rear_door": {
+        "name": "左后车门"
+      },
+      "right_rear_door": {
+        "name": "右后车门"
+      },
+      "tailgate": {
+        "name": "尾门"
+      },
+      "hood": {
+        "name": "引擎盖"
+      },
+      "ignition": {
+        "name": "点火状态"
+      },
+      "driver_window": {
+        "name": "主驾车窗"
+      },
+      "passenger_window": {
+        "name": "副驾车窗"
+      },
+      "left_rear_window": {
+        "name": "左后车窗"
+      },
+      "right_rear_window": {
+        "name": "右后车窗"
+      },
+      "oil_health": {
+        "name": "机油健康状态"
+      },
+      "battery_health": {
+        "name": "蓄电池健康状态"
+      },
+      "tpms_system_status": {
+        "name": "胎压系统状态"
+      },
+      "lf_tire_status": {
+        "name": "左前胎状态"
+      },
+      "rf_tire_status": {
+        "name": "右前胎状态"
+      },
+      "lr_tire_status": {
+        "name": "左后胎状态"
+      },
+      "rr_tire_status": {
+        "name": "右后胎状态"
+      },
+      "recommended_front_pressure": {
+        "name": "推荐前轮胎压"
+      },
+      "recommended_rear_pressure": {
+        "name": "推荐后轮胎压"
+      },
+      "remote_start_duration": {
+        "name": "远程启动时长"
+      },
+      "remote_start_time": {
+        "name": "远程启动时间"
+      },
+      "auto_off_remaining": {
+        "name": "距离自动熄火时间"
+      },
+      "crcc_flag": {
+        "name": "远程控车功能"
+      },
+      "life_cycle_mode": {
+        "name": "电池生命周期模式"
+      },
+      "out_and_about": {
+        "name": "出行状态"
+      },
+      "inner_tailgate": {
+        "name": "内尾门"
+      },
+      "deep_sleep": {
+        "name": "深度睡眠模式"
+      },
+      "firmware_upgrade": {
+        "name": "固件升级中"
+      },
+      "ota_setting": {
+        "name": "OTA 设置状态"
+      },
+      "maintenance_plan": {
+        "name": "保养计划"
+      },
+      "recall": {
+        "name": "召回信息"
+      },
+      "sim_info": {
+        "name": "SIM 卡"
+      },
+      "sync_health": {
+        "name": "官网云端状态"
+      },
+      "chirp_cloud": {
+        "name": "鸣笛寻车设置云端状态"
+      },
+      "onlinernr": {
+        "name": "车辆在线状态"
+      },
+      "uservehicles": {
+        "name": "车辆清单"
+      },
+      "air_filter": {
+        "name": "空调滤芯"
+      },
+      "cloud_probe": {
+        "name": "云端能力探测"
+      },
+      "rsa_number": {
+        "name": "救援电话"
+      },
+      "contact_number": {
+        "name": "客服电话"
+      },
+      "after_sales_number": {
+        "name": "售后电话"
+      },
+      "video_manual": {
+        "name": "视频说明书"
+      },
+      "announce_status": {
+        "name": "鸣笛寻车命令状态"
+      },
+      "prognostic": {
+        "name": "机油寿命"
+      },
+      "prognostic_slowleak": {
+        "name": "慢漏气车胎"
+      },
+      "prognostic_msg": {
+        "name": "预测性诊断"
+      },
+      "messages": {
+        "name": "未读消息"
+      },
+      "vehicle_data_time": {
+        "name": "车机数据最后刷新时间"
+      },
+      "active_alert_list": {
+        "name": "告警列表"
+      },
+      "last_charge_soc": {
+        "name": "上次充电电量"
+      },
+      "cevs_departure": {
+        "name": "预约出发"
+      },
+      "cevs_chargelogs": {
+        "name": "充电记录"
+      }
+    },
+    "device_tracker": {
+      "tracker": {
+        "name": "位置"
+      }
+    },
+    "image": {
+      "vehicle_image": {
+        "name": "侧视车型图"
+      },
+      "vehicle_overlook_image": {
+        "name": "俯视车型图"
+      },
+      "parking_remote_image": {
+        "name": "停车影像图"
+      },
+      "traffic_remote_image": {
+        "name": "行车监控图"
+      },
+      "vehicle_3d_image": {
+        "name": "3D 车型图"
+      }
+    },
+    "select": {
+      "honk_duration": {
+        "name": "鸣笛寻车持续时长"
+      },
+      "chirp_type": {
+        "name": "鸣笛寻车类型"
+      },
+      "remote_temp": {
+        "name": "远程空调目标温度"
+      }
+    },
+    "event": {
+      "door_event": {
+        "name": "车门开合事件"
+      },
+      "vehicle_alert_event": {
+        "name": "告警事件"
+      }
+    },
+    "update": {
+      "firmware_update": {
+        "name": "车机固件"
+      }
+    }
   }
 }
