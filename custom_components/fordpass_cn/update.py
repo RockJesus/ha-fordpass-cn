@@ -79,6 +79,15 @@ class FordPassFirmwareUpdate(UpdateEntity):
             self._unsub = None
 
     @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """HA 2026.11: opt-in 原地改名（兼容期至 2027.11）。
+
+        实体状态与监听均不依赖 entity_id，无需移除重加；不实现该钩子时
+        HA 会走旧行为（移除实体再添加），导致协调器监听重注册、事件基线重置。
+        """
+        super().async_entity_id_changed(old_entity_id)
+
+    @callback
     def _on_update(self) -> None:
         if self.hass is not None:
             self.async_write_ha_state()
