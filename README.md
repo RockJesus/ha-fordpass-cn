@@ -244,9 +244,10 @@ trigger:
   - platform: time
     at: "23:00:00"
 condition:
+  # 门锁状态由传感器提供（动作实体不承载状态）：已锁定 / 已解锁
   - condition: state
-    entity_id: lock.<前缀>_door_lock
-    state: "unlocked"
+    entity_id: sensor.<前缀>_lock_status
+    state: "已解锁"
 action:
   - service: notify.mobile_app
     data:
@@ -337,9 +338,9 @@ type: custom:vehicle-status-card
 vehicle: 我的车
 image: /local/fordpass_cn/vehicle.png        # 可选：自定义车辆图片
 entities:
-  - entity: button.<前缀>_unlock_door       # 开锁
+  - entity: button.<前缀>_unlock_doors       # 开锁
     label: 开锁
-  - entity: button.<前缀>_lock_door         # 关锁
+  - entity: button.<前缀>_lock_doors         # 关锁
     label: 关锁
   - entity: sensor.<前缀>_fuel_level        # 燃油量 %
     unit: "%"
