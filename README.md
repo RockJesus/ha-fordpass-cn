@@ -341,7 +341,7 @@ entities:
     label: 开锁
   - entity: button.<前缀>_lock_doors         # 关锁
     label: 关锁
-  - entity: button.<前缀>_trunk_unlock       # 后备箱解锁（弹开）
+  - entity: button.<前缀>_unlock_trunk       # 后备箱解锁（弹开）
     label: 后备箱
   - entity: sensor.<前缀>_fuel_level        # 燃油量 %
     unit: "%"
