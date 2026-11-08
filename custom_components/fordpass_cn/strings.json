@@ -79,9 +79,6 @@
   },
   "entity": {
     "lock": {
-      "lock": {
-        "name": "门锁"
-      },
       "trunk": {
         "name": "后备箱锁"
       }
@@ -175,6 +172,12 @@
       },
       "traffic_image": {
         "name": "行车监控"
+      },
+      "lock_door": {
+        "name": "关锁"
+      },
+      "unlock_door": {
+        "name": "开锁"
       }
     },
     "sensor": {

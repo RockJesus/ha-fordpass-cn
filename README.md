@@ -164,8 +164,8 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 |---|---|---|
 | `device_tracker` | 车辆定位 | GPS 坐标 + 地址属性，地图可显示 |
 | `image` | 车辆图片 / 3D 车型图 | 云端返回图片地址才创建 |
-| `lock` | 车门锁 / 后备箱锁 | 后备箱锁按尾门能力创建 |
-| `button` | 手动刷新 / 中央区灯光 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 / 标记消息已读 / 行车记录启停 | 均按云端能力创建 |
+| `lock` | 后备箱锁 | 按尾门能力创建；解锁 = 后备箱开启，锁定 = 全车上锁 |
+| `button` | 开锁 / 关锁 / 手动刷新 / 中央区灯光 / 辅助设置 / OTA 激活排程 / 重置空调滤芯 / 拖车灯光检测 / 标记消息已读 / 行车记录启停 | 开锁关锁为纯动作实体，不显示锁状态（锁状态见「门锁状态」传感器）；其余按云端能力创建 |
 | `switch` | 远程启动 / 灯光寻车 / 鸣笛寻车 / 声光寻车 / 预约充电 | 鸣笛寻车类型 0–3 |
 | `select` | 鸣笛持续时长 / 鸣笛类型 | 选择即保存，鸣笛时参数直达车机 |
 | `event` | 车辆告警事件 / 车门开合事件 | 告警按标题去重、出现新条目才触发；车门变动一次发一个事件，`changes` 属性列出全部变化的门位 |
@@ -337,8 +337,10 @@ type: custom:vehicle-status-card
 vehicle: 我的车
 image: /local/fordpass_cn/vehicle.png        # 可选：自定义车辆图片
 entities:
-  - entity: lock.<前缀>_door_lock           # 门锁
-    label: 门锁
+  - entity: button.<前缀>_unlock_door       # 开锁
+    label: 开锁
+  - entity: button.<前缀>_lock_door         # 关锁
+    label: 关锁
   - entity: sensor.<前缀>_fuel_level        # 燃油量 %
     unit: "%"
   - entity: sensor.<前缀>_driving_range     # 续航 km

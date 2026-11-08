@@ -58,7 +58,8 @@ def test_lock_classes_no_polling() -> None:
     lock_classes = [
         n for n, c in classes.items() if "LockEntity" in _base_names(c)
     ]
-    assert "FordPassLock" in lock_classes, "应找到 LockEntity 子类"
+    # v6.4.3: 整车门锁已迁到 button 平台，lock 平台仅剩后备箱锁
+    assert "FordPassTrunkLock" in lock_classes, "应找到 LockEntity 子类"
     for name in lock_classes:
         assert _has_should_poll_false(classes[name]), (
             f"lock.py 的 {name} 缺少 _attr_should_poll = False："

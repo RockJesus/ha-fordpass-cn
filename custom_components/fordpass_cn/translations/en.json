@@ -86,9 +86,6 @@
   },
   "entity": {
     "lock": {
-      "lock": {
-        "name": "Lock"
-      },
       "trunk": {
         "name": "Trunk Lock"
       }
@@ -182,6 +179,12 @@
       },
       "traffic_image": {
         "name": "Traffic Monitor Image"
+      },
+      "lock_door": {
+        "name": "Lock Doors"
+      },
+      "unlock_door": {
+        "name": "Unlock Doors"
       }
     },
     "sensor": {

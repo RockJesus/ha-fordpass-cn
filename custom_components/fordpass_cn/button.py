@@ -34,10 +34,12 @@ from .const import (
     CMD_AUTO_REFRESH,
     CMD_CENTRAL_LIGHTING,
     CMD_EXTEND_START,
+    CMD_LOCK,
     CMD_OTA_SCHEDULE,
     CMD_REFRESH_STATUS,
     CMD_TRAILER_CHECK_START,
     CMD_TRAILER_CHECK_STOP,
+    CMD_UNLOCK,
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
@@ -110,6 +112,20 @@ async def async_setup_entry(
             # 车型按能力字段创建，不臆断支持与否（entity-vehicle-creation.md）
             and not coordinator.cmd_rejected(command)
         )
+        # v6.4.3: 门锁拆为「开锁」「关锁」两个动作按钮——原 lock 实体依赖
+        # 云端 lockStatus 快照回读，而该快照在命令完成后仍可能滞后数十秒到
+        # 数分钟，锁卡片会显示与实车不同步的状态（且乐观态超时后回跳）。
+        # 动作按钮不承载状态，按下即发命令、结果写在 last_command/
+        # last_result 属性里，不再出现"显示未锁但车已锁"的误导；锁状态仍由
+        # 「门锁状态」传感器（云端 lockStatus）提供。
+        # 不过滤 cmd_rejected：门锁是所有车型的基础能力（旧 lock 平台同样
+        # 无条件创建），命令偶发失败不应让入口消失。
+        buttons.append(FordPassButton(
+            coordinator, "unlock_door", "开锁", "mdi:car-door-lock-open", CMD_UNLOCK, None,
+        ))
+        buttons.append(FordPassButton(
+            coordinator, "lock_door", "关锁", "mdi:car-door-lock", CMD_LOCK, None,
+        ))
         # v3.3.4: 「手动刷新车辆状态」——所有车型都有（合并原
         # 「请求车机刷新状态」「手动拉取最新状态」两按钮）
         buttons.append(FordPassManualRefreshButton(coordinator))
@@ -260,6 +276,9 @@ _TRANSLATED_KEYS = frozenset({
     "asu_setting",
     "central_lighting",
     "ota_schedule",
+    # v6.4.3: 门锁动作按钮（原 lock 实体拆出的两个动作）
+    "lock_door",
+    "unlock_door",
 })
 
 
