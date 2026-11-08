@@ -35,7 +35,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 - **Login** — SMS passcode (both brands) or username/password (FordPass only, browser-assisted)
 - **Zero dependencies** — pure Python, no extra packages
 
-**Install**: HACS → search "福特派互联" → Download → restart. Or add this repository as a custom integration repository. Then add the integration "FordPass China 福特派互联".
+**Install**: Settings → Marketplace (HACS before 2026.11) → search "福特派互联" → Download → restart. Or add this repository as a custom integration repository. Then add the integration "FordPass China 福特派互联".
 
 > Disclaimer: independent, non-official project for research and personal use only. No affiliation with Ford Motor Company. Use at your own risk.
 
@@ -77,13 +77,13 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 
 ## 📦 安装
 
-### 方式一：HACS（推荐）
+### 方式一：Marketplace（推荐，HA 2026.11 起 HACS 已内置）
 
-本集成已收录于 **HACS 官方默认仓库**，点下方按钮可直接在 Home Assistant 中打开并一键安装：
+本集成已收录于 **HACS / Marketplace 官方默认源**，点下方按钮可直接在 Home Assistant 中打开并一键安装：
 
 [![在 HACS 中打开](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RockJesus&repository=ha-fordpass-cn&category=integration)
 
-> 按钮不可用？手动操作：HACS → 集成 → 搜索「**福特派互联**」→ 下载 → 重启 Home Assistant。
+> 按钮不可用？手动操作：**设置 → Marketplace**（2026.11 之前的版本为 HACS）→ 搜索「**福特派互联**」→ 下载 → 重启 Home Assistant。
 
 ### 方式二：手动安装
 
@@ -467,7 +467,7 @@ recorder:
 ## 🗑 移除集成
 
 1. **设置 → 设备与服务** → 找到「福特派互联」条目 → 删除该配置（其下设备与实体一并移除）
-2. 若要同时卸载代码：HACS → 已下载 → FordPass China → 卸载；或删除 `/config/custom_components/fordpass_cn/` 后重启
+2. 若要同时卸载代码：Marketplace（HACS）→ 已下载 → FordPass China → 卸载；或删除 `/config/custom_components/fordpass_cn/` 后重启
 3. 车辆图片等缓存位于 `.storage` 私有目录，随集成删除一并清理
 4. 云端账号不受影响，官方 App 照常使用
 
@@ -476,7 +476,7 @@ recorder:
 **变更记录统一发布在 GitHub Releases**，本 README 不再维护更新日志：
 
 - 全部版本与变更说明 → [Releases](https://github.com/RockJesus/ha-fordpass-cn/releases)
-- 升级方式 → HACS → 福特派互联 → **更新**（或「重新下载」）→ 重启 Home Assistant
+- 升级方式 → Marketplace（HACS）→ 福特派互联 → **更新**（或「重新下载」）→ 重启 Home Assistant
 - 需要强制升级的接口变更会在 Release 标题中标注
 
 ## ⚠️ 免责声明
