@@ -724,6 +724,7 @@ _TRANSLATED_KEYS = frozenset({
     "passenger_door",
     "passenger_window",
     "prognostic",
+    "prognostic_range",
     "prognostic_msg",
     "prognostic_slowleak",
     "recall",
@@ -1560,7 +1561,13 @@ class _ServiceInfoSensor(SensorEntity):
         self.coordinator = coordinator
         self._data_key = key
         self._attr_unique_id = f"{coordinator.uid_key}-{uid or key}"
-        if key in _TRANSLATED_KEYS:
+        # v6.4.6: 同一端点下的多个传感器共用数据键（如 prognostic 家族的
+        # 机油寿命 / 慢漏气车胎 / 预测性诊断），此前一律按 key 取翻译键，
+        # 三个实体在界面上都显示成「机油寿命」。uid 明确时以 uid 为翻译键。
+        tl_key = uid or key
+        if tl_key in _TRANSLATED_KEYS:
+            self._attr_translation_key = tl_key
+        elif uid is None and key in _TRANSLATED_KEYS:
             self._attr_translation_key = key
         else:
             self._attr_name = label

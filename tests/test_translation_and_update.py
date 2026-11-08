@@ -225,3 +225,29 @@ def test_translation_key_matches_unique_id_suffix(platform):
         if uid and key and uid.group(1).replace("-", "_") != key.group(1):
             bad.append((uid.group(1), key.group(1)))
     assert not bad, f"{platform} 键与 unique_id 后缀不一致: {bad}"
+
+
+SERVICE_SENSOR_RE = re.compile(
+    r'super\(\)\.__init__\(coordinator, "(\w+)", "[^"]*", "[^"]*", uid="(\w+)"\)'
+)
+
+
+def test_service_sensor_translation_key_uses_uid():
+    """v6.4.6 回归：共用同一数据键的传感器必须按 uid 取翻译键。
+
+    prognostic 端点下有 机油寿命 / 慢漏气车胎 / 预测性诊断 三个传感器，都从
+    coordinator.data["prognostic"] 读数据。此前一律按数据键取翻译键，三个实体
+    在界面上全部显示「机油寿命」——uid 明确时必须以 uid 为翻译键。
+    """
+    text = (SRC / "sensor.py").read_text(encoding="utf-8")
+    base = text.split("class _ServiceInfoSensor")[1].split("\nclass ")[0]
+    assert "tl_key = uid or key" in base, "_ServiceInfoSensor 未按 uid 优先取翻译键"
+    assert "if tl_key in _TRANSLATED_KEYS" in base, "翻译键判断未使用 uid 派生键"
+
+    uids = [m.group(2) for m in SERVICE_SENSOR_RE.finditer(text)
+            if m.group(1) == "prognostic"]
+    assert len(uids) == 3, f"prognostic 家族应有 3 个传感器，实际 {uids}"
+    assert len(set(uids)) == 3, f"prognostic 家族 uid 重复: {uids}"
+    zh = _load(SRC / "translations" / "zh-Hans.json")["entity"]["sensor"]
+    for uid in uids:
+        assert zh.get(uid, {}).get("name"), f"缺翻译条目: {uid}"

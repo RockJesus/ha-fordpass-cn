@@ -375,6 +375,9 @@
       "prognostic_msg": {
         "name": "Prognostic Diagnostics"
       },
+      "prognostic_range": {
+        "name": "Remaining Range"
+      },
       "messages": {
         "name": "Unread Messages"
       },

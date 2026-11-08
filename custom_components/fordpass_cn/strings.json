@@ -368,6 +368,9 @@
       "prognostic_msg": {
         "name": "预测性诊断"
       },
+      "prognostic_range": {
+        "name": "剩余可行驶里程"
+      },
       "messages": {
         "name": "未读消息"
       },
