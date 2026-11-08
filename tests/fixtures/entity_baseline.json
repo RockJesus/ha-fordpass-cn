@@ -1,0 +1,417 @@
+[
+ {
+  "platform": "lock",
+  "key": "lock",
+  "zh": "门锁"
+ },
+ {
+  "platform": "lock",
+  "key": "trunk",
+  "zh": "后备箱锁"
+ },
+ {
+  "platform": "switch",
+  "key": "engine",
+  "zh": "远程启动"
+ },
+ {
+  "platform": "switch",
+  "key": "light_find",
+  "zh": "灯光寻车"
+ },
+ {
+  "platform": "switch",
+  "key": "honk",
+  "zh": "鸣笛寻车"
+ },
+ {
+  "platform": "switch",
+  "key": "va_switch",
+  "zh": "声光寻车"
+ },
+ {
+  "platform": "button",
+  "key": "central_lighting",
+  "zh": "中央区灯光"
+ },
+ {
+  "platform": "button",
+  "key": "ota_schedule",
+  "zh": "OTA 激活排程"
+ },
+ {
+  "platform": "button",
+  "key": "asu_setting",
+  "zh": "辅助设置"
+ },
+ {
+  "platform": "button",
+  "key": "manual_refresh",
+  "zh": "手动刷新车辆状态"
+ },
+ {
+  "platform": "button",
+  "key": "reset_air_filter",
+  "zh": "重置空调滤芯"
+ },
+ {
+  "platform": "sensor",
+  "key": "fuel_level",
+  "zh": "燃油量"
+ },
+ {
+  "platform": "sensor",
+  "key": "distance_to_empty",
+  "zh": "续航里程"
+ },
+ {
+  "platform": "sensor",
+  "key": "odometer",
+  "zh": "总里程"
+ },
+ {
+  "platform": "sensor",
+  "key": "battery_voltage",
+  "zh": "蓄电池电压"
+ },
+ {
+  "platform": "sensor",
+  "key": "lf_tire",
+  "zh": "左前轮胎压"
+ },
+ {
+  "platform": "sensor",
+  "key": "rf_tire",
+  "zh": "右前轮胎压"
+ },
+ {
+  "platform": "sensor",
+  "key": "lr_tire",
+  "zh": "左后轮胎压"
+ },
+ {
+  "platform": "sensor",
+  "key": "rr_tire",
+  "zh": "右后轮胎压"
+ },
+ {
+  "platform": "sensor",
+  "key": "lock_status",
+  "zh": "门锁状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "alarm_status",
+  "zh": "报警状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "remote_start",
+  "zh": "远程启动状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "vehicle_alerts",
+  "zh": "异常警示"
+ },
+ {
+  "platform": "sensor",
+  "key": "license_plate",
+  "zh": "车牌号"
+ },
+ {
+  "platform": "sensor",
+  "key": "vehicle_nickname",
+  "zh": "车辆昵称"
+ },
+ {
+  "platform": "sensor",
+  "key": "vehicle_vin",
+  "zh": "车辆识别码"
+ },
+ {
+  "platform": "sensor",
+  "key": "location",
+  "zh": "定位地址"
+ },
+ {
+  "platform": "sensor",
+  "key": "driver_door",
+  "zh": "主驾车门"
+ },
+ {
+  "platform": "sensor",
+  "key": "passenger_door",
+  "zh": "副驾车门"
+ },
+ {
+  "platform": "sensor",
+  "key": "left_rear_door",
+  "zh": "左后车门"
+ },
+ {
+  "platform": "sensor",
+  "key": "right_rear_door",
+  "zh": "右后车门"
+ },
+ {
+  "platform": "sensor",
+  "key": "tailgate",
+  "zh": "尾门"
+ },
+ {
+  "platform": "sensor",
+  "key": "hood",
+  "zh": "引擎盖"
+ },
+ {
+  "platform": "sensor",
+  "key": "ignition",
+  "zh": "点火状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "driver_window",
+  "zh": "主驾车窗"
+ },
+ {
+  "platform": "sensor",
+  "key": "passenger_window",
+  "zh": "副驾车窗"
+ },
+ {
+  "platform": "sensor",
+  "key": "left_rear_window",
+  "zh": "左后车窗"
+ },
+ {
+  "platform": "sensor",
+  "key": "right_rear_window",
+  "zh": "右后车窗"
+ },
+ {
+  "platform": "sensor",
+  "key": "oil_health",
+  "zh": "机油健康状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "battery_health",
+  "zh": "蓄电池健康状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "tpms_system_status",
+  "zh": "胎压系统状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "lf_tire_status",
+  "zh": "左前胎状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "rf_tire_status",
+  "zh": "右前胎状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "lr_tire_status",
+  "zh": "左后胎状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "rr_tire_status",
+  "zh": "右后胎状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "recommended_front_pressure",
+  "zh": "推荐前轮胎压"
+ },
+ {
+  "platform": "sensor",
+  "key": "recommended_rear_pressure",
+  "zh": "推荐后轮胎压"
+ },
+ {
+  "platform": "sensor",
+  "key": "remote_start_duration",
+  "zh": "远程启动时长"
+ },
+ {
+  "platform": "sensor",
+  "key": "remote_start_time",
+  "zh": "远程启动时间"
+ },
+ {
+  "platform": "sensor",
+  "key": "auto_off_remaining",
+  "zh": "距离自动熄火时间"
+ },
+ {
+  "platform": "sensor",
+  "key": "crcc_flag",
+  "zh": "远程控车功能"
+ },
+ {
+  "platform": "sensor",
+  "key": "life_cycle_mode",
+  "zh": "电池生命周期模式"
+ },
+ {
+  "platform": "sensor",
+  "key": "out_and_about",
+  "zh": "出行状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "inner_tailgate",
+  "zh": "内尾门"
+ },
+ {
+  "platform": "sensor",
+  "key": "deep_sleep",
+  "zh": "深度睡眠模式"
+ },
+ {
+  "platform": "sensor",
+  "key": "firmware_upgrade",
+  "zh": "固件升级中"
+ },
+ {
+  "platform": "sensor",
+  "key": "ota_setting",
+  "zh": "OTA 设置状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "maintenance_plan",
+  "zh": "保养计划"
+ },
+ {
+  "platform": "sensor",
+  "key": "recall",
+  "zh": "召回信息"
+ },
+ {
+  "platform": "sensor",
+  "key": "sim_info",
+  "zh": "SIM 卡"
+ },
+ {
+  "platform": "sensor",
+  "key": "sync_health",
+  "zh": "官网云端状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "chirp_cloud",
+  "zh": "鸣笛寻车设置云端状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "onlinernr",
+  "zh": "车辆在线状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "uservehicles",
+  "zh": "车辆清单"
+ },
+ {
+  "platform": "sensor",
+  "key": "air_filter",
+  "zh": "空调滤芯"
+ },
+ {
+  "platform": "sensor",
+  "key": "cloud_probe",
+  "zh": "云端能力探测"
+ },
+ {
+  "platform": "sensor",
+  "key": "rsa_number",
+  "zh": "救援电话"
+ },
+ {
+  "platform": "sensor",
+  "key": "contact_number",
+  "zh": "客服电话"
+ },
+ {
+  "platform": "sensor",
+  "key": "after_sales_number",
+  "zh": "售后电话"
+ },
+ {
+  "platform": "sensor",
+  "key": "video_manual",
+  "zh": "视频说明书"
+ },
+ {
+  "platform": "sensor",
+  "key": "announce_status",
+  "zh": "鸣笛寻车命令状态"
+ },
+ {
+  "platform": "sensor",
+  "key": "prognostic",
+  "zh": "机油寿命"
+ },
+ {
+  "platform": "sensor",
+  "key": "prognostic_slowleak",
+  "zh": "慢漏气车胎"
+ },
+ {
+  "platform": "sensor",
+  "key": "prognostic_msg",
+  "zh": "预测性诊断"
+ },
+ {
+  "platform": "sensor",
+  "key": "messages",
+  "zh": "未读消息"
+ },
+ {
+  "platform": "device_tracker",
+  "key": "tracker",
+  "zh": "位置"
+ },
+ {
+  "platform": "image",
+  "key": "vehicle_image",
+  "zh": "侧视车型图"
+ },
+ {
+  "platform": "image",
+  "key": "vehicle_overlook_image",
+  "zh": "俯视车型图"
+ },
+ {
+  "platform": "select",
+  "key": "honk_duration",
+  "zh": "鸣笛寻车持续时长"
+ },
+ {
+  "platform": "select",
+  "key": "chirp_type",
+  "zh": "鸣笛寻车类型"
+ },
+ {
+  "platform": "event",
+  "key": "door_event",
+  "zh": "车门开合事件"
+ },
+ {
+  "platform": "event",
+  "key": "vehicle_alert_event",
+  "zh": "告警事件"
+ },
+ {
+  "platform": "sensor",
+  "key": "vehicle_data_time",
+  "zh": "车机数据最后刷新时间"
+ }
+]

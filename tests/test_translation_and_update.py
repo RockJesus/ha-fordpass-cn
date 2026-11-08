@@ -184,7 +184,10 @@ def test_translation_key_exists_in_all_files(platform):
 
 def test_chinese_names_match_live_baseline():
     """中文名必须与现网 registry 的 original_name 逐字一致（实体名零漂移）。"""
-    baseline = json.loads((ROOT.parent / "entity_baseline.json").read_text(encoding="utf-8"))
+    # 基线随仓库入库（tests/fixtures），CI 与本地读同一份
+    baseline = json.loads(
+        (ROOT / "tests" / "fixtures" / "entity_baseline.json").read_text(encoding="utf-8")
+    )
     zh = _load(SRC / "translations" / "zh-Hans.json")["entity"]
     mismatched = []
     for row in baseline:
