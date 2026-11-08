@@ -887,7 +887,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             len(fails),
         )
 
-    async def run_command(self, command_type: str, wait: bool = True) -> None:
+    async def run_command(
+        self,
+        command_type: str,
+        wait: bool = True,
+        cmd_spec: list[dict[str, Any]] | None = None,
+    ) -> None:
         """Send a remote command and reflect the result immediately (v2.7.7).
 
         Used by lock/switch/button so a press is not silently lost behind HA's
@@ -897,9 +902,15 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         (v5.8.3: 同时记录确定性拒绝 → 该车型下次重启不再创建对应实体).
 
         ``wait=False`` skips the polling loop and only force-refreshes.
+
+        v6.4.5: 新增 ``cmd_spec`` 透传——button.py 里部分命令（InitialVA/
+        CancelVA 等）必须带 cmdSpec 才能被网关接受，此前按钮自己发命令
+        绕开了本方法，导致门锁等动作按钮只能"立即 force_refresh"拿到命令
+        前的旧快照；改由本方法统一"发送 → 等执行完成 → 推送翻转后的新
+        快照"，与 App 的节奏一致。
         """
         try:
-            resp = await self.api.send_command(self.vin, command_type)
+            resp = await self.api.send_command(self.vin, command_type, cmd_spec)
         except Exception as exc:  # noqa: BLE001 - 记录车型不支持后如实上报
             await self.async_record_cmd_fail(command_type, exc)
             raise

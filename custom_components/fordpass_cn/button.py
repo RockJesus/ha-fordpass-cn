@@ -542,6 +542,7 @@ class FordPassButton(_FordPassButtonBase):
         self.coordinator = coordinator
         self._command = command
         self._cmd_spec = cmd_spec
+        self._label = label  # v6.4.5: 中文名留用于失败提示（翻译键实体无 _attr_name）
         self._attr_unique_id = f"{coordinator.uid_key}-{key}"
         if key in _TRANSLATED_KEYS:
             self._attr_translation_key = key
@@ -562,8 +563,17 @@ class FordPassButton(_FordPassButtonBase):
                 return str(inner["commandId"])
         return None
 
+    def _display_name(self) -> str:
+        """v6.4.5: 错误提示里用真实名称——翻译键实体没有 _attr_name。
+
+        此前直接用 ``self._attr_name``，凡是用 translation_key 的实体
+        （开锁/关锁/后备箱解锁等）失败提示都是「None 执行失败」，
+        用户看不出是哪个按钮出错。
+        """
+        return self._attr_name or getattr(self, "_label", None) or self._command
+
     async def _do_press(self) -> None:
-        """Send the command, then refresh entities so the UI always moves.
+        """Send the command, then push the fresh snapshot to the entities.
 
         ForceRefresh (v2.7.1, verified from a live capture):
           * send-command returns a commandId,
@@ -572,9 +582,40 @@ class FordPassButton(_FordPassButtonBase):
             01-01-0001, vin=null) to CURRENT with the real snapshot,
           * the finished response itself already carries the complete fresh
             data — we push it straight to the entities.
-        We also force-refresh once immediately for fast UI feedback and as a
-        fallback if the command never completes.  A failed command must never
-        block the refresh.
+
+        v6.4.5: 普通动作命令（开锁/关锁/后备箱解锁等）统一交给
+        ``coordinator.run_command``——「发送 → 轮询执行状态 → 推送翻转后的
+        新快照」。此前这里只做一次 force_refresh：命令刚下发、云端
+        lockStatus 尚未翻转，拉到的仍是命令前的旧快照，于是「门锁状态」
+        看起来完全不跟随操作，只能等下一轮 30 分钟轮询。失败必须如实上报，
+        不能被刷新吞掉。
+        """
+        if self._command != CMD_REFRESH_STATUS:
+            try:
+                await self.coordinator.run_command(
+                    self._command, cmd_spec=self._cmd_spec
+                )
+            except Exception as exc:  # noqa: BLE001
+                # v5.8.3: 不再吞错——命令失败如实上报 UI（此前只打日志，用户
+                # 按了按钮无任何反馈 = "按了没反应"）。run_command 内部已记录
+                # 云端确定性拒绝（该车型下次重启不再创建此实体），此处不重复。
+                _LOGGER.warning(
+                    "FordPass command %s failed: %s", self._command, exc
+                )
+                raise HomeAssistantError(
+                    f"福特派命令「{self._display_name()}」执行失败"
+                    f"（该车云端可能不支持此命令，已记录；"
+                    f"重新加载/重启后不再创建此按钮）：{exc}"
+                ) from exc
+            return
+        await self._do_force_refresh()
+
+    async def _do_force_refresh(self) -> None:
+        """AutoRefresh / ForceRefresh 专用时序：先立即刷新，再等执行完成。
+
+        与其他命令不同：刷新类命令要先把「已触发」写进活动记录
+        （force_refresh 内部写 logbook），再等车机上报完成；合并成
+        run_command 会改变这段顺序，故单独保留。
         """
         resp: Any = None
         try:
@@ -582,71 +623,62 @@ class FordPassButton(_FordPassButtonBase):
                 self.coordinator.vin, self._command, self._cmd_spec
             )
         except Exception as exc:  # noqa: BLE001
-            # v5.8.3: 不再吞错——命令失败如实上报 UI（此前只打日志，用户
-            # 按了按钮无任何反馈 = "按了没反应"）。同时记录云端确定性拒绝
-            # （该车型下次重启不再创建此实体，按车型创建的实测依据）。
             _LOGGER.warning("FordPass command %s failed: %s", self._command, exc)
             await self.coordinator.async_record_cmd_fail(self._command, exc)
             raise HomeAssistantError(
-                f"福特派命令「{self._attr_name}」执行失败"
+                f"福特派命令「{self._display_name()}」执行失败"
                 f"（该车云端可能不支持此命令，已记录；"
                 f"重新加载/重启后不再创建此按钮）：{exc}"
             ) from exc
 
-        if self._command == CMD_REFRESH_STATUS:
-            command_id = await self._command_id(resp)
-            if command_id:
-                # Immediate refresh: fast UI feedback (bypasses HA's interval).
-                try:
-                    await self.coordinator.force_refresh()
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning("FordPass immediate refresh failed: %s", exc)
-                # Poll command-execution-status until the fresh snapshot lands.
-                done, result = await self.coordinator.api.wait_command_complete(
-                    self.coordinator.vin, command_id, self._command
-                )
-                _LOGGER.info(
-                    "FordPass ForceRefresh: completed=%s has_result=%s",
-                    done, result is not None,
-                )
-                if done and isinstance(result, dict):
-                    vs = result.get("vehiclestatus", result)
-                    # v5.3.4: 合并推送而非整体替换（与 coordinator.run_command
-                    # 同款修复）——覆盖 data 会清空服务信息类键，实体变空值。
-                    self.coordinator.async_set_updated_data(
-                        {**(self.coordinator.data or {}), "status": vs, "vehiclestatus": vs}
-                    )
-                else:
-                    # v4.0.3: 不再兜底 force_refresh()。上方的立即 force_refresh
-                    # 已拉取最新状态并写入活动日志；wait 无新鲜快照（命令仍在
-                    # 执行/超时）时保持该结果即可，下次自动轮询会更新。旧版
-                    # 在这里再 force_refresh() 一次 → 双 logbook + 双福特云
-                    # 请求（12:21 0.6s / 13:00 9.6s 成对条目根因）。
-                    _LOGGER.info(
-                        "FordPass ForceRefresh: no fresh payload yet, "
-                        "keeping immediate refresh result"
-                    )
-            else:
-                # 发送失败（resp=None）已在上面打过 warning，这里不再重复；
-                # 仅在响应存在但缺少 commandId（接口结构变化）时提醒。
-                if resp is None:
-                    _LOGGER.debug(
-                        "FordPass ForceRefresh: send_command had no response, fallback refresh"
-                    )
-                else:
-                    _LOGGER.warning(
-                        "FordPass ForceRefresh: no commandId in response, resp=%s",
-                        (str(resp)[:300]),
-                    )
-                try:
-                    await self.coordinator.force_refresh()
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning("FordPass refresh failed: %s", exc)
-        else:
+        command_id = await self._command_id(resp)
+        if command_id:
+            # Immediate refresh: fast UI feedback (bypasses HA's interval).
             try:
                 await self.coordinator.force_refresh()
             except Exception as exc:  # noqa: BLE001
-                _LOGGER.warning("FordPass refresh after %s failed: %s", self._command, exc)
+                _LOGGER.warning("FordPass immediate refresh failed: %s", exc)
+            # Poll command-execution-status until the fresh snapshot lands.
+            done, result = await self.coordinator.api.wait_command_complete(
+                self.coordinator.vin, command_id, self._command
+            )
+            _LOGGER.info(
+                "FordPass ForceRefresh: completed=%s has_result=%s",
+                done, result is not None,
+            )
+            if done and isinstance(result, dict):
+                vs = result.get("vehiclestatus", result)
+                # v5.3.4: 合并推送而非整体替换（与 coordinator.run_command
+                # 同款修复）——覆盖 data 会清空服务信息类键，实体变空值。
+                self.coordinator.async_set_updated_data(
+                    {**(self.coordinator.data or {}), "status": vs, "vehiclestatus": vs}
+                )
+            else:
+                # v4.0.3: 不再兜底 force_refresh()。上方的立即 force_refresh
+                # 已拉取最新状态并写入活动日志；wait 无新鲜快照（命令仍在
+                # 执行/超时）时保持该结果即可，下次自动轮询会更新。旧版
+                # 在这里再 force_refresh() 一次 → 双 logbook + 双福特云
+                # 请求（12:21 0.6s / 13:00 9.6s 成对条目根因）。
+                _LOGGER.info(
+                    "FordPass ForceRefresh: no fresh payload yet, "
+                    "keeping immediate refresh result"
+                )
+        else:
+            # 发送失败（resp=None）已在上面打过 warning，这里不再重复；
+            # 仅在响应存在但缺少 commandId（接口结构变化）时提醒。
+            if resp is None:
+                _LOGGER.debug(
+                    "FordPass ForceRefresh: send_command had no response, fallback refresh"
+                )
+            else:
+                _LOGGER.warning(
+                    "FordPass ForceRefresh: no commandId in response, resp=%s",
+                    (str(resp)[:300]),
+                )
+            try:
+                await self.coordinator.force_refresh()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("FordPass refresh failed: %s", exc)
 
 
 class FordPassManualRefreshButton(_FordPassButtonBase):
