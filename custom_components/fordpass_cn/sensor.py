@@ -17,7 +17,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfLength, UnitOfPressure, UnitOfTime
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -718,7 +718,7 @@ class FordPassLocationSensor(SensorEntity):
         self._attr_unique_id = f"{coordinator.uid_key}-location"
         # v6.0.4: 与 device_tracker 区分（两者此前同名「车辆定位」）——
         # 本实体状态是地址文本，故命名「车辆定位地址」；device_tracker 为「车辆位置」。
-        self._attr_name = "车辆定位地址"
+        self._attr_name = "定位地址"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
@@ -789,6 +789,15 @@ class FordPassRestoreMixin(RestoreEntity):
         coord = getattr(self, "coordinator", None)
         if coord is not None and coord.data is not None:
             self.async_write_ha_state()
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """HA 2026.11: opt-in 原地改名（兼容期至 2027.11）。
+
+        实体状态与监听均不依赖 entity_id，无需移除重加；不实现该钩子时
+        HA 会走旧行为（移除实体再添加），导致协调器监听重注册、事件基线重置。
+        """
+        super().async_entity_id_changed(old_entity_id)
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
@@ -1022,7 +1031,7 @@ class FordPassAlertSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-vehicle_alerts"
-        self._attr_name = "车辆异常警示"
+        self._attr_name = "异常警示"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:alert"
@@ -1127,7 +1136,7 @@ class FordPassActiveAlertListSensor(SensorEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{coordinator.uid_key}-active_alert_list"
-        self._attr_name = "车辆告警列表"
+        self._attr_name = "告警列表"
         self._attr_device_info = coordinator.device_info
 
     @property
