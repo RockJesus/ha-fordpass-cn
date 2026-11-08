@@ -756,7 +756,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return str(self.vehicle_info.get("fuelType") or "").upper() == "D"
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> dr.DeviceInfo:
         """One shared device for every entity of this vehicle."""
         # P2-6（v5.6.0）：按品牌填 manufacturer/sw_version——此前对所有
         # 品牌硬编码 Ford/6.14.0，林肯车辆设备信息显示福特品牌。
