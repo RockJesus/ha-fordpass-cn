@@ -17,6 +17,8 @@ import logging
 import os
 import secrets
 
+from datetime import datetime, timezone
+
 import aiohttp
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
@@ -46,18 +48,12 @@ def _local_path(hass: HomeAssistant, vin: str, suffix: str = "") -> str:
     return os.path.join(hass.config.path(".storage"), "fordpass_cn", f"{safe}{suffix}.png")
 
 
-def _entity_nickname(entity) -> str:
-    """v6.0.4: 取实体昵称——注册表用户重命名优先，其次集成给的名称。
-
-    ``Entity.registry_entry`` 是 HA 平台在实体注册后回填的公开属性；用户
-    在前端改过的名称（entry.name）优先于集成提供的 _attr_name，这样图片
-    实体的状态能跟随用户自己的命名。
-    """
-    entry = getattr(entity, "registry_entry", None)
-    if entry is not None and entry.name:
-        return entry.name
-    name = getattr(entity, "name", None)
-    return name if isinstance(name, str) else ""
+def _file_mtime(path: str) -> float | None:
+    """本地缓存图的最后写入时间（run in executor），用于播种 image_last_updated。"""
+    try:
+        return os.path.getmtime(path) if os.path.isfile(path) else None
+    except OSError:
+        return None
 
 
 def _read_local(path: str) -> bytes | None:
@@ -84,7 +80,44 @@ def _persist_sync(path: str, data: bytes) -> None:
         _LOGGER.warning("vehicle image persist failed: %s", exc)
 
 
-class FordPassVehicleImage(ImageEntity):
+class _ImageTimestampMixin:
+    """v6.4.7: 让图片实体拥有有效 ``image_last_updated``。
+
+    HA 2026.11 把 image 实体的状态固定为图片最后更新时间（core 的 state 是
+    final，返回 ``image_last_updated.isoformat()``），前端对 image 域一律按
+    时间戳渲染——状态不是有效时间就显示「时间戳无效」。此前子类覆盖 state
+    返回中文昵称，界面因此全是这行报错。
+
+    现在不再覆盖 state，改为如实提供时间：本地缓存图用文件写入时间播种，
+    新下载成功的图画下取图时刻，前端显示「图片最后更新于 …」。
+    """
+
+    _image_last_updated: datetime | None = None
+
+    @property
+    def image_last_updated(self) -> datetime | None:
+        return self._image_last_updated
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._async_seed_image_timestamp()
+
+    async def _async_seed_image_timestamp(self) -> None:
+        """首次加载时用本地缓存文件的写入时间播种（重启后不显示空状态）。"""
+        if self._image_last_updated is not None:
+            return
+        mtime = await self.hass.async_add_executor_job(_file_mtime, self._persist_path)
+        if mtime:
+            self._image_last_updated = datetime.fromtimestamp(mtime, tz=timezone.utc)
+
+    def _mark_image_updated(self) -> None:
+        """图片确实换了新内容时调用，把状态时间推到此刻。"""
+        self._image_last_updated = datetime.now(timezone.utc)
+        if getattr(self, "hass", None) is not None and getattr(self, "entity_id", None):
+            self.async_write_ha_state()
+
+
+class FordPassVehicleImage(_ImageTimestampMixin, ImageEntity):
     """Vehicle model picture, persisted locally and never deleted.
 
     v3.3.9: kind 参数化——"side"=侧视车型图（vehicleImageUrl，原名车辆图片，
@@ -142,11 +175,6 @@ class FordPassVehicleImage(ImageEntity):
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     @property
-    def state(self) -> str:
-        """v6.0.4: 状态显示本实体昵称（此前所有图片实体都返回车型名，无法区分）。"""
-        return _entity_nickname(self) or self.coordinator.vehicle_model
-
-    @property
     def extra_state_attributes(self) -> dict[str, object]:
         # v4.9.0: 删除 image_path（本地 /config/www 路径噪音）
         return {
@@ -167,6 +195,7 @@ class FordPassVehicleImage(ImageEntity):
         local = await self.hass.async_add_executor_job(_read_local, self._persist_path)
         if local:
             self._image_bytes = local
+            await self._async_seed_image_timestamp()
             return local
         url = getattr(self.coordinator, self._url_key, None)
         if not url:
@@ -187,6 +216,7 @@ class FordPassVehicleImage(ImageEntity):
                     await self.hass.async_add_executor_job(
                         _persist_sync, self._persist_path, data
                     )
+                    self._mark_image_updated()
                 return data or None
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("vehicle image fetch error: %s", exc)
@@ -194,7 +224,7 @@ class FordPassVehicleImage(ImageEntity):
 
 
 
-class FordPassRemoteImageEntity(ImageEntity):
+class FordPassRemoteImageEntity(_ImageTimestampMixin, ImageEntity):
     """远程影像图（停车影像 / 行车监控，v3.4.4，全车型）。
 
     仅当车辆列表 encryptedCarId 非空时创建（与「停车影像/行车监控」查询
@@ -256,14 +286,6 @@ class FordPassRemoteImageEntity(ImageEntity):
         return self._last_url
 
     @property
-    def state(self) -> str:
-        """v6.0.4: 状态显示本实体昵称（原为「最新影像/暂无影像」，两张图无法区分）。
-
-        影像有无改由属性 image_status 承载，信息不丢失。
-        """
-        return _entity_nickname(self) or ("最新影像" if self._image_url() else "暂无影像")
-
-    @property
     def extra_state_attributes(self) -> dict:
         img = self._resp()
         attrs = {
@@ -293,6 +315,7 @@ class FordPassRemoteImageEntity(ImageEntity):
         if local and self._last_url == self._cached_url:
             # URL 未变：本地缓存直接用（重启后首读）
             self._image_bytes = local
+            await self._async_seed_image_timestamp()
             return local
         if not url:
             # 无 URL：回退旧图（内存或本地文件）
@@ -322,13 +345,14 @@ class FordPassRemoteImageEntity(ImageEntity):
                     await self.hass.async_add_executor_job(
                         _persist_sync, self._persist_path, data
                     )
+                    self._mark_image_updated()
                 return data or self._image_bytes or local
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("remote image fetch error: %s", exc)
             self._cached_url = url
             return self._image_bytes or local
 
-class FordPass3dModelImage(ImageEntity):
+class FordPass3dModelImage(_ImageTimestampMixin, ImageEntity):
     """3D 车型图（v3.5.0）：GET vds/v1/vehicle/search-3d-vehicle-model-url。
 
     探测到 modelUrl 才创建（非能力车型无数据自动跳过，全车型适配）；
@@ -375,11 +399,6 @@ class FordPass3dModelImage(ImageEntity):
         return bool(self.coordinator.data)  # v5.3.1: 保留最后已知状态——刷新失败不置不可用（与 switch/lock/select/device_tracker 对齐）
 
     @property
-    def state(self) -> str:
-        """v6.0.4: 状态显示本实体昵称（此前返回车型名，与其他图片实体重复）。"""
-        return _entity_nickname(self) or self.coordinator.vehicle_model
-
-    @property
     def extra_state_attributes(self) -> dict[str, object]:
         # v4.9.0: 删除 image_path（本地 /config/www 路径噪音）
         return {
@@ -393,6 +412,7 @@ class FordPass3dModelImage(ImageEntity):
         local = await self.hass.async_add_executor_job(_read_local, self._persist_path)
         if local:
             self._image_bytes = local
+            await self._async_seed_image_timestamp()
             return local
         url = self._model_url()
         if not url:
@@ -413,6 +433,7 @@ class FordPass3dModelImage(ImageEntity):
                     await self.hass.async_add_executor_job(
                         _persist_sync, self._persist_path, data
                     )
+                    self._mark_image_updated()
                 return data or None
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("3d model image fetch error: %s", exc)

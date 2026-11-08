@@ -62,6 +62,9 @@ class _FakeImageEntity:
         """core 原版：每次追加随机 token（子类应覆盖为只播种）。"""
         self.access_tokens.append(TOKEN_HEX)
 
+    async def async_added_to_hass(self) -> None:
+        """core Entity.async_added_to_hass 同款空实现。"""
+
     def async_on_remove(self, _cb) -> None:  # noqa: ANN001
         """测试里不需要管理移除回调。"""
 
@@ -216,31 +219,49 @@ def test_async_image_reads_local_file_without_network() -> None:
     assert ent._image_bytes == b"PNGDATA"
 
 
-def test_state_shows_entity_nickname() -> None:
-    """v6.0.4: 图片实体状态显示本实体昵称，不再所有实体都返回车型名。"""
+def test_state_delegates_to_last_updated() -> None:
+    """v6.4.7：子类不再覆盖 state——状态由 core 依 image_last_updated 生成。
+
+    image 域在前端按时间戳渲染，覆盖成中文名称只会显示「时间戳无效」。
+    """
     mod = load_image()
-    side = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "side")
-    overlook = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "overlook")
-    assert side.state == "侧视车型图"
-    assert overlook.state == "俯视车型图"
-    assert side.state != overlook.state  # 修复前两者都返回「测试车型」
+    ent = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "side")
+    assert "state" not in type(ent).__dict__, "子类不得覆盖 state"
+    assert ent.image_last_updated is None, "尚无图片时不给假时间"
+    ent._mark_image_updated()
+    assert ent.image_last_updated is not None
+    assert ent.image_last_updated.tzinfo is not None, "时间必须带时区，否则状态不是合法 ISO"
 
 
-def test_state_prefers_registry_rename() -> None:
-    """用户在注册表里重命名后，状态跟随即时生效。"""
+def test_state_ignores_registry_rename() -> None:
+    """用户在注册表里重命名只改名称，不再把状态改写成昵称。"""
     mod = load_image()
     ent = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "side")
     ent.registry_entry = types.SimpleNamespace(name="我的爱车侧视图")
-    assert ent.state == "我的爱车侧视图"
+    ent._mark_image_updated()
+    assert ent.image_last_updated is not None
 
 
-def test_remote_image_state_and_attribute() -> None:
-    """远程影像状态=昵称；影像有无由 image_status 属性承载（信息不丢）。"""
+def test_local_cache_seeds_last_updated() -> None:
+    """本地已有缓存图时，加载即用文件写入时间播种（重启后状态不为空）。"""
+    mod = load_image()
+    ent = mod.FordPassVehicleImage(_FakeHass(), _FakeCoordinator(), "side")
+    path = ent._persist_path
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(b"\x89PNG\r\n")
+    asyncio.run(ent.async_added_to_hass())
+    assert ent.image_last_updated is not None
+    assert ent.image_last_updated.tzinfo is not None
+
+
+def test_remote_image_status_attribute() -> None:
+    """远程影像：影像有无由 image_status 属性承载，状态同样是时间戳。"""
     mod = load_image()
     coord = _FakeCoordinator({"remote_image": {"kind": "parking"}})
     ent = mod.FordPassRemoteImageEntity(_FakeHass(), coord, "parking")
-    assert ent.state == "停车影像图"
     assert ent.extra_state_attributes["image_status"] == "暂无影像"
+    assert ent.image_last_updated is None
     ent._last_url = "https://example.invalid/p.jpg"
-    assert ent.state == "停车影像图"
     assert ent.extra_state_attributes["image_status"] == "最新影像"
+
