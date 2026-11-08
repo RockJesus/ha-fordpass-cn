@@ -121,9 +121,34 @@ async def _cleanup_legacy_vin(hass: HomeAssistant, entry: ConfigEntry, coord) ->
     except Exception:  # noqa: BLE001
         _LOGGER.debug("fordpass_cn legacy vin device cleanup failed", exc_info=True)
 
+async def _cleanup_retired_lock_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """v6.4.4: 清理 lock 平台退役后的注册表残留。
+
+    门锁（v6.4.3）与后备箱锁（v6.4.4）都已迁到 button 平台，本域不再有
+    lock.* 实体。旧条目留在注册表里会永远 unavailable，用户自定义的名称 /
+    区域也会指向一个失效入口，必须显式移除。仅限本 entry（多账号互不影响），
+    跳过用户手动禁用的条目（用户选择不可被集成覆盖）。
+    """
+    try:
+        from homeassistant.helpers import entity_registry as er
+        reg = er.async_get(hass)
+        for entry_ in er.async_entries_for_config_entry(reg, entry.entry_id):
+            if entry_.platform != DOMAIN:
+                continue
+            if not entry_.entity_id.startswith("lock."):
+                continue
+            if entry_.disabled_by == "user":
+                continue
+            _LOGGER.debug("fordpass_cn lock platform retired: removing %s", entry_.entity_id)
+            reg.async_remove(entry_.entity_id)  # HA 2026.x: 同步返回 None，不要 await
+    except Exception:  # noqa: BLE001 - 清理失败不阻断 setup
+        _LOGGER.debug("fordpass_cn lock cleanup failed", exc_info=True)
+
 
 PLATFORMS = [
-    Platform.LOCK,
+    # v6.4.4: lock 平台整体退役——门锁拆为「开锁」「关锁」按钮（v6.4.3），
+    # 后备箱锁改为「后备箱解锁」按钮（网关只有 TrunkUnlock 弹开命令，
+    # 没有独立的后备箱锁命令）。锁状态由「门锁状态」传感器承载。
     Platform.SWITCH,
     Platform.BUTTON,
     Platform.SENSOR,
@@ -695,6 +720,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 合规审查项：调试接口残留，自动化探测（probe_cevs_auto）已覆盖
     # 所需变体，无需人工触发。对应 services.yaml 一并删除。
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # v6.4.4: lock 平台退役——清掉旧 lock.* 注册表残留（门锁 / 后备箱锁）
+    await _cleanup_retired_lock_entities(hass, entry)
 
     # v5.7.1: unique_id/identifiers 脱敏迁移——清理旧 VIN 前缀实体与设备
     # （registry 持久化不得再留真实 VIN）。在平台注册新实体后执行，

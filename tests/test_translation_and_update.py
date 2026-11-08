@@ -168,7 +168,7 @@ def _keys_in_code(platform: str) -> set[str]:
     return set(STATIC_KEY_RE.findall(text)) | set(DYNAMIC.get(platform, []))
 
 
-@pytest.mark.parametrize("platform", ["sensor", "button", "image", "lock", "switch",
+@pytest.mark.parametrize("platform", ["sensor", "button", "image", "switch",
                                      "select", "event", "device_tracker", "update"])
 def test_translation_key_exists_in_all_files(platform):
     keys = _keys_in_code(platform)
@@ -200,7 +200,8 @@ def test_chinese_names_match_live_baseline():
 def test_no_leftover_attr_name_in_migrated_files():
     """迁移过的平台文件不应再有硬编码中文 _attr_name（白名单分支除外）。"""
     offenders = []
-    for platform in ("lock", "device_tracker", "event", "update"):
+    # v6.4.4: lock 平台已退役（文件删除），不再纳入检查
+    for platform in ("device_tracker", "event", "update"):
         text = (SRC / f"{platform}.py").read_text(encoding="utf-8")
         if "_attr_name = " in text:
             offenders.append(platform)
@@ -211,7 +212,7 @@ UID_RE = re.compile(r'_attr_unique_id = f"[^"]*?-([a-z0-9_-]+)"')
 KEY_RE = re.compile(r'_attr_translation_key = "([a-z0-9_]+)"')
 
 
-@pytest.mark.parametrize("platform", ["sensor", "button", "image", "lock", "switch",
+@pytest.mark.parametrize("platform", ["sensor", "button", "image", "switch",
                                      "select", "event", "device_tracker", "update"])
 def test_translation_key_matches_unique_id_suffix(platform):
     """翻译键必须与 unique_id 后缀一致（否则实体名会取到别的条目）。"""

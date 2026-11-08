@@ -52,20 +52,15 @@ def _base_names(cls: ast.ClassDef) -> set[str]:
     return names
 
 
-def test_lock_classes_no_polling() -> None:
-    tree = ast.parse((ROOT / "lock.py").read_text(encoding="utf-8"))
-    classes = _classes(tree)
-    lock_classes = [
-        n for n, c in classes.items() if "LockEntity" in _base_names(c)
-    ]
-    # v6.4.3: 整车门锁已迁到 button 平台，lock 平台仅剩后备箱锁
-    assert "FordPassTrunkLock" in lock_classes, "应找到 LockEntity 子类"
-    for name in lock_classes:
-        assert _has_should_poll_false(classes[name]), (
-            f"lock.py 的 {name} 缺少 _attr_should_poll = False："
-            "纯推送实体轮询会与 PARALLEL_UPDATES=1 的服务调用抢信号量，"
-            "命令链期间触发 took longer 警告"
-        )
+def test_lock_platform_has_no_entities() -> None:
+    """v6.4.4: lock 平台已整体退役（门锁与后备箱都迁到 button 动作实体）。
+
+    原后备箱锁（FordPassTrunkLock）同样依赖门锁状态推断，且"锁定"实际下发
+    DoorLock（全车上锁），语义错位。平台文件删除后此处只校验不存在 LockEntity。
+    """
+    assert not (ROOT / "lock.py").exists(), "lock.py 应已删除"
+    init = (ROOT / "__init__.py").read_text(encoding="utf-8")
+    assert "Platform.LOCK" not in init
 
 
 def test_switch_classes_no_polling() -> None:

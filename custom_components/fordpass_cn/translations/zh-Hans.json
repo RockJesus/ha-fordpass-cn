@@ -85,11 +85,6 @@
     }
   },
   "entity": {
-    "lock": {
-      "trunk": {
-        "name": "后备箱锁"
-      }
-    },
     "switch": {
       "engine": {
         "name": "远程启动"
@@ -185,6 +180,9 @@
       },
       "unlock_door": {
         "name": "开锁"
+      },
+      "trunk_unlock": {
+        "name": "后备箱解锁"
       }
     },
     "sensor": {

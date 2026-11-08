@@ -39,6 +39,7 @@ from .const import (
     CMD_REFRESH_STATUS,
     CMD_TRAILER_CHECK_START,
     CMD_TRAILER_CHECK_STOP,
+    CMD_TRUNK_UNLOCK,
     CMD_UNLOCK,
     DOMAIN,
 )
@@ -126,6 +127,22 @@ async def async_setup_entry(
         buttons.append(FordPassButton(
             coordinator, "lock_door", "关锁", "mdi:car-door-lock", CMD_LOCK, None,
         ))
+        # v6.4.4: 后备箱锁改为「后备箱解锁」动作按钮——网关只有 TrunkUnlock
+        # （弹开可开启），没有独立的后备箱锁命令；旧 lock 实体的"锁定"实际下发
+        # DoorLock（全车上锁），语义错位，且卡片按门锁状态推断后备箱状态。
+        # 按尾门能力创建（非全车型）；曾被网关确定性拒绝的车型不创建
+        # （cmd_rejected 读持久化命令失败记录）。
+        if (
+            capability.usable(
+                status,
+                [["doorStatus", "tailgateDoor"], ["doorStatus", "innerTailgateDoor"]],
+            )
+            and not coordinator.cmd_rejected(CMD_TRUNK_UNLOCK)
+        ):
+            buttons.append(FordPassButton(
+                coordinator, "trunk_unlock", "后备箱解锁", "mdi:car-back",
+                CMD_TRUNK_UNLOCK, None,
+            ))
         # v3.3.4: 「手动刷新车辆状态」——所有车型都有（合并原
         # 「请求车机刷新状态」「手动拉取最新状态」两按钮）
         buttons.append(FordPassManualRefreshButton(coordinator))
@@ -279,6 +296,8 @@ _TRANSLATED_KEYS = frozenset({
     # v6.4.3: 门锁动作按钮（原 lock 实体拆出的两个动作）
     "lock_door",
     "unlock_door",
+    # v6.4.4: 后备箱解锁（原 lock 平台 trunk 实体改为动作按钮）
+    "trunk_unlock",
 })
 
 

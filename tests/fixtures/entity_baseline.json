@@ -1,10 +1,5 @@
 [
   {
-    "platform": "lock",
-    "key": "trunk",
-    "zh": "后备箱锁"
-  },
-  {
     "platform": "switch",
     "key": "engine",
     "zh": "远程启动"
@@ -58,6 +53,11 @@
     "platform": "button",
     "key": "lock_door",
     "zh": "关锁"
+  },
+  {
+    "platform": "button",
+    "key": "trunk_unlock",
+    "zh": "后备箱解锁"
   },
   {
     "platform": "sensor",

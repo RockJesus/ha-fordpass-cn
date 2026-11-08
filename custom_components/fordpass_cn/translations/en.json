@@ -85,11 +85,6 @@
     }
   },
   "entity": {
-    "lock": {
-      "trunk": {
-        "name": "Trunk Lock"
-      }
-    },
     "switch": {
       "engine": {
         "name": "Remote Start"
@@ -185,6 +180,9 @@
       },
       "unlock_door": {
         "name": "Unlock Doors"
+      },
+      "trunk_unlock": {
+        "name": "Unlock Trunk"
       }
     },
     "sensor": {
