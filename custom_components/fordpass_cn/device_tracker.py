@@ -64,7 +64,7 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
         self._attr_unique_id = f"{coordinator.uid_key}-tracker"
         # v6.0.4: 与定位地址传感器区分（两者此前同名「车辆定位」）——
         # 本实体是 GPS 轨迹（state=home/not_home/zone），故命名「车辆位置」。
-        self._attr_name = "车辆位置"
+        self._attr_name = "位置"
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = "mdi:map-marker"
