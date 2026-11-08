@@ -330,8 +330,6 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         #                enum_map={"AUTHORIZED": "已授权", "UNAUTHORIZED": "未授权", "EXPIRED": "已过期"}),
         FordPassSensor(coordinator, "crcc_flag", "远程控车功能", None, None, "mdi:remote", ["crccFlag"],
                        enum_map={"ON": "已开启", "OFF": "已关闭"}, category=EntityCategory.DIAGNOSTIC),
-        FordPassSensor(coordinator, "life_cycle_mode", "电池生命周期模式", None, None, "mdi:car-battery", ["lifeCycMode"],
-                       enum_map={"Normal": "标准模式", "Life_Cycle_Mode": "长寿命模式", "Deep_Discharge": "深度放电"}),
         FordPassSensor(coordinator, "out_and_about", "出行状态", None, None, "mdi:map-marker-path", ["outandAbout"],
                        # v3.3.10: 映射修正——PwPckOffTqNotAvailable（停车扭矩不可用=
                        # 已驻车熄火）=已泊车；PwPckOffTqAvailable/「不可用」=外出中。
@@ -341,6 +339,15 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                            else v
                        )),
     ]
+
+    # v6.4.8: 电池生命周期模式属动力电池能力（电/插混/混动）——纯油/柴油车
+    # 从车况读到默认值 Normal 也会创建，属车型能力不符，改为按 fuelType 门控。
+    if capability.battery_lifecycle_supported(_fuel):
+        sensors.append(FordPassSensor(
+            coordinator, "life_cycle_mode", "电池生命周期模式", None, None,
+            "mdi:car-battery", ["lifeCycMode"],
+            enum_map={"Normal": "标准模式", "Life_Cycle_Mode": "长寿命模式", "Deep_Discharge": "深度放电"},
+        ))
 
     # ===== D 组：各车型可选字段（纯电/混动/柴油/拖车/车内环境等，v2.9.0） =====
     # 全部 skip_if_missing=True：值无效（null/Not_Supported/...）的实体不创建，
@@ -402,7 +409,10 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     sensors = [s for s in sensors if getattr(s, "data_usable", True)]
     # v3.1.3: OTA 设置状态（GET /api/alert/v1/ota/setting-info，实测 200；
     # 端点失败或车辆无 OTA 能力时不创建）
-    if (coordinator.data or {}).get("ota_setting"):
+    # v6.4.8: 仅远程 OTA 已开通（remoteOTAFlag=1）才创建——此前只判端点有
+    # 响应，未开通车型也会建出「未开通远程OTA」实体；与 OTA 激活排程按钮
+    # 同一能力位，避免"按钮消失了还留一条未开通提示"。
+    if capability.ota_remote_enabled((coordinator.data or {}).get("ota_setting")):
         sensors.append(FordPassOtaSettingSensor(coordinator))
     # v3.1.4: 服务信息（保养计划/召回/SIM/WiFi）——拉取成功才创建
     for key, cls, _label in (

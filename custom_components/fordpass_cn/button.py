@@ -83,6 +83,15 @@ _BUTTONS: list[tuple[str, str, str, str, list[list[str]] | None, str | None, lis
 
 PARALLEL_UPDATES = 1
 
+def _ota_remote_enabled(coordinator) -> bool:
+    """远程 OTA 是否已开通（remoteOTAFlag=1）。
+
+    v6.4.8: OTA 激活排程属"远程 OTA 已开通"车型的能力——仅凭
+    firmwareUpgInProgress 字段存在即创建，会为未开通远程 OTA 的车型
+    建出按下必失败的按钮（实车 remoteOTAFlag=0 却已建）。
+    """
+    return capability.ota_remote_enabled((coordinator.data or {}).get("ota_setting"))
+
 def _capability_ok(status: dict, paths: list[list[str]] | None, check: str | None) -> bool:
     if paths is None or check is None:
         return True
@@ -108,6 +117,9 @@ async def async_setup_entry(
             FordPassButton(coordinator, key, label, icon, command, cmd_spec)
             for key, label, icon, command, paths, check, cmd_spec in _BUTTONS
             if _capability_ok(status, paths, check)
+            # v6.4.8: OTA 激活排程还需"远程 OTA 已开通"（remoteOTAFlag=1）；
+            # 未开通车型不建（此前只看 firmwareUpgInProgress 字段存在）
+            and not (key == "ota_schedule" and not _ota_remote_enabled(coordinator))
             # v5.8.3: 按车型创建——该命令曾被云端确定性拒绝（实测失败）的
             # 车型不再创建（cmd_rejected 读取持久化命令失败记录）；无记录
             # 车型按能力字段创建，不臆断支持与否（entity-vehicle-creation.md）

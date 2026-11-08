@@ -80,6 +80,32 @@ def is_on(status: dict | None, paths: list[list[str]]) -> bool:
     return False
 
 
+def ota_remote_enabled(ota_setting: dict | None) -> bool:
+    """远程 OTA 是否已开通（remoteOTAFlag=1）。
+
+    v6.4.8: OTA 相关实体（「OTA 激活排程」按钮、「OTA 设置状态」传感器）必须
+    按"远程 OTA 已开通"创建——此前只看 firmwareUpgInProgress 字段存在 / 端点
+    有响应，未开通远程 OTA 的车型会建出按下必失败的按钮和「未开通」提示实体。
+    """
+    if not isinstance(ota_setting, dict):
+        return False
+    flag = ota_setting.get("remoteOTAFlag")
+    return flag is True or str(flag) == "1"
+
+
+# 电动化燃料类型（纯电/插混/混动）——动力电池类能力据此判定
+EV_FUEL_TYPES = ("E", "BEV", "P", "PHEV", "H", "HEV", "MHEV")
+
+
+def battery_lifecycle_supported(fuel: str | None) -> bool:
+    """电池生命周期模式是否为该车型能力（仅电动化车型）。
+
+    v6.4.8: lifeCycMode 属动力电池模式（标准/长寿命/深度放电），纯油与柴油
+    车从车况读到默认值 Normal 也会被创建，属车型能力不符。
+    """
+    return str(fuel or "").strip().upper() in EV_FUEL_TYPES
+
+
 # ---------------------------------------------------------------------------
 # v3.1.20: 云端能力探测（ccfeatures availableFeatures 位图 → VDSFeatureType）
 # 全车型自动创建的关键——每辆车登录后按各自云端能力位图探测开通的服务能力，
