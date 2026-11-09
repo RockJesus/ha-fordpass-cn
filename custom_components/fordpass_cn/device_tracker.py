@@ -12,8 +12,18 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+try:  # HA 运行时一定有这个枚举；仅测试桩环境可能没桩 homeassistant.const
+    from homeassistant.const import EntityCategory
+except ImportError:  # pragma: no cover
+    from enum import Enum
+
+    class EntityCategory(str, Enum):  # type: ignore[no-redef]
+        CONFIG = "config"
+        DIAGNOSTIC = "diagnostic"
+
 from . import capability
 from .coordinator import FordPassCoordinator
+from .registry_sync import async_sync_entity_categories
 from .sensor import FordPassRestoreMixin
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +43,7 @@ async def async_setup_entry(
     # restarting HA (see async_update_options in __init__.py).
     trackers = [FordPassDeviceTracker(c) for c in coordinators]
     async_add_entities(trackers)
+    async_sync_entity_categories(hass, "device_tracker", trackers)  # v6.6.0
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state；失败轮不触发，保留旧值。v5.9.8 起属性不再
     # 含每轮变化的 last_poll，值未变的实体不会产生 state_changed。
@@ -59,6 +70,9 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
     # v5.9.6: 位置由 coordinator 刷新广播驱动（LBS 每轮拉取），关闭 HA 每 30
     # 秒的平台默认轮询。
     _attr_should_poll = False
+    # v6.6.0: 显式声明诊断分类（此前注册表里的 diagnostic 是早期声明被删后
+    # 的残留，代码无声明→注册表与代码不一致，升级也不会自愈）
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator

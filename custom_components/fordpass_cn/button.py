@@ -60,6 +60,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
+from .registry_sync import async_sync_entity_categories
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -130,7 +131,11 @@ async def async_setup_entry(
     for coordinator in coordinators:
         status = (coordinator.data or {}).get("vehiclestatus", {}) or {}
         buttons.extend(
-            FordPassButton(coordinator, key, label, icon, command, cmd_spec)
+            FordPassButton(
+                coordinator, key, label, icon, command, cmd_spec,
+                # v6.6.0: 辅助设置属设置入口，归配置分类（与鸣笛设置恢复默认一致）
+                entity_category=EntityCategory.CONFIG if key == "asu_setting" else None,
+            )
             for key, label, icon, command, paths, check, cmd_spec in _BUTTONS
             if _capability_ok(status, paths, check)
             # v6.4.8: OTA 激活排程还需"远程 OTA 已开通"（remoteOTAFlag=1）；
@@ -276,6 +281,7 @@ async def async_setup_entry(
         if isinstance(coordinator.fposb, dict) and coordinator.fposb.get("fposb_history"):
             buttons.append(FordPassFposbCancelButton(coordinator))
     async_add_entities(buttons)
+    async_sync_entity_categories(hass, "button", buttons)  # v6.6.0
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state；失败轮不触发，保留旧值。v5.9.8 起属性不再
     # 含每轮变化的 last_poll，值未变的按钮不会产生 state_changed。
@@ -574,7 +580,7 @@ class FordPassVideoStopButton(_FordPassButtonBase):
 
 class FordPassButton(_FordPassButtonBase):
     _attr_state = "待命"
-    def __init__(self, coordinator, key, label, icon, command, cmd_spec=None) -> None:
+    def __init__(self, coordinator, key, label, icon, command, cmd_spec=None, entity_category=None) -> None:
         self.coordinator = coordinator
         self._command = command
         self._cmd_spec = cmd_spec
@@ -587,6 +593,8 @@ class FordPassButton(_FordPassButtonBase):
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._attr_icon = icon
+        if entity_category is not None:
+            self._attr_entity_category = entity_category
 
     async def _command_id(self, resp: Any) -> str | None:
         """Extract commandId from the decrypted send-command response."""
@@ -750,6 +758,7 @@ class FordPassManualRefreshButton(_FordPassButtonBase):
     """
 
     _attr_icon = "mdi:refresh"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC  # v6.6.0: 维护动作，归诊断
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
@@ -835,6 +844,7 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
     """
 
     _attr_icon = "mdi:air-filter"
+    _attr_entity_category = EntityCategory.CONFIG  # v6.6.0: 重置保养基准，归配置
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator

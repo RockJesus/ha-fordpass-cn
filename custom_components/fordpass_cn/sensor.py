@@ -35,30 +35,9 @@ from .const import (
 from .coordinator import FordPassCoordinator
 
 
-def async_sync_entity_categories(hass: HomeAssistant, domain: str, entities) -> None:
-    """v5.9.3: 把代码声明的 entity_category 同步到已存在的注册表条目。
-
-    Home Assistant 只在实体首次注册时采用集成给出的类目，之后不会自动覆盖
-    已有值（避免盖掉用户在界面里手动切换），因此升级后必须显式补一次。
-    策略是「只补不覆盖」：仅当注册表里为空、且代码确实声明了类目时写入。
-    """
-    registry = er.async_get(hass)
-    updated = 0
-    for entity in entities:
-        unique_id = getattr(entity, "unique_id", None)
-        category = getattr(entity, "entity_category", None)
-        if not unique_id or not category:
-            continue
-        entity_id = registry.async_get_entity_id(domain, DOMAIN, unique_id)
-        if not entity_id:
-            continue
-        reg_entry = registry.async_get(entity_id)
-        if reg_entry is None or reg_entry.entity_category is not None:
-            continue
-        registry.async_update_entity(entity_id, entity_category=category)
-        updated += 1
-    if updated:
-        _LOGGER.info("已同步 %s 个实体的类目（entity_category）", updated)
+# v6.6.0: 分类同步函数移到 registry_sync.py（button/device_tracker 同样要用，
+# 避免跨平台导入整个 sensor 模块）。此处保留导入名，兼容 select.py 既有引用。
+from .registry_sync import async_sync_entity_categories
 
 PARALLEL_UPDATES = 1
 
@@ -185,6 +164,7 @@ async def async_setup_entry(
     for coordinator in coordinators:
         all_sensors.extend(_make_sensors(coordinator))
     async_add_entities(all_sensors)
+    async_sync_entity_categories(hass, "sensor", all_sensors)  # v6.6.0
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state；失败轮不触发，保留旧值。v5.9.8 起属性不再
     # 含每轮变化的 last_poll，值未变的实体不会产生 state_changed。
@@ -307,18 +287,18 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     if _not_ev:  # v4.9.3: 机油健康仅非纯电车型创建
         sensors.append(FordPassSensor(coordinator, "oil_health", "机油健康状态", None, None, "mdi:oil", ["oil", "oilLife"], enum_map=_health_map))
     sensors += [
-        FordPassSensor(coordinator, "battery_health", "蓄电池健康状态", None, None, "mdi:car-battery", ["battery", "batteryHealth"], enum_map=_health_map),
+        FordPassSensor(coordinator, "battery_health", "蓄电池健康状态", None, None, "mdi:car-battery", ["battery", "batteryHealth"], enum_map=_health_map, category=EntityCategory.DIAGNOSTIC),
         FordPassSensor(coordinator, "tpms_system_status", "胎压系统状态", None, None, "mdi:car-tire-alert", ["TPMS", "tirePressureSystemStatus"],
-                       enum_map={"Systm_Fault_Composite_Stat": "系统故障", "Systm_Normal_Stat": "正常", "Systm_Warning_Stat": "系统警告", "Normal": "正常"}),
+                       enum_map={"Systm_Fault_Composite_Stat": "系统故障", "Systm_Normal_Stat": "正常", "Systm_Warning_Stat": "系统警告", "Normal": "正常"}, category=EntityCategory.DIAGNOSTIC),
         FordPassSensor(coordinator, "lf_tire_status", "左前胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "leftFrontTireStatus"], enum_map=_tire_status_map),
         FordPassSensor(coordinator, "rf_tire_status", "右前胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "rightFrontTireStatus"], enum_map=_tire_status_map),
         FordPassSensor(coordinator, "lr_tire_status", "左后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "outerLeftRearTireStatus"], enum_map=_tire_status_map),
         FordPassSensor(coordinator, "rr_tire_status", "右后胎状态", None, None, "mdi:car-tire-alert", ["TPMS", "outerRightRearTireStatus"], enum_map=_tire_status_map),
         # 推荐胎压：原始值单位 psi，换算为 kPa（1 psi ≈ 6.89476 kPa）与实车胎压单位一致
         FordPassSensor(coordinator, "recommended_front_pressure", "推荐前轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge",
-                       ["TPMS", "recommendedFrontTirePressure"], round_value=True, multiplier=6.89476),
+                       ["TPMS", "recommendedFrontTirePressure"], round_value=True, multiplier=6.89476, category=EntityCategory.DIAGNOSTIC),
         FordPassSensor(coordinator, "recommended_rear_pressure", "推荐后轮胎压", UnitOfPressure.KPA, SensorDeviceClass.PRESSURE, "mdi:gauge",
-                       ["TPMS", "recommendedRearTirePressure"], round_value=True, multiplier=6.89476),
+                       ["TPMS", "recommendedRearTirePressure"], round_value=True, multiplier=6.89476, category=EntityCategory.DIAGNOSTIC),
     ]
 
     # ===== C 组：其他状态 =====
@@ -344,7 +324,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
                            "已泊车" if isinstance(v, str) and "NotAvailable" in v
                            else "外出中" if isinstance(v, str) and ("Available" in v or v == "不可用")
                            else v
-                       )),
+                       ), category=EntityCategory.DIAGNOSTIC),
     ]
 
     # v6.4.8: 电池生命周期模式属动力电池能力（电/插混/混动）——纯油/柴油车
@@ -389,7 +369,7 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
         # 车门 / 车内环境 / 状态标志
         FordPassSensor(coordinator, "inner_tailgate", "内尾门", None, None, "mdi:car-back", ["doorStatus", "innerTailgateDoor"], enum_map=_door_map, skip_if_missing=True),
         FordPassSensor(coordinator, "cabin_temp", "车内温度", "°C", SensorDeviceClass.TEMPERATURE, "mdi:thermometer", ["CabnAmbTeActl"], round_value=True, skip_if_missing=True),
-        FordPassSensor(coordinator, "deep_sleep", "深度睡眠模式", None, None, "mdi:sleep", ["deepSleepInProgress"], enum_map=_bool_map, skip_if_missing=True),
+        FordPassSensor(coordinator, "deep_sleep", "深度睡眠模式", None, None, "mdi:sleep", ["deepSleepInProgress"], enum_map=_bool_map, skip_if_missing=True, category=EntityCategory.DIAGNOSTIC),
         FordPassSensor(coordinator, "firmware_upgrade", "固件升级中", None, None, "mdi:update", ["firmwareUpgInProgress"], enum_map=_bool_map, skip_if_missing=True, category=EntityCategory.DIAGNOSTIC),
         # v3.0.1: 天窗（部分车型上报 sunroofPosition；无该字段的车型不创建）
         FordPassSensor(coordinator, "sunroof", "天窗", None, None, "mdi:car-select",
@@ -2173,6 +2153,8 @@ class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
 class FordPassRecallSensor(_ServiceInfoSensor):
     """召回信息（v3.1.4）：GET /api/cnxapi-vds/v1/vehicles/recall。"""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC  # v6.6.0: 纯信息，归诊断
+
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "recall", "召回信息", "mdi:alert-box-outline")
 
@@ -2289,6 +2271,8 @@ class FordPassMessageSensor(_ServiceInfoSensor):
     allRedDotStatus = 0 无未读 / 1 有未读；categories[].redDotStatus 为各
     分类红点。无 summary 数据的车型不创建（0 unavailable）。
     """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC  # v6.6.0: 消息提示，归诊断
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "messages", "未读消息", "mdi:email-alert")
@@ -2414,6 +2398,7 @@ class FordPassAnnounceStatusSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:bullhorn-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC  # v6.6.0: 命令状态，归诊断
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
