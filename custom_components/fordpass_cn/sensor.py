@@ -30,7 +30,6 @@ from .const import (
     CMD_LOCK,
     CMD_UNLOCK,
     COMMAND_STATE_LABELS,
-    DOMAIN,
 )
 from .coordinator import FordPassCoordinator
 
