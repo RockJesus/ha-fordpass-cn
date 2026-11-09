@@ -151,9 +151,6 @@
       "auth_reject": {
         "name": "Reject Authorization"
       },
-      "srs_save": {
-        "name": "Save Emergency Contacts"
-      },
       "wallbox_unshare": {
         "name": "Stop Wallbox Sharing"
       },

@@ -144,9 +144,6 @@
       "auth_reject": {
         "name": "拒绝授权申请"
       },
-      "srs_save": {
-        "name": "保存紧急联系人"
-      },
       "wallbox_unshare": {
         "name": "取消家充桩分享"
       },

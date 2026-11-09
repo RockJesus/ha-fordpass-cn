@@ -252,8 +252,6 @@ async def async_setup_entry(
         if isinstance(_ep, dict) and _ep.get("user_auth_list"):
             buttons.append(FordPassAuthApproveButton(coordinator))
             buttons.append(FordPassAuthRejectButton(coordinator))
-        if isinstance(_ep, dict) and _ep.get("srs_profile"):
-            buttons.append(FordPassSrsSaveButton(coordinator))
         if isinstance(coordinator.smartwallbox, dict) and coordinator.smartwallbox:
             _sq = coordinator.smartwallbox.get("wallbox_sharing_query")
             if _sq:
@@ -865,6 +863,10 @@ class FordPassHonkResetButton(_FordPassButtonBase):
     """
 
     _attr_icon = "mdi:restore"
+    # v6.5.8: 归入「配置」分类——它改的是鸣笛参数设置本身，不是一次远程动作。
+    # 用字符串而非 EntityCategory 枚举：HA 侧按字符串比较（StrEnum 与 "config"
+    # 等价），保持本模块零额外运行时依赖。
+    _attr_entity_category = "config"
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
@@ -984,23 +986,6 @@ def _find_first_plan(node: Any) -> dict[str, Any] | None:
     elif isinstance(node, list):
         for it in node:
             r = _find_first_plan(it)
-            if r:
-                return r
-    return None
-
-
-def _find_profile(node: Any) -> dict[str, Any] | None:
-    """递归找 SRS 档案 dict（v5.8.2，srs_profile 保存回填用）。"""
-    if isinstance(node, dict):
-        if any(k in node for k in ("srsProfile", "srsProfileName", "emergencyContact")):
-            return node
-        for v in node.values():
-            r = _find_profile(v)
-            if r:
-                return r
-    elif isinstance(node, list):
-        for it in node:
-            r = _find_profile(it)
             if r:
                 return r
     return None
@@ -1172,48 +1157,6 @@ class FordPassAuthRejectButton(_FordPassButtonBase):
         except Exception as exc:
             _LOGGER.warning("FordPass 授权拒绝失败: %s", exc)
             raise HomeAssistantError(f"拒绝授权失败: {exc}") from exc
-
-
-class FordPassSrsSaveButton(_FordPassButtonBase):
-    """保存/更新 SRS 紧急联系人档案（v5.8.2）：POST update-srs-profile。
-
-    仅 srs_profile 探测到档案数据才创建；profile 从探测返回回填
-    （srsProfile 结构键名全部来自实测返回）。
-    """
-
-    _attr_icon = "mdi:account-heart"
-
-    def __init__(self, coordinator: FordPassCoordinator) -> None:
-        self.coordinator = coordinator
-        self._attr_unique_id = f"{coordinator.uid_key}-srs_save"
-        self._attr_translation_key = "srs_save"
-        self._attr_has_entity_name = True
-        self._attr_device_info = coordinator.device_info
-
-    @property
-    def available(self) -> bool:
-        return bool(self.coordinator.data)
-
-    def _profile(self) -> dict[str, Any] | None:
-        ep = self.coordinator.extra_probes or {}
-        sp = ep.get("srs_profile")
-        data = sp.get("data") if isinstance(sp, dict) else None
-        if isinstance(data, dict):
-            data = data.get("data", data)
-        return _find_profile(data)
-
-    async def _do_press(self) -> None:
-        prof = self._profile()
-        if not prof:
-            raise HomeAssistantError("云端无紧急联系人档案——请先在福特派 App 添加")
-        try:
-            resp = await self.coordinator.api.srs_save_profile(
-                self.coordinator.vin, dict(prof), update=True
-            )
-            _LOGGER.info("FordPass 紧急联系人保存结果: %s", str(resp)[:300])
-        except Exception as exc:
-            _LOGGER.warning("FordPass 紧急联系人保存失败: %s", exc)
-            raise HomeAssistantError(f"保存紧急联系人失败: {exc}") from exc
 
 
 class FordPassWallboxUnshareButton(_FordPassButtonBase):
