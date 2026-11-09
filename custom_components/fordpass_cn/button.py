@@ -281,7 +281,11 @@ async def async_setup_entry(
         if isinstance(coordinator.fposb, dict) and coordinator.fposb.get("fposb_history"):
             buttons.append(FordPassFposbCancelButton(coordinator))
     async_add_entities(buttons)
-    async_sync_entity_categories(hass, "button", buttons)  # v6.6.0
+    async_sync_entity_categories(
+        hass, "button", buttons,
+        # v6.6.2: 手动刷新已声明回主控区，注册表里的诊断标注需显式回滚
+        clear_unique_ids={f"{coordinator.uid_key}-manual_refresh"},
+    )
     # v4.8.5: 实体订阅协调器刷新广播——每次刷新成功（即使车况未变）
     # async_write_ha_state；失败轮不触发，保留旧值。v5.9.8 起属性不再
     # 含每轮变化的 last_poll，值未变的按钮不会产生 state_changed。
