@@ -41,6 +41,7 @@ from .const import (
     CMD_TRAILER_CHECK_STOP,
     CMD_TRUNK_UNLOCK,
     CMD_UNLOCK,
+    COMMAND_STATE_LABELS,
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
@@ -342,11 +343,17 @@ class _FordPassButtonBase(ButtonEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {
+        attrs: dict[str, Any] = {
             "last_command": self._last_cmd_time,
             "last_result": self._last_cmd_result,
             "last_error": self._last_cmd_error,
         }
+        attrs.update(self._command_state_attrs())
+        return attrs
+
+    def _command_state_attrs(self) -> dict[str, Any]:
+        """v6.5.3: 该按钮对应车控命令的云端执行状态（子类按命令覆写）。"""
+        return {}
 
     def _set_cmd_result(self, ok: bool, err: str | None = None) -> None:
         """记录最近一次操作结果（时间/成功或失败/错误摘要）。"""
@@ -574,6 +581,26 @@ class FordPassButton(_FordPassButtonBase):
             if isinstance(inner, dict) and inner.get("commandId"):
                 return str(inner["commandId"])
         return None
+
+    def _command_state_attrs(self) -> dict[str, Any]:
+        """v6.5.3: 把 coordinator 记录的云端执行状态映到实体属性。
+
+        点完按钮不必盯着按钮等——过一会儿看属性：
+        ``command_state`` = 执行中 / 已完成 / 未确认 / 失败，
+        ``command_message`` 给出原因，``command_updated_at`` 是最后变化时刻。
+        """
+        st = self.coordinator.command_state(self._command)
+        if not st:
+            return {}
+        return {
+            "command_state": COMMAND_STATE_LABELS.get(
+                str(st.get("state")), st.get("state")
+            ),
+            "command_id": st.get("command_id"),
+            "command_sent_at": st.get("sent_at"),
+            "command_updated_at": st.get("updated_at"),
+            "command_message": st.get("message"),
+        }
 
     def _display_name(self) -> str:
         """v6.4.5: 错误提示里用真实名称——翻译键实体没有 _attr_name。

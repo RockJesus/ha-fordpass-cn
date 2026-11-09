@@ -157,6 +157,10 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # 值、下轮自动纠正，不存在回跳），故可安全收回。
     COMMAND_SYNC_WAIT = 18.0
     COMMAND_TOTAL_WAIT = 60.0
+    # v6.5.3「点击即返回」：run_command 发完命令立即结束服务调用，轮询与
+    # 兜底刷新全部在后台任务里跑（COMMAND_SYNC_WAIT 成为后台第一段窗口）。
+    # 同一命令在去重窗口内重复点击直接忽略——连点不再成倍放大云端请求。
+    COMMAND_DEDUP_WINDOW = 5.0
 
     def __init__(
         self,
@@ -187,6 +191,12 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = api
         # v6.5.2: 命令同步窗口结束后的后台跟随任务（同 commandId 只跑一个）
         self._command_followers: dict[str, asyncio.Task] = {}
+        # v6.5.3: 最近一次车控命令的执行状态（按钮/开关/门锁状态属性可见）
+        self._command_states: dict[str, dict[str, Any]] = {}
+        # v6.5.3: 同命令连点去重窗口的最后一次下发时刻（monotonic 秒）
+        self._last_cmd_sent: dict[str, float] = {}
+        # v6.5.3: 命令后兜底刷新单飞标志（同时只跑一轮，防请求翻倍）
+        self._cmd_refresh_active = False
         self.vin = vin  # 仅运行时云端请求用（加密字段），不进任何 registry
         self.uid_key = uid_key  # v5.7.1: 实体 unique_id / 设备 identifiers 前缀
         # v4.8.1: 品牌（福特派/林肯之道）——config flow 第一步选择，
@@ -904,26 +914,40 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         wait: bool = True,
         cmd_spec: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Send a remote command and reflect the result immediately (v2.7.7).
+        """发送远程命令并立即返回（v6.5.3「点击即返回」）。
 
-        Used by lock/switch/button so a press is not silently lost behind HA's
-        refresh throttle: we send the command, poll command-execution-status
-        until the decrypted snapshot flips to CURRENT, then push it straight
-        to the entities.  A send failure raises so the UI reports it
-        (v5.8.3: 同时记录确定性拒绝 → 该车型下次重启不再创建对应实体).
+        v2.7.7: 命令不再被 HA 的刷新节流吞掉——发送成功后轮询
+        command-execution-status，直到云端快照翻转成 CURRENT，再把整份新
+        快照推给实体。
+        v6.4.5: ``cmd_spec`` 透传（InitialVA/CancelVA 等命令网关要求带）。
+        v6.5.2: 同步最多等 COMMAND_SYNC_WAIT（18s），未翻转则兜底刷新 +
+        剩余等待转后台。
+        v6.5.3: 同步等待全部取消——``send_command`` 返回后立刻结束服务调用
+        （按钮点击 1-2 秒内返回），「轮询到翻转 → 兜底刷新 → 再轮询」整段
+        在后台任务里跑。执行结果写进 ``_command_states``，按钮/开关/门锁
+        状态的 ``command_state`` 属性可见（A+C 里 C 的落地方式，不新增实体）。
+        发送失败仍同步 raise（前端立刻 toast）；「已受理但未执行完成」只在
+        后台日志与状态属性里体现。同一命令在 COMMAND_DEDUP_WINDOW（5s）内
+        重复调用直接忽略（连点防护，请求量不放大）。
 
-        ``wait=False`` skips the polling loop and only force-refreshes.
-
-        v6.4.5: 新增 ``cmd_spec`` 透传——button.py 里部分命令（InitialVA/
-        CancelVA 等）必须带 cmdSpec 才能被网关接受，此前按钮自己发命令
-        绕开了本方法，导致门锁等动作按钮只能"立即 force_refresh"拿到命令
-        前的旧快照；改由本方法统一"发送 → 等执行完成 → 推送翻转后的新
-        快照"，与 App 的节奏一致。
+        ``wait=False`` 只做一次后台刷新，不开轮询。
         """
+        now = time.monotonic()
+        last = self._last_cmd_sent.get(command_type)
+        if last is not None and now - last < self.COMMAND_DEDUP_WINDOW:
+            self.logger.debug(
+                "FordPass %s 在 %.0fs 去重窗口内重复触发，已忽略",
+                command_type,
+                self.COMMAND_DEDUP_WINDOW,
+            )
+            return
+        self._last_cmd_sent[command_type] = now
+
         try:
             resp = await self.api.send_command(self.vin, command_type, cmd_spec)
         except Exception as exc:  # noqa: BLE001 - 记录车型不支持后如实上报
             await self.async_record_cmd_fail(command_type, exc)
+            self._note_command_state(command_type, "failed", message=str(exc))
             raise
         command_id: str | None = None
         if isinstance(resp, dict):
@@ -931,32 +955,52 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not cid and isinstance(resp.get("data"), dict):
                 cid = resp["data"].get("commandId")
             command_id = str(cid) if cid else None
+        self._note_command_state(
+            command_type,
+            "pending",
+            command_id=command_id,
+            message="命令已下发，等待云端确认执行",
+        )
         if command_id and wait:
-            done, result = await self.api.wait_command_complete(
-                self.vin, command_id, command_type,
-                timeout=self.COMMAND_SYNC_WAIT,
-            )
-            if done and isinstance(result, dict):
-                self._apply_command_snapshot(result)
-                return
-            # v6.5.2: 同步窗口内没等到翻转——先兜底刷新把当前快照拉下来
-            # （此时云端多半已翻转，状态立刻对得上），再把剩余等待交给后台
-            # 任务，服务调用立即返回，用户不必盯着转圈 1 分钟。
-            try:
-                await self.force_refresh()
-            except Exception as exc:  # noqa: BLE001 - refresh 不能吞掉命令结果
-                self.logger.warning(
-                    "FordPass refresh after %s failed: %s", command_type, exc
-                )
             self._start_command_follower(command_id, command_type)
             return
-        # Fallback: command sent but no fresh snapshot yet — force-refresh once.
+        # 无 commandId（接口结构变化）或 wait=False：命令已受理，刷新交给
+        # 后台，服务调用立即返回（此前这里 await force_refresh 会多卡几秒
+        # 到十几秒）。
+        task = self.hass.async_create_task(
+            self._refresh_after_command(command_type)
+        )
+        self._persist_tasks.add(task)
+        task.add_done_callback(self._persist_tasks.discard)
+
+    async def _refresh_after_command(self, command_type: str) -> None:
+        """后台补一次刷新（无 commandId / wait=False 路径，v6.5.3）。"""
+        await self._command_refresh_once(command_type)
+
+    async def _command_refresh_once(self, command_type: str) -> None:
+        """命令后的兜底刷新（单飞，v6.5.3）。
+
+        A+C 后点按瞬间返回，用户更容易连点不同按钮；若每条命令都各跑一次
+        整轮 ``force_refresh``（多端点串行），请求量会成倍放大触发风控。
+        这里同一时刻只允许一轮命令后刷新，后来的直接跳过——command status
+        轮询仍在继续，翻转后照样推快照。
+        """
+        if getattr(self, "_cmd_refresh_active", False):
+            self.logger.debug(
+                "FordPass %s 命令后刷新已在进行，跳过本次", command_type
+            )
+            return
+        self._cmd_refresh_active = True
         try:
             await self.force_refresh()
-        except Exception as exc:  # noqa: BLE001 - refresh must not mask the result
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 刷新失败不影响已返回的命令
             self.logger.warning(
                 "FordPass refresh after %s failed: %s", command_type, exc
             )
+        finally:
+            self._cmd_refresh_active = False
 
     def _apply_command_snapshot(self, result: dict[str, Any]) -> None:
         """推送命令执行完成后的新快照（v6.5.2 抽出，同步/后台两路复用）。
@@ -995,29 +1039,150 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         task.add_done_callback(_done)
 
     async def _follow_command(self, command_id: str, command_type: str) -> None:
-        """后台等命令执行完成，完成后推送快照（v6.5.2）。"""
+        """后台等命令执行完成并推送快照（v6.5.2 建立，v6.5.3 承担全部等待）。
+
+        时序（全部在后台，调用方早已返回）：
+          1. COMMAND_SYNC_WAIT（18s）内轮询；云端翻转 → 推快照 + 「已完成」；
+          2. 未翻转 → 兜底 ``force_refresh``（把此刻能拿到的快照先落到实体
+             上，此时云端多半已翻转）+ 状态「执行中，等待快照确认」；
+          3. 剩余 COMMAND_TOTAL_WAIT - COMMAND_SYNC_WAIT（42s）继续轮询；
+             翻转 → 推快照 +「已完成」；仍超时 → 状态「未确认」，交给下一轮
+             自动轮询（不推旧快照，避免把命令前状态当结果）。
+        单命令请求量与 v6.5.2 一致（6 + 1 次刷新 + 14 次轮询上限）。
+        """
         try:
             done, result = await self.api.wait_command_complete(
-                self.vin, command_id, command_type,
-                timeout=self.COMMAND_TOTAL_WAIT - self.COMMAND_SYNC_WAIT,
+                self.vin,
+                command_id,
+                command_type,
+                timeout=self.COMMAND_SYNC_WAIT,
             )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - 后台等待失败不影响已返回的操作
+            self._note_command_state(
+                command_type,
+                "failed",
+                command_id=command_id,
+                message=f"等待执行结果异常：{exc}",
+            )
             self.logger.debug(
                 "FordPass %s 后台等待异常: %s", command_type, exc
             )
             return
         if done and isinstance(result, dict):
             self._apply_command_snapshot(result)
+            self._note_command_state(
+                command_type,
+                "done",
+                command_id=command_id,
+                message="云端已确认执行完成，快照已推送",
+            )
             self.logger.info(
                 "FordPass %s 云端已确认执行完成，快照已推送", command_type
             )
-        else:
-            self.logger.debug(
-                "FordPass %s 后台等待超时（%.0fs 上限），交给下一轮自动刷新",
-                command_type, self.COMMAND_TOTAL_WAIT,
+            return
+
+        # 窗口内未翻转：先兜底刷新（仍不阻塞任何调用方）
+        await self._command_refresh_once(command_type)
+        self._note_command_state(
+            command_type,
+            "pending",
+            command_id=command_id,
+            message="已兜底刷新，继续等待云端快照确认",
+        )
+        try:
+            done, result = await self.api.wait_command_complete(
+                self.vin,
+                command_id,
+                command_type,
+                timeout=self.COMMAND_TOTAL_WAIT - self.COMMAND_SYNC_WAIT,
             )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._note_command_state(
+                command_type,
+                "failed",
+                command_id=command_id,
+                message=f"等待执行结果异常：{exc}",
+            )
+            self.logger.debug(
+                "FordPass %s 后台等待异常: %s", command_type, exc
+            )
+            return
+        if done and isinstance(result, dict):
+            self._apply_command_snapshot(result)
+            self._note_command_state(
+                command_type,
+                "done",
+                command_id=command_id,
+                message="云端已确认执行完成，快照已推送",
+            )
+            self.logger.info(
+                "FordPass %s 云端已确认执行完成，快照已推送", command_type
+            )
+            return
+        self._note_command_state(
+            command_type,
+            "timeout",
+            command_id=command_id,
+            message=(
+                f"命令已下发，{self.COMMAND_TOTAL_WAIT:.0f}s 内未确认执行完成，"
+                "交给下一轮自动刷新"
+            ),
+        )
+        self.logger.debug(
+            "FordPass %s 后台等待超时（%.0fs 上限），交给下一轮自动刷新",
+            command_type,
+            self.COMMAND_TOTAL_WAIT,
+        )
+
+    def _note_command_state(
+        self,
+        command_type: str,
+        state: str,
+        command_id: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        """记录最近一次命令的执行状态（v6.5.3，A+C 的「C」）。
+
+        state: pending（已下发/执行中）、done（云端已确认完成）、
+        timeout（超时未确认）、failed（发送或等待过程异常）。
+        实体通过 ``command_state`` / ``command_id`` / ``command_sent_at`` /
+        ``command_updated_at`` / ``command_message`` 属性读取；状态变化时
+        广播一次让属性立即刷新——不新增实体，实体数不变、命名零漂移。
+        """
+        now_iso = dt_util.now().isoformat(timespec="seconds")
+        prev = self._command_states.get(command_type) or {}
+        self._command_states[command_type] = {
+            "state": state,
+            "command_id": command_id or prev.get("command_id"),
+            "sent_at": prev.get("sent_at") or now_iso,
+            "updated_at": now_iso,
+            "message": message or prev.get("message"),
+        }
+        try:
+            self.async_update_listeners()
+        except Exception:  # noqa: BLE001 - 广播失败不影响命令链路
+            pass
+
+    def command_state(self, command_type: str) -> dict[str, Any]:
+        """某命令最近一次执行状态（无记录返回空 dict）。"""
+        return dict(self._command_states.get(command_type) or {})
+
+    def latest_command_state(self, *command_types: str) -> dict[str, Any]:
+        """多个命令里取最近更新的那条（一个开关对应开/关两条命令）。"""
+        best: dict[str, Any] = {}
+        for command_type in command_types:
+            st = self._command_states.get(command_type)
+            if not st:
+                continue
+            if not best or str(st.get("updated_at") or "") >= str(
+                best.get("updated_at") or ""
+            ):
+                best = st
+        return dict(best)
 
     async def async_shutdown(self) -> None:
         """卸载/重载时取消未完成的后台命令跟随（v6.5.2）。"""

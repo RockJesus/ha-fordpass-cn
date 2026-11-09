@@ -24,7 +24,14 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from . import capability
-from .const import ANNOUNCE_ENUM_CN, CHIRP_TO_ANNOUNCE, DOMAIN
+from .const import (
+    ANNOUNCE_ENUM_CN,
+    CHIRP_TO_ANNOUNCE,
+    CMD_LOCK,
+    CMD_UNLOCK,
+    COMMAND_STATE_LABELS,
+    DOMAIN,
+)
 from .coordinator import FordPassCoordinator
 
 
@@ -1076,6 +1083,19 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         # （0 未知/1 未充电/2 充电中/3 已充满，EVCC chargeState 语义）
         if self._evcc_state and self.native_value is not None:
             attrs["evcc_charge_state"] = self._evcc_state.get(self.native_value, 0)
+        # v6.5.3: 门锁状态额外给出最近一次开/关锁命令的执行状态——
+        # 点完按钮直接看这个实体即可知道「已下发 / 云端已确认 / 未确认」，
+        # 不用盯着按钮干等（状态码由 coordinator 维护，不新增实体）。
+        if self._key == "lock_status":
+            cmd = self.coordinator.latest_command_state(CMD_LOCK, CMD_UNLOCK)
+            if cmd:
+                attrs["command_state"] = COMMAND_STATE_LABELS.get(
+                    str(cmd.get("state")), cmd.get("state")
+                )
+                attrs["command_id"] = cmd.get("command_id")
+                attrs["command_sent_at"] = cmd.get("sent_at")
+                attrs["command_updated_at"] = cmd.get("updated_at")
+                attrs["command_message"] = cmd.get("message")
         # v4.9.0: 过滤空值属性（source_status: null 等噪音键）
         return {k: v for k, v in attrs.items() if v not in (None, "")}
 

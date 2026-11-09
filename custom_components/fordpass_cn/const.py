@@ -495,6 +495,15 @@ CMD_OTA_SCHEDULE = "OTAActivationSchedule"          # OTA 激活排程
 CMD_ASU_SETTING = "ASUSetting"                      # 辅助设置
 CMD_REFRESH_STATUS = "ForceRefresh"
 
+# v6.5.3: 车控命令执行状态的中文标签（按钮/开关/门锁状态实体的
+# command_state 属性取值；状态码由 coordinator._note_command_state 维护）
+COMMAND_STATE_LABELS = {
+    "pending": "执行中",
+    "done": "已完成",
+    "timeout": "未确认",
+    "failed": "失败",
+}
+
 # Config / storage keys
 CONF_PHONE = "phone"
 CONF_TOKENS = "tokens"

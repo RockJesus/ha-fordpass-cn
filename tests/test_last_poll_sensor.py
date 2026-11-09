@@ -88,7 +88,21 @@ def _install_fake_modules() -> None:
     pkg.__path__ = [str(SRC)]  # type: ignore[attr-defined]
     mk("fpcn.coordinator", FordPassCoordinator=_Dummy)
     mk("fpcn.capability")
-    mk("fpcn.const", DOMAIN="fordpass_cn", ANNOUNCE_ENUM_CN={}, CHIRP_TO_ANNOUNCE={})
+    mk(
+        "fpcn.const",
+        DOMAIN="fordpass_cn",
+        ANNOUNCE_ENUM_CN={},
+        CHIRP_TO_ANNOUNCE={},
+        # v6.5.3: sensor.py 新增门锁命令执行状态属性，桩必须同步提供
+        CMD_LOCK="DoorLock",
+        CMD_UNLOCK="DoorUnlock",
+        COMMAND_STATE_LABELS={
+            "pending": "执行中",
+            "done": "已完成",
+            "timeout": "未确认",
+            "failed": "失败",
+        },
+    )
 
     spec = importlib.util.spec_from_file_location("fpcn.sensor", SRC / "sensor.py")
     assert spec and spec.loader

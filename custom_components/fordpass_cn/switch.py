@@ -36,6 +36,7 @@ from .const import (
     CMD_LIGHT_FIND_ON,
     CMD_VA_CANCEL,
     CMD_VA_INIT,
+    COMMAND_STATE_LABELS,
     CONF_CHIRP_TYPE,
     CONF_HONK_DURATION,
     DEFAULT_CHIRP_TYPE,
@@ -150,13 +151,33 @@ class FordPassCmdResultMixin:
     _last_cmd_result: str | None = None
     _last_cmd_error: str | None = None
 
+    def _command_types(self) -> tuple[str, ...]:
+        """v6.5.3: 本开关对应的车控命令（用于读取云端执行状态）。"""
+        return ()
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {
+        attrs: dict[str, Any] = {
             "last_command": self._last_cmd_time,
             "last_result": self._last_cmd_result,
             "last_error": self._last_cmd_error,
         }
+        types_ = self._command_types()
+        if types_ and hasattr(self.coordinator, "latest_command_state"):
+            st = self.coordinator.latest_command_state(*types_)
+            if st:
+                attrs.update(
+                    {
+                        "command_state": COMMAND_STATE_LABELS.get(
+                            str(st.get("state")), st.get("state")
+                        ),
+                        "command_id": st.get("command_id"),
+                        "command_sent_at": st.get("sent_at"),
+                        "command_updated_at": st.get("updated_at"),
+                        "command_message": st.get("message"),
+                    }
+                )
+        return attrs
 
     def _set_cmd_result(self, ok: bool, err: str | None = None) -> None:
         """记录最近一次操作结果（时间/成功或失败/错误摘要）。"""
@@ -516,6 +537,10 @@ class FordPassEngineSwitch(FordPassRestoreMixin, FordPassCmdResultMixin, SwitchE
         self._confirm_task: asyncio.Task | None = None
         self.async_on_remove(self._cancel_confirm)
 
+    def _command_types(self) -> tuple[str, ...]:
+        """v6.5.3: 远程启动 = 启动 / 熄火两条命令，取最近一条的状态。"""
+        return (CMD_ENGINE_START, CMD_ENGINE_STOP)
+
     def _cancel_confirm(self) -> None:
         if self._confirm_task is not None:
             self._confirm_task.cancel()
@@ -684,6 +709,10 @@ class FordPassLightSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPas
         self._attr_has_entity_name = True
         self._attr_device_info = coordinator.device_info
         self._state: bool = False
+
+    def _command_types(self) -> tuple[str, ...]:
+        """v6.5.3: 灯光寻车 = 开 / 关两条命令，取最近一条的状态。"""
+        return (CMD_LIGHT_FIND_ON, CMD_LIGHT_FIND_OFF)
 
     @property
     def available(self) -> bool:
