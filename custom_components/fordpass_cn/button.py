@@ -21,6 +21,16 @@ from typing import Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
+
+try:  # HA 运行时一定有这个枚举；仅测试桩环境可能没桩 homeassistant.const
+    from homeassistant.const import EntityCategory
+except ImportError:  # pragma: no cover
+    from enum import Enum
+
+    class EntityCategory(str, Enum):  # type: ignore[no-redef]
+        CONFIG = "config"
+        DIAGNOSTIC = "diagnostic"
+        SYSTEM = "system"
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -864,9 +874,9 @@ class FordPassHonkResetButton(_FordPassButtonBase):
 
     _attr_icon = "mdi:restore"
     # v6.5.8: 归入「配置」分类——它改的是鸣笛参数设置本身，不是一次远程动作。
-    # 用字符串而非 EntityCategory 枚举：HA 侧按字符串比较（StrEnum 与 "config"
-    # 等价），保持本模块零额外运行时依赖。
-    _attr_entity_category = "config"
+    # 必须传 EntityCategory 枚举实例：注册表校验会拒绝裸字符串，异常被平台吞掉
+    # 后分类只会保持为空（v6.5.8 实测踩到）。
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
