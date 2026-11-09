@@ -1161,6 +1161,9 @@ class FordPassAlertSensor(SensorEntity):
         attrs: dict = {}
         alerts = data.get("active_alerts")
         if isinstance(alerts, list):
+            # v6.5.4: 云端原始条数（App「爱车自检」按条目计数，同一警告可能
+            # 出现多条；HA 主值仍按 headline 去重，属性里保留原始口径）。
+            attrs["alert_count"] = len([a for a in alerts if isinstance(a, dict)])
             # v3.0.2: 同 headline 告警去重（保序）
             seen: dict[str, dict] = {}
             for a in alerts:
@@ -1179,11 +1182,14 @@ class FordPassAlertSensor(SensorEntity):
                         ),
                     }
             attrs["alerts"] = list(seen.values())
+            attrs["unique_alert_count"] = len(seen)
             # v6.5.1: 此前这里取的是 seen 里并不存在的 eventTime 键，导致顶层
             # event_time 从未写入；改为直接取已转好格式的 event_time。
             times = [a.get("event_time") for a in seen.values() if a.get("event_time")]
             if times:
                 attrs["event_time"] = times[0]
+                # v6.5.4: 最近一次告警时间（多条时取最大值，直接对齐 App 列表顶部）
+                attrs["latest_alert_time"] = max(times)
             attrs["source"] = "vha"
         elif isinstance(alerts, str):
             attrs["source"] = "vha"
@@ -2140,7 +2146,28 @@ class FordPassMaintenancePlanSensor(_ServiceInfoSensor):
                 "mileage": it.get("mileage"),
                 "items": ops_desc,
             })
-        return {"plans": plans}
+        # v6.5.4: 独立「下次保养里程」数值——App 车辆状态页把总里程与下次
+        # 保养里程并排展示；主值里已含同一档，这里给结构化数值便于仪表盘/
+        # 自动化直接取用（不新增实体，实体数不变）。
+        odo = self._odometer()
+        next_item = None
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            try:
+                m = int(it.get("mileage"))
+            except (TypeError, ValueError):
+                continue
+            # 取当前总里程之后最近的一档（含等于）；无总里程时取首档
+            if odo is None or m >= odo:
+                next_item = m
+                break
+        extra: dict = {"plans": plans}
+        if next_item is not None:
+            extra["next_mileage"] = next_item
+            if odo is not None:
+                extra["remaining_km"] = max(next_item - odo, 0)
+        return extra
 
 
 class FordPassRecallSensor(_ServiceInfoSensor):
@@ -3619,6 +3646,31 @@ class FordPassProbeSensor(SensorEntity):
         if isinstance(data, dict):
             # v5.2.4: 敏感字段过滤（原始响应可能含手机号/用户ID）
             attrs = _safe_scalar_attrs(data)
+        # v6.5.4: 车辆信息（vehicles/info）附「我的爱车」页字段——购车日期/
+        # 经销商/经销商电话/质保说明。云端字段名不完全统一，按多候选键提取，
+        # 取不到的不写（不猜、不造假值）。
+        if self._kind == "vehicle_info" and isinstance(data, dict):
+            _vi_extra: dict[str, Any] = {}
+            _pairs = (
+                ("购车日期", ("purchaseDate", "buyDate", "deliveryDate",
+                              "purchaseTime", "saleDate")),
+                ("经销商", ("dealerName", "dealer", "saleDealerName",
+                            "dealerDealerName", "salesDealerName")),
+                ("经销商电话", ("dealerPhone", "dealerTel", "dealerPhoneNo",
+                                "serviceDealerPhone", "dealerContact")),
+                ("质保说明", ("warrantyDesc", "warrantyName", "warrantyPeriod",
+                              "warrantyInfo", "warrantyDescription")),
+            )
+            for _label, _keys in _pairs:
+                for _k in _keys:
+                    _v = _swb_find(data, _k)
+                    if _v not in (None, "", [], {}):
+                        _s = str(_v).strip()
+                        if _label == "购车日期" and len(_s) >= 10 and "-" in _s:
+                            _s = _s[:10]
+                        _vi_extra[_label] = _s
+                        break
+            attrs.update(_vi_extra)
         # v4.6.5: 车型主数据附 11 项车辆信息（中文标签 + 可翻译字段中文化，
         # 技术码保留原文供排查）。
         if self._kind == "vehicle_model_masterdata":

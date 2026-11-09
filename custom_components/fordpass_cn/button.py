@@ -30,6 +30,7 @@ from homeassistant.util import dt as dt_util
 from . import capability
 from .api import extract_remote_image_url
 from .const import (
+    CHIRP_TYPE_OPTIONS,
     CMD_ASU_SETTING,
     CMD_AUTO_REFRESH,
     CMD_CENTRAL_LIGHTING,
@@ -42,6 +43,10 @@ from .const import (
     CMD_TRUNK_UNLOCK,
     CMD_UNLOCK,
     COMMAND_STATE_LABELS,
+    CONF_CHIRP_TYPE,
+    CONF_HONK_DURATION,
+    DEFAULT_CHIRP_TYPE,
+    DEFAULT_HONK_DURATION,
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
@@ -167,6 +172,10 @@ async def async_setup_entry(
         # 发送未验证载荷（待实测确认后恢复）。整车门锁（lock.py）不受影响。
         # v3.3.4: 「保存鸣笛设置」按钮已删除——鸣笛类型/时长 select
         # 选择后即时上传云端（见 select.py 云端同步），无需手动保存。
+        # v6.5.4: 「鸣笛设置恢复默认」——对齐福特派 App 鸣笛寻车设置页
+        # 的「恢复默认」；与两个 select 同门控（crccFlag 有效才创建）。
+        if capability.usable(status, [["crccFlag"]]):
+            buttons.append(FordPassHonkResetButton(coordinator))
         # v3.1.7: 空调滤芯重置（AAR 能力车型——vehicle-status 无关，按
         # coordinator 已拉取的 air_filter 数据创建，无该数据的车型不创建）
         air_filter = (coordinator.data or {}).get("air_filter")
@@ -843,6 +852,60 @@ class FordPassAirFilterResetButton(_FordPassButtonBase):
             await self.coordinator.force_refresh()
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("FordPass 空调滤芯重置后刷新失败: %s", exc)
+
+
+class FordPassHonkResetButton(_FordPassButtonBase):
+    """鸣笛寻车设置恢复默认（v6.5.4）。
+
+    对齐福特派 App「鸣笛寻车设置」页底部的「恢复默认」：持续时长回到
+    DEFAULT_HONK_DURATION（10 秒）、类型回到 DEFAULT_CHIRP_TYPE（汽笛长鸣），
+    并即时上传福特账户云端（与两个 select 改动同一 UserPreference 通道）。
+    成功后回读 preference 广播，两个 select 自动同步为默认值——无需再
+    手点两次下拉框。
+    """
+
+    _attr_icon = "mdi:restore"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{coordinator.uid_key}-honk_reset"
+        self._attr_name = "鸣笛设置恢复默认"
+        self._attr_has_entity_name = True
+        self._attr_device_info = coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        # 保留最后已知状态——刷新失败不置不可用（与其它控制实体一致）
+        return bool(self.coordinator.data)
+
+    async def _do_press(self) -> None:
+        duration = int(DEFAULT_HONK_DURATION)
+        chirp_name = DEFAULT_CHIRP_TYPE
+        chirp_type = (
+            CHIRP_TYPE_OPTIONS.index(chirp_name) + 1
+            if chirp_name in CHIRP_TYPE_OPTIONS
+            else 3
+        )
+        _LOGGER.info("FordPass 鸣笛设置恢复默认：时长=%ss 类型=%s", duration, chirp_name)
+        # 1) 写内存设置（两个 select 的权威来源，重启后仍生效）
+        payload = getattr(self.coordinator.config_entry, "runtime_data", None) or {}
+        settings = payload.setdefault("honk_settings", {})
+        settings[CONF_HONK_DURATION] = duration
+        settings[CONF_CHIRP_TYPE] = chirp_name
+        # 2) 即时上传云端（App/HA/云端三方一致）
+        await self.coordinator.api.save_honk_settings(
+            self.coordinator.vin, duration=duration, chirp_type=chirp_type
+        )
+        _LOGGER.info("FordPass 鸣笛设置恢复默认已上传云端")
+        # 3) 回读云端并广播——select 的 _on_cloud_update 自动跟随默认值
+        try:
+            pref = await self.coordinator.api.get_chirp_preference()
+            if isinstance(pref, dict) and pref:
+                data = dict(self.coordinator.data or {})
+                data["chirp_cloud"] = pref
+                self.coordinator.async_set_updated_data(data)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("FordPass 鸣笛恢复默认后云端回读失败: %s", exc)
 
 
 class FordPassCevsDeleteAllButton(_FordPassButtonBase):

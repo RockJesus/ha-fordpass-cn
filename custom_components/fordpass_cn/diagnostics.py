@@ -73,6 +73,24 @@ async def async_get_config_entry_diagnostics(
                 if isinstance(cand, datetime):
                     success_time = cand
                     break
+            # v6.5.4: 探测端点结果摘要——"某实体为什么没创建"直接在这里
+            # 看（ok/empty/rejected:<errorCode>/api_err/error）。只输出状态
+            # 与顶层键名，不含任何值（URL/VIN 均不外泄）。
+            _ep = getattr(coord, "extra_probes", None)
+            _status = getattr(coord.api, "probe_status", None)
+            if isinstance(_status, dict) or isinstance(_ep, dict):
+                _summary: dict[str, Any] = {}
+                for key, val in (sorted(_ep.items()) if isinstance(_ep, dict) else []):
+                    row: dict[str, Any] = {"type": type(val).__name__}
+                    if isinstance(val, dict):
+                        row["keys"] = sorted(val.keys())[:12]
+                        inner = val.get("data")
+                        if isinstance(inner, dict):
+                            row["data_keys"] = sorted(inner.keys())[:12]
+                    _summary[key] = row
+                if isinstance(_status, dict):
+                    _summary["_status"] = dict(_status)
+                payload["probes"] = _summary
             payload["coordinator"] = {
                 # v5.9.7: HA 早已移除 DataUpdateCoordinator.last_update，
                 # 取它永远是 None。改用集成自己的 last_poll（成功刷新时写入），

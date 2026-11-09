@@ -2613,6 +2613,11 @@ class FordPassApi:
         GET 404/失败再试 POST 空 body，成功即缓存该端点的请求形态。
         """
 
+        # v6.5.4: 每个探测端点的结果摘要（ok / empty / rejected:<code> /
+        # error:<异常类>），诊断接口直接输出——"实体没出现"时先看这里，
+        # 不必再靠低级别日志猜是被网关拒绝、路由不存在还是参数校验失败。
+        self.probe_status: dict[str, str] = {}
+
         # v3.5.6: 值结构 (path, post_body 模板, allow_post)。
         # 日志实证（2026-10-09 v3.5.5）：多数端点 GET 404、POST body 缺字段
         # 400（错误消息给出所需 body 字段）→ POST 变体按模板补字段：
@@ -2632,7 +2637,9 @@ class FordPassApi:
             "ota_new_status": (PATH_OTA_NEW_STATUS, None, True),
             # v3.5.0: 6.16.0 补全端点（全部只读/幂等，不触发车辆动作）
             "onlinernr": (PATH_ONLINENR, None, False),
-            "3d_model": (PATH_3D_MODEL, None, True),
+            # v6.5.4: 补 POST body 变体（明文 vin + encryptedVin/xjw）——
+            # 此前只试 GET 与空 body POST，车辆级 3D 车型图端点需要车辆参数。
+            "3d_model": (PATH_3D_MODEL, {"vin": None}, True),
             "schedule_departure": (PATH_SCHEDULE_DEPARTURE, None, False),
             "pds_device": (PATH_PDS_DEVICE, None, False),
             "user_auth": (PATH_USER_AUTH_STATUS, None, True),
@@ -2644,7 +2651,8 @@ class FordPassApi:
             # v3.5.1: 车辆级端点（search-vehicle-device-list 按车辆签名）
             "device_list": (PATH_DEVICE_LIST, None, True),
             # v4.2.6: 移动流量商城 H5 地址（6.16.0 独立实测确认，GET 只读）
-            "cmcc_traffic": (PATH_CMCC_TRAFFIC, None, False),
+            # v6.5.4: 同款补 POST 变体（流量商城 H5 地址为车辆级查询）
+            "cmcc_traffic": (PATH_CMCC_TRAFFIC, {"vin": None}, True),
             # v4.3.5: 228 端点比对后未接入的只读端点补全（全部无需实测
             # ——GET + 标准签名，探测到数据才创建，与现有实体不重复）。
             # 家充桩只读扩展（smartwallbox，探测到绑定桩才创建）：
@@ -2682,12 +2690,14 @@ class FordPassApi:
             # 不重复；全部 GET + 标准签名 / 多形态自适应 POST）：
             # 质保信息（v6.1.9 前实测签名通过但服务端 100502 参数校验拒绝
             # ——探测失败不建实体、确定性拒绝落盘缓存，云端放开后自动出现）
-            "warranty": (PATH_WARRANTY, None, False),
+            # v6.5.4: 补 POST 变体（质保为车辆级查询，GET 曾被 100502 拒绝）
+            "warranty": (PATH_WARRANTY, {"vin": None}, True),
             # 车辆能力清单 v4（cvfeatures，v3.1.16 实测 GET/POST 均 404——
             # 网关未开放；同上探测自适应，未来开放自动创建）
             "capability_v4": (PATH_CVFEATURES, None, True),
             # 车辆信息 v5（vehicles/info，未实测——探测自适应）
-            "vehicle_info": (PATH_VEHICLE_INFO, None, False),
+            # v6.5.4: 补 POST 变体（购车日期/经销商字段由车辆信息返回）
+            "vehicle_info": (PATH_VEHICLE_INFO, {"vin": None}, True),
             # 充电域只读扩展（免密支付通知 / 充电过程日志 / 分享条款内容；
             # 纯油/柴油车型由下方 fuelType 过滤跳过）：
             "evss_freepass_notice": (PATH_EVSS_FREEPASS_NOTICE, None, True),
@@ -2771,10 +2781,13 @@ class FordPassApi:
                     # coordinator 落盘缓存（TTL 内不重探）；其它错误码（5xx/
                     # 网关抖动）保持不落盘，下次 reload 重探。
                     if exc.code in (404,):
+                        self.probe_status[name] = f"error(404 {method})"
                         raise FordPassProbeRejected(exc.code, str(exc)) from exc
+                    self.probe_status[name] = f"api_err({exc.code} {method})"
                     self._log.debug("FordPass probe %s %s failed: %s", name, method, exc)
                     continue
                 except Exception as exc:  # noqa: BLE001 - 探测失败只记录
+                    self.probe_status[name] = f"error({type(exc).__name__} {method})"
                     self._log.debug("FordPass probe %s %s failed: %s", name, method, exc)
                     continue
                 if isinstance(data, dict) and data:
@@ -2788,6 +2801,9 @@ class FordPassApi:
                             "FordPass probe %s %s -> (rejected: %s)",
                             name, method, msg,
                         )
+                        self.probe_status[name] = "rejected({})".format(
+                            data.get("errorCode") or data.get("status")
+                        )
                         raise FordPassProbeRejected(
                             data.get("status") or data.get("errorCode"), msg
                         )
@@ -2796,6 +2812,7 @@ class FordPassApi:
                         name, method, json.dumps(data, ensure_ascii=False)[:600],
                     )
                     return data
+            self.probe_status.setdefault(name, "empty")
             self._log.info("FordPass probe %s -> (empty)", name)
             return None
 
