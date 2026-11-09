@@ -549,6 +549,12 @@ class FordPassApi:
         # 第一次的结果，真正单飞。_retrying 保留作为递归防环标志。
         self._refresh_lock = asyncio.Lock()
         self._refresh_cache: tuple[str, float, dict[str, str]] | None = None
+        # v6.5.6: 认证类刷新失败退避——多车/多实体并发时，同一轮过期会让
+        # 每个协程各发一次刷新请求（实测 4 分钟内日志刷 8 次同一错误）。
+        # 失败一次后在 _REFRESH_FAIL_BACKOFF 秒内直接复用该结论，不再请求
+        # 云端；成功即清除。
+        self._refresh_backoff_until: float = 0.0
+        self._refresh_backoff_err: str = ""
         self.on_token_refresh = None
         # v3.7.6: cevs 域探测诊断（预约出发/充电）——每个端点探测结果
         # 存这里（ok/rejected/failed + 摘要），coordinator 暴露给诊断
@@ -1002,7 +1008,48 @@ class FordPassApi:
             # 网关抖动误触 reauth），仅 401/403/600 触发重新认证。
             raise _as_refresh_failed(exc) from exc
 
+    # v6.5.6: 认证类刷新失败后的暂停窗口（秒）。足够跨过上游的瞬时拒绝，
+    # 又短到不影响下一次正常轮询恢复。
+    _REFRESH_FAIL_BACKOFF = 60.0
+
     async def refresh_token(self, refresh_token: str) -> dict[str, str]:
+        """刷新 access token；认证类失败后进入短退避窗口（v6.5.6）。
+
+        上游在特定窗口会集中拒绝刷新（实测返回 401/600），多车/多实体并发
+        时每个协程都会各发一次请求，短时间内反复撞同一端点。失败一次后
+        _REFRESH_FAIL_BACKOFF 秒内直接抛出同一结论、不再请求云端；成功立即
+        清除退避。5xx/网络异常不进入该退避（内部已按 1/2/4s 有限重试，最终
+        失败由调用方按 ConfigEntryNotReady 处理）。
+        """
+        now = time.monotonic()
+        if now < self._refresh_backoff_until:
+            wait = self._refresh_backoff_until - now
+            raise FordPassApiError(
+                401,
+                f"token refresh backoff ({wait:.0f}s left): {self._refresh_backoff_err}",
+                refresh_failed=True,
+            )
+        try:
+            result = await self._refresh_token_locked(refresh_token)
+        except FordPassApiError as exc:
+            if getattr(exc, "refresh_failed", False):
+                self._refresh_backoff_until = (
+                    time.monotonic() + self._REFRESH_FAIL_BACKOFF
+                )
+                msg = str(exc)[:120]
+                self._refresh_backoff_err = msg
+                self._log.warning(
+                    "FordPass %s 认证失败，%.0fs 内暂停刷新请求: %s",
+                    PATH_REFRESH_TOKEN,
+                    self._REFRESH_FAIL_BACKOFF,
+                    msg,
+                )
+            raise
+        self._refresh_backoff_until = 0.0
+        self._refresh_backoff_err = ""
+        return result
+
+    async def _refresh_token_locked(self, refresh_token: str) -> dict[str, str]:
         # v5.3.1: 锁 + 5s 窗口结果缓存——并发 401 时多协程同时到达，锁保证
         # 串行，窗口缓存让后续协程直接复用第一次的刷新结果，避免重复请求
         # 云端与重复持久化（后写者覆盖）。
