@@ -22,6 +22,38 @@ import pytest
 SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
 
 
+def _ensure_aiohttp():
+    """CI 精简环境没有 aiohttp——api 模块顶层 `import aiohttp` 会收集失败。
+
+    api.py 只用到 ClientSession / ClientTimeout 两个名字（都是运行时 HTTP 会话，
+    本测试全程用假协程替换刷新调用、不会真的建会话），这里给最小替身即可，
+    避免整个测试文件在无依赖环境里被跳过或报收集错误。
+    """
+    try:
+        import aiohttp  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+    stub = types.ModuleType("aiohttp")
+
+    class _ClientTimeout:
+        def __init__(self, *a, **kw):  # noqa: D401
+            self.args = a
+            self.kwargs = kw
+
+    class _ClientSession:
+        def __init__(self, *a, **kw):
+            self.args = a
+            self.kwargs = kw
+
+    stub.ClientTimeout = _ClientTimeout
+    stub.ClientSession = _ClientSession
+    sys.modules["aiohttp"] = stub
+
+
+_ensure_aiohttp()
+
+
 def _load_api():
     """以包上下文加载真实 api 模块（const/wbsk 均为纯 Python，无 HA 依赖）。"""
     if "fpbackoff" not in sys.modules:
