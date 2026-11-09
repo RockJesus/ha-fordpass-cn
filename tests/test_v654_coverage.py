@@ -42,7 +42,7 @@ def test_vehicle_level_probes_carry_vin_post_body():
     reg = find_dict("maintenance-history")
     assert reg is not None
     specs = {}
-    for k, v in zip(reg.keys, reg.values):
+    for k, v in zip(reg.keys, reg.values, strict=False):
         if isinstance(k, ast.Constant) and isinstance(v, ast.Tuple):
             specs[k.value] = v
     for key in ("3d_model", "cmcc_traffic", "warranty", "vehicle_info"):
@@ -135,3 +135,17 @@ def test_honk_reset_button_contract():
     # 创建点与两个 select 同门控
     assert ('capability.usable(status, [["crccFlag"]]):\n'
             "            buttons.append(FordPassHonkResetButton") in src_text
+
+def test_probe_404_does_not_abort_post_variant():
+    """GET 404 必须继续尝试 POST 变体，全部 404 才落拒绝缓存。
+
+    此前 404 直接抛 FordPassProbeRejected，allow_post 的 POST 从未执行，
+    车辆级端点（3D 车模/流量商城/质保/车辆信息）永远拿不到数据。
+    """
+    src = (SRC / "api.py").read_text(encoding="utf-8")
+    assert "not_found: str | None = None" in src
+    seg = src.split("not_found = method", 1)[1][:200]
+    assert "continue" in seg
+    assert "raise FordPassProbeRejected" not in seg
+    tail = src.split("if not_found is not None:", 1)[1][:300]
+    assert "raise FordPassProbeRejected(" in tail

@@ -2757,6 +2757,12 @@ class FordPassApi:
             variants = [("GET", None)]
             if allow_post:
                 variants.append(("POST", post_body or {}))
+            # v6.5.5: GET 返回 404 不代表"车型无此能力"——POST-only 路由在
+            # 网关是常态（v3.5.5 实证多数端点 GET 404、POST 可用）。此前
+            # 404 直接抛拒绝，导致 allow_post 的 POST 变体从未执行，车辆级
+            # 端点（3D 车模/流量商城/质保/车辆信息）永远拿不到数据。
+            # 现在先记 404 继续下一变体，全部变体都 404 才落拒绝缓存。
+            not_found: str | None = None
             for method, body in variants:
                 try:
                     if signed:
@@ -2782,7 +2788,8 @@ class FordPassApi:
                     # 网关抖动）保持不落盘，下次 reload 重探。
                     if exc.code in (404,):
                         self.probe_status[name] = f"error(404 {method})"
-                        raise FordPassProbeRejected(exc.code, str(exc)) from exc
+                        not_found = method
+                        continue
                     self.probe_status[name] = f"api_err({exc.code} {method})"
                     self._log.debug("FordPass probe %s %s failed: %s", name, method, exc)
                     continue
@@ -2812,6 +2819,11 @@ class FordPassApi:
                         name, method, json.dumps(data, ensure_ascii=False)[:600],
                     )
                     return data
+            if not_found is not None:
+                # 所有变体均 404：确定性能力缺失 → 落盘缓存（TTL 内不重探）
+                raise FordPassProbeRejected(
+                    404, f"{name}: 404 ({not_found})"
+                )
             self.probe_status.setdefault(name, "empty")
             self._log.info("FordPass probe %s -> (empty)", name)
             return None
