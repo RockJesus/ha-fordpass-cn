@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import capability
 from .coordinator import FordPassCoordinator
 from .sensor import FordPassRestoreMixin
 
@@ -124,5 +125,7 @@ class FordPassDeviceTracker(FordPassRestoreMixin, TrackerEntity):
         # 权威来源见「云端最后刷新」诊断实体；upload_time 为云端数据时间戳。
         return {
             "address": loc.get("address"),
-            "upload_time": loc.get("uploadTime"),
+            # v6.5.1: 与 sensor 定位属性同口径（北京时间补 +08:00）
+            "upload_time": capability.local_str_to_iso(loc.get("uploadTime")
+                                                       ) or loc.get("uploadTime"),
         }

@@ -833,7 +833,9 @@ class FordPassLocationSensor(SensorEntity):
                 # v4.9.1: 数值化 lat/lon（此前是字符串，自动化比较不便）
                 "latitude": _to_float(loc.get("lat")),
                 "longitude": _to_float(loc.get("lon")),
-                "upload_time": loc.get("uploadTime"),
+                # v6.5.1: 云端明文为北京时间，统一补 +08:00（值不变）
+                "upload_time": capability.local_str_to_iso(loc.get("uploadTime")
+                                                          ) or loc.get("uploadTime"),
                 "address": loc.get("address"),
             }
         return attrs
@@ -1150,16 +1152,18 @@ class FordPassAlertSensor(SensorEntity):
                         "headline": a.get("headline"),
                         "severity": a.get("severity"),
                         "body": a.get("body"),
-                        "event_time": a.get("eventTime"),
+                        # v6.5.1: 告警列表每项的时间同样统一为带偏移 ISO
+                        "event_time": (
+                            capability.local_str_to_iso(a.get("eventTime"))
+                            or a.get("eventTime")
+                        ),
                     }
             attrs["alerts"] = list(seen.values())
-            times = [a.get("eventTime") for a in seen.values() if a.get("eventTime")]
+            # v6.5.1: 此前这里取的是 seen 里并不存在的 eventTime 键，导致顶层
+            # event_time 从未写入；改为直接取已转好格式的 event_time。
+            times = [a.get("event_time") for a in seen.values() if a.get("event_time")]
             if times:
-                # v6.5.0: 云端 eventTime 是北京本地明文（2026/11/08 15:11:13），
-                # 统一转成带 +08:00 的 ISO；解析失败保留原值不丢信息。
-                attrs["event_time"] = (
-                    capability.local_str_to_iso(times[0]) or times[0]
-                )
+                attrs["event_time"] = times[0]
             attrs["source"] = "vha"
         elif isinstance(alerts, str):
             attrs["source"] = "vha"

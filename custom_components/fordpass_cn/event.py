@@ -32,6 +32,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
+from . import capability
 from .coordinator import FordPassCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -215,7 +216,11 @@ class FordPassAlertEvent(_FordPassEventBase):
                     "headline": self._title(first),
                     "severity": first.get("severity"),
                     "body": first.get("body"),
-                    "event_time": first.get("eventTime"),
+                    # v6.5.1: 云端明文本地时间统一为带偏移 ISO
+                    "event_time": (
+                        capability.local_str_to_iso(first.get("eventTime"))
+                        or first.get("eventTime")
+                    ),
                     "new_count": len(new_titles),
                     "total_count": len(titles),
                     "titles": sorted(new_titles),

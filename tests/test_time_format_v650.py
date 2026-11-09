@@ -99,3 +99,24 @@ def test_clock_skew_limit_declared():
     assert "def _note_clock(" in src
     assert "def _note_clock_reject(" in src
     assert '"timestamp is out of range"' in src
+
+
+def test_alert_items_and_upload_time_use_iso():
+    """v6.5.1: 告警列表每项、定位 upload_time、告警事件属性都走同一转换函数。
+
+    实机部署后仍有 5 条旧格式漏网（告警 alert 列表项 / 定位 uploadTime /
+    事件实体属性），原因是这些位置直接透传云端字符串，没经过统一函数。
+    这里按源码特征断言三处都已接入，避免同源漏改再次出现。
+    """
+    sensor_src = (SRC / "sensor.py").read_text(encoding="utf-8")
+    event_src = (SRC / "event.py").read_text(encoding="utf-8")
+    tracker_src = (SRC / "device_tracker.py").read_text(encoding="utf-8")
+    for src in (sensor_src, event_src, tracker_src):
+        assert "capability.local_str_to_iso(" in src
+    flat_sensor = "".join(sensor_src.split())
+    flat_tracker = "".join(tracker_src.split())
+    flat_event = "".join(event_src.split())
+    assert 'capability.local_str_to_iso(a.get("eventTime"))' in flat_sensor
+    assert '"upload_time":capability.local_str_to_iso(loc.get("uploadTime"))' in flat_sensor
+    assert '"upload_time":capability.local_str_to_iso(loc.get("uploadTime"))' in flat_tracker
+    assert 'capability.local_str_to_iso(first.get("eventTime"))' in flat_event
