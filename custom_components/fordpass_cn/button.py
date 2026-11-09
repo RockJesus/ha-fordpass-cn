@@ -758,7 +758,7 @@ class FordPassManualRefreshButton(_FordPassButtonBase):
     """
 
     _attr_icon = "mdi:refresh"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC  # v6.6.0: 维护动作，归诊断
+    # v6.6.1: 手动刷新是日常控车动作，不设分类（归主控区），不进诊断分区
 
     def __init__(self, coordinator: FordPassCoordinator) -> None:
         self.coordinator = coordinator
