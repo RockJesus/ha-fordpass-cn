@@ -149,6 +149,15 @@ def _status_summary(data: dict[str, Any]) -> str:
 class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Fetch vehicle list + status on a schedule."""
 
+    # v6.5.2: 命令反馈节奏对齐 App。按钮/开关的服务调用只同步等这么久——
+    # 车端物理动作约 10s 完成、云端快照多在 15-20s 内翻转；超出即先兜底
+    # 刷新让状态尽早可见，剩余等待交给后台任务，不再把用户点按卡住 60s。
+    # v6.3.6 把等待拉回 60s 是为了压住 lock 实体的乐观回跳，而 lock 平台
+    # 已在 v6.4.3 整体退役（门锁只剩「门锁状态」快照传感器，读旧快照即旧
+    # 值、下轮自动纠正，不存在回跳），故可安全收回。
+    COMMAND_SYNC_WAIT = 18.0
+    COMMAND_TOTAL_WAIT = 60.0
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -176,6 +185,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=config_entry,
         )
         self.api = api
+        # v6.5.2: 命令同步窗口结束后的后台跟随任务（同 commandId 只跑一个）
+        self._command_followers: dict[str, asyncio.Task] = {}
         self.vin = vin  # 仅运行时云端请求用（加密字段），不进任何 registry
         self.uid_key = uid_key  # v5.7.1: 实体 unique_id / 设备 identifiers 前缀
         # v4.8.1: 品牌（福特派/林肯之道）——config flow 第一步选择，
@@ -922,19 +933,23 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             command_id = str(cid) if cid else None
         if command_id and wait:
             done, result = await self.api.wait_command_complete(
-                self.vin, command_id, command_type
+                self.vin, command_id, command_type,
+                timeout=self.COMMAND_SYNC_WAIT,
             )
             if done and isinstance(result, dict):
-                vs = result.get("vehiclestatus", result)
-                # v5.3.4: 合并推送而非整体替换——async_set_updated_data 会
-                # 覆盖整个 data，若只写 status/vehiclestatus 两键，location/
-                # active_alerts/ota_setting/air_filter/ccfeatures/prognostic/
-                # messages/保养/SIM/WiFi/chirp_cloud 等键全部丢失，服务信息
-                # 类实体立即变空值（None），最长 30 分钟轮询才恢复。
-                self.async_set_updated_data(
-                    {**(self.data or {}), "status": vs, "vehiclestatus": vs}
-                )
+                self._apply_command_snapshot(result)
                 return
+            # v6.5.2: 同步窗口内没等到翻转——先兜底刷新把当前快照拉下来
+            # （此时云端多半已翻转，状态立刻对得上），再把剩余等待交给后台
+            # 任务，服务调用立即返回，用户不必盯着转圈 1 分钟。
+            try:
+                await self.force_refresh()
+            except Exception as exc:  # noqa: BLE001 - refresh 不能吞掉命令结果
+                self.logger.warning(
+                    "FordPass refresh after %s failed: %s", command_type, exc
+                )
+            self._start_command_follower(command_id, command_type)
+            return
         # Fallback: command sent but no fresh snapshot yet — force-refresh once.
         try:
             await self.force_refresh()
@@ -942,6 +957,74 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.logger.warning(
                 "FordPass refresh after %s failed: %s", command_type, exc
             )
+
+    def _apply_command_snapshot(self, result: dict[str, Any]) -> None:
+        """推送命令执行完成后的新快照（v6.5.2 抽出，同步/后台两路复用）。
+
+        v5.3.4: 合并推送而非整体替换——async_set_updated_data 会覆盖整个
+        data，若只写 status/vehiclestatus 两键，location/active_alerts/
+        ota_setting/air_filter/ccfeatures/prognostic/messages/保养/SIM/WiFi/
+        chirp_cloud 等键全部丢失，服务信息类实体立即变空值（None），最长
+        30 分钟轮询才恢复。
+        """
+        vs = result.get("vehiclestatus", result)
+        self.async_set_updated_data(
+            {**(self.data or {}), "status": vs, "vehiclestatus": vs}
+        )
+
+    def _start_command_follower(self, command_id: str, command_type: str) -> None:
+        """把「等命令执行完成」的剩余部分转成后台任务（v6.5.2）。
+
+        服务调用已经在 COMMAND_SYNC_WAIT 内返回；这里只负责跑完命令执行期
+        的轮询（总预算 COMMAND_TOTAL_WAIT，与 v6.3.6 前一致，单命令请求量
+        不变），翻转后推送新快照。同一 commandId 不重复开任务。
+        """
+        key = f"{command_type}:{command_id}"
+        existing = self._command_followers.get(key)
+        if existing is not None and not existing.done():
+            return
+
+        task = self.hass.async_create_task(
+            self._follow_command(command_id, command_type)
+        )
+        self._command_followers[key] = task
+
+        def _done(_task: asyncio.Task, _key: str = key) -> None:
+            self._command_followers.pop(_key, None)
+
+        task.add_done_callback(_done)
+
+    async def _follow_command(self, command_id: str, command_type: str) -> None:
+        """后台等命令执行完成，完成后推送快照（v6.5.2）。"""
+        try:
+            done, result = await self.api.wait_command_complete(
+                self.vin, command_id, command_type,
+                timeout=self.COMMAND_TOTAL_WAIT - self.COMMAND_SYNC_WAIT,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 后台等待失败不影响已返回的操作
+            self.logger.debug(
+                "FordPass %s 后台等待异常: %s", command_type, exc
+            )
+            return
+        if done and isinstance(result, dict):
+            self._apply_command_snapshot(result)
+            self.logger.info(
+                "FordPass %s 云端已确认执行完成，快照已推送", command_type
+            )
+        else:
+            self.logger.debug(
+                "FordPass %s 后台等待超时（%.0fs 上限），交给下一轮自动刷新",
+                command_type, self.COMMAND_TOTAL_WAIT,
+            )
+
+    async def async_shutdown(self) -> None:
+        """卸载/重载时取消未完成的后台命令跟随（v6.5.2）。"""
+        for task in list(self._command_followers.values()):
+            task.cancel()
+        self._command_followers.clear()
+        await super().async_shutdown()
 
     def _mark_sync_failure(self, exc: Exception) -> None:
         """v5.4.7: 云端同步健康打点——连续失败计数 + 最后失败时间/摘要。
