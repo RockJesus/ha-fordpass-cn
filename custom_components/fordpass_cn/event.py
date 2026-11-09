@@ -86,6 +86,31 @@ class _FordPassEventBase(EventEntity, RestoreEntity):
     def available(self) -> bool:
         return bool(self.coordinator.data)
 
+    @property
+    def state_attributes(self) -> dict[str, Any]:
+        """v6.5.7: 恢复的历史事件属性在展示层补时区。
+
+        升级不会改写已恢复的事件属性（要等下一次真实事件才覆盖），旧格式
+        会一直停在前端与自动化里。这里对只读展示值做归一化，不动内部记录、
+        不重放事件——事件时刻仍是事件真实发生的时间。
+        """
+        attrs = dict(super().state_attributes)
+        if "event_time" in attrs:
+            attrs["event_time"] = capability.event_time_normalize(attrs["event_time"])
+        if "event_time_utc" in attrs:
+            attrs["event_time_utc"] = capability.event_time_normalize(
+                attrs["event_time_utc"], utc=True
+            )
+        alerts = attrs.get("alerts")
+        if isinstance(alerts, list):
+            attrs["alerts"] = [
+                {**a, "event_time": capability.event_time_normalize(a["event_time"])}
+                if isinstance(a, dict) and a.get("event_time")
+                else a
+                for a in alerts
+            ]
+        return attrs
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         if self._unsub is None:

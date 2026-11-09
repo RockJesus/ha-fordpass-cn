@@ -9,6 +9,7 @@ Not_Supported / 空 或不符合条件时，对应的传感器/按钮/开关实�
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 # 福特中国云端"北京时间"口径（固定 UTC+8，中国无夏令时）
@@ -131,6 +132,49 @@ def local_str_to_iso(value: Any) -> str | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=CN_TZ)
     return dt.isoformat(timespec="seconds")
+
+
+_ISO_WITH_TZ = re.compile(
+    r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2}|Z)$"
+)
+
+
+def event_time_normalize(value: Any, *, utc: bool = False) -> Any:
+    """展示层归一化事件时间属性（v6.5.7）。
+
+    事件实体用 ``RestoreEntity`` 恢复最后一次事件，恢复的属性是历史快照——
+    v6.5.0 之前的 ``event_time`` / ``event_time_utc`` 是无时区的
+    ``YYYY-MM-DD HH:MM:SS``，前端和自动化无法判断口径，且不会因为升级而
+    自动改写（要等下一次真实事件才覆盖）。这里只改展示值，不重放事件
+    （重放会把事件时刻改成重启时刻，等于伪造事件时间）：
+
+    - 已带偏移（``+08:00`` / ``Z``）→ 原样返回；
+    - 无偏移、``utc=False`` → 按北京时间补 ``+08:00``（复用 local_str_to_iso）；
+    - 无偏移、``utc=True`` → 按 UTC 补 ``+00:00``（旧 ``event_time_utc`` 是 UTC 口径，
+      按北京时间解释会偏 8 小时）；
+    - 解析不了的文本 → 原样返回，不吞值。
+    """
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    if not s:
+        return value
+    if _ISO_WITH_TZ.match(s):
+        return value
+    if utc:
+        try:
+            return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=timezone.utc
+            ).isoformat(timespec="seconds")
+        except ValueError:
+            try:
+                return datetime.fromisoformat(s).replace(
+                    tzinfo=timezone.utc
+                ).isoformat(timespec="seconds")
+            except ValueError:
+                return value
+    fixed = local_str_to_iso(s)
+    return value if fixed is None else fixed
 
 
 def ota_remote_enabled(ota_setting: dict | None) -> bool:
