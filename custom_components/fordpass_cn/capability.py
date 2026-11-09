@@ -8,8 +8,11 @@ Not_Supported / 空 或不符合条件时，对应的传感器/按钮/开关实�
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+# 福特中国云端"北京时间"口径（固定 UTC+8，中国无夏令时）
+CN_TZ = timezone(timedelta(hours=8))
 
 # 无实际数据的占位值（与 sensor.py 保持一致）
 _INVALID_VALUES = {"", "null", "none", "n/a", "not_supported", "notsupported",
@@ -91,6 +94,43 @@ def iso_or_none(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return None
+
+
+def local_str_to_iso(value: Any) -> str | None:
+    """云端"北京时间"字符串 → 带 +08:00 的 ISO 8601 串（v6.5.0）。
+
+    vha 告警 / 预测性诊断 / 空调滤芯等端点的 ``eventTime``、
+    ``lastReplaceTime`` 是北京时间明文（实测 ``2026/11/08 15:11:13``），
+    既不是 UTC 也不是 ISO；原样透传会与其它字段的 ISO / 横杠格式混在
+    一起，自动化里没法直接当时间解析。这里按固定 +08:00 解释并统一输出
+    ISO 8601（``2026-11-08T15:11:13+08:00``），与 vehiclestatus 家族
+    本地化后的属性保持同一口径。
+
+    无法解析、空值、早于 2000 年（云端占位 ``01-01-0001``）→ None。
+    """
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    dt: datetime | None = None
+    for fmt in ("%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
+                "%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M", "%Y/%m/%d", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            break
+        except ValueError:
+            continue
+    if dt is None:
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if dt.year < 2000:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=CN_TZ)
+    return dt.isoformat(timespec="seconds")
 
 
 def ota_remote_enabled(ota_setting: dict | None) -> bool:

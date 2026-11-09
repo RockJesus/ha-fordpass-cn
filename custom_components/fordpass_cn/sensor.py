@@ -1155,7 +1155,11 @@ class FordPassAlertSensor(SensorEntity):
             attrs["alerts"] = list(seen.values())
             times = [a.get("eventTime") for a in seen.values() if a.get("eventTime")]
             if times:
-                attrs["event_time"] = times[0]
+                # v6.5.0: 云端 eventTime 是北京本地明文（2026/11/08 15:11:13），
+                # 统一转成带 +08:00 的 ISO；解析失败保留原值不丢信息。
+                attrs["event_time"] = (
+                    capability.local_str_to_iso(times[0]) or times[0]
+                )
             attrs["source"] = "vha"
         elif isinstance(alerts, str):
             attrs["source"] = "vha"
@@ -1351,7 +1355,10 @@ def _ts_to_local_any(v):
     dt = _ts_to_dt(v)
     if dt is None:
         return None
-    return dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M:%S")
+    # v6.5.0: 统一输出带偏移的 ISO 8601（如 2026-11-08T22:02:50+08:00）——
+    # 此前的 "2026-11-08 22:02:50" 没有时区标识，自动化里无法判断是本地
+    # 还是 UTC，跨时区/跨设备对照时会误读。
+    return dt_util.as_local(dt).isoformat(timespec="seconds")
 
 
 def _ts_to_local(v):
@@ -1367,8 +1374,9 @@ def _ts_to_local(v):
         ts = int(v)
         if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
             return None
-        return dt_util.as_local(dt_util.utc_from_timestamp(ts)).strftime(
-            "%Y-%m-%d %H:%M:%S"
+        # v6.5.0: 与 _ts_to_local_any 一致，输出带偏移 ISO 8601
+        return dt_util.as_local(dt_util.utc_from_timestamp(ts)).isoformat(
+            timespec="seconds"
         )
     except (TypeError, ValueError, OSError):
         return None
@@ -1422,8 +1430,9 @@ def _remote_start_time(v):
         ts = fv / 1000 if fv > 1e12 else fv  # 毫秒/秒自适应
         if ts < 946684800:  # 2000-01-01 之前不可信（云端占位）
             return "未启动"
-        return dt_util.as_local(dt_util.utc_from_timestamp(ts)).strftime(
-            "%Y-%m-%d %H:%M:%S"
+        # v6.5.0: 与 _ts_to_local_any 一致，输出带偏移 ISO 8601
+        return dt_util.as_local(dt_util.utc_from_timestamp(ts)).isoformat(
+            timespec="seconds"
         )
     except (TypeError, ValueError, OSError):
         return "未启动"
@@ -1651,9 +1660,14 @@ class FordPassAirFilterSensor(_ServiceInfoSensor):
             return {}
         out: dict[str, Any] = {}
         if air.get("lastReplaceTime"):
-            out["last_replace"] = str(air["lastReplaceTime"])
+            lr = air["lastReplaceTime"]
+            # v6.5.0: 此前原样透传（"2026/11/08 15:11:13"），与其它字段格式不一致
+            out["last_replace"] = capability.local_str_to_iso(lr) or str(lr)
         if air.get("lastReplaceTimestamp") is not None:
-            out["last_replace_timestamp"] = air["lastReplaceTimestamp"]
+            # v6.5.0: 此前裸数值直出（毫秒/秒），属性里无法当时间用
+            lrt = _ts_to_local_any(air["lastReplaceTimestamp"])
+            if lrt is not None:
+                out["last_replace_timestamp"] = lrt
         return out
 
 
@@ -1948,7 +1962,8 @@ class FordPassSlowLeakSensor(_ServiceInfoSensor):
             return {}
         out: dict[str, Any] = {}
         if payload.get("eventTime"):
-            out["event_time"] = str(payload["eventTime"])
+            ev = payload["eventTime"]
+            out["event_time"] = capability.local_str_to_iso(ev) or str(ev)
         if payload.get("remainingKMs") is not None:
             out["remaining_km"] = payload["remainingKMs"]
         return out
@@ -1986,7 +2001,8 @@ class FordPassDiagnosticSensor(_ServiceInfoSensor):
         if payload.get("messageCode"):
             out["message_code"] = payload["messageCode"]
         if payload.get("eventTime"):
-            out["event_time"] = str(payload["eventTime"])
+            ev = payload["eventTime"]
+            out["event_time"] = capability.local_str_to_iso(ev) or str(ev)
         return out
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import datetime
+import email.utils
 import hashlib
 import json
 import math
@@ -463,6 +464,10 @@ def _token_resp_summary(text: str) -> str:
 # v5.6.10: debug 日志脱敏——vehicle-status raw 等整包 JSON 日志对 VIN、
 # 经纬度、地址等个人标识掩码，防止 debug 日志外泄（recorder/system_log
 # 均可能持久化）。键匹配只收窄到明确敏感键，不做宽泛子串匹配。
+# v6.5.0: 主机时钟偏差告警阈值（秒）。云端接受 t-2m ~ t+8m，
+# 取 120s 作为保守告警线（超过即有被拒风险）。
+CLOCK_SKEW_LIMIT = 120.0
+
 _VIN_MASK_SUFFIXES = ("vin", "vehicleid", "chassisnumber", "chassisno")
 _COORD_MASK_KEYS = frozenset(
     {"lat", "lon", "lng", "latitude", "longitude", "latdeg", "londeg"}
@@ -556,6 +561,12 @@ class FordPassApi:
         # 时单飞（防风控）。
         self._account_cache: dict[str, tuple[float, Any]] = {}
         self._account_locks: dict[str, asyncio.Lock] = {}
+        # v6.5.0: 主机时钟偏移自检——签名请求 timestamp 由本机时间生成，
+        # 云端只接受 t-2m ~ t+8m 窗口；主机被拉偏（虚拟机挂起/快照恢复
+        # 后未校时）会让每轮刷新都被 100400 拒掉，而日志只有一行
+        # "token refresh failed"。这里用响应 Date 头做对照并留痕。
+        self.clock_offset_seconds: float | None = None
+        self._clock_warned_at: float = 0.0
 
     async def _account_cached(
         self, key: str, ttl: float, factory
@@ -613,6 +624,63 @@ class FordPassApi:
             headers.update(extra)
         return headers
 
+    def _note_clock(self, date_header: str | None) -> None:
+        """用响应 Date 头校对主机时钟（v6.5.0）。
+
+        签名请求的 timestamp 由本机时间生成，云端只接受 t-2m ~ t+8m 窗口；
+        HA 主机被拉偏（虚拟机挂起/快照恢复后不校时）时每轮刷新都被拒，
+        日志里却只有一行 "token refresh failed"，很难看出根因。这里记录
+        偏差并在超阈值时给出中文处置提示，偏差值由诊断接口暴露。
+        """
+        if not date_header:
+            return
+        try:
+            server = email.utils.parsedate_to_datetime(date_header)
+        except (TypeError, ValueError):
+            return
+        if server is None:
+            return
+        if server.tzinfo is None:
+            server = server.replace(tzinfo=datetime.timezone.utc)
+        try:
+            offset = time.time() - server.timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return
+        prev = self.clock_offset_seconds
+        self.clock_offset_seconds = offset
+        now = time.time()
+        crossed = (prev is None or abs(prev) < CLOCK_SKEW_LIMIT) and abs(offset) >= CLOCK_SKEW_LIMIT
+        if abs(offset) >= CLOCK_SKEW_LIMIT and (
+            crossed or now - self._clock_warned_at > 1800
+        ):
+            self._clock_warned_at = now
+            direction = "慢" if offset < 0 else "快"
+            self._log.warning(
+                "FordPass 主机时钟偏差 %.0f 秒（本机比云端%s）：签名时间戳可能超出"
+                "云端 t-2m~t+8m 窗口，请在 HA 设置→系统 同步主机时间",
+                abs(offset),
+                direction,
+            )
+
+    def _note_clock_reject(self, text: str) -> None:
+        """识别"时间戳超出窗口"的业务拒绝并给中文处置提示（v6.5.0）。"""
+        low = (text or "").lower()
+        if "timestamp is out of range" not in low and "100400" not in low:
+            return
+        now = time.time()
+        if now - getattr(self, "_clock_reject_warned_at", 0.0) < 300:
+            return
+        self._clock_reject_warned_at = now
+        off = self.clock_offset_seconds
+        hint = f"（本机偏差约 {off:+.0f} 秒）" if off is not None else ""
+        self._log.error(
+            "FordPass 请求被云端按时间窗拒绝：timestamp is out of range"
+            "（允许 t-2m ~ t+8m）%s。这是 HA 主机时钟偏差导致，不是账号或版本问题；"
+            "同步主机时间后 reload 配置条目即可恢复。",
+            hint,
+        )
+
+
     async def _request(
         self,
         method: str,
@@ -664,6 +732,8 @@ class FordPassApi:
             **kwargs,
         ) as resp:
             try:
+                # v6.5.0: 每次响应顺带校对主机时钟（HTTP Date 头，秒级精度）
+                self._note_clock(resp.headers.get("Date"))
                 text = await resp.text()
             except UnicodeDecodeError:
                 # v3.0.6: 网关偶发返回非文本响应（二进制/损坏 body，如
@@ -749,6 +819,7 @@ class FordPassApi:
                     raise _as_refresh_failed(exc) from exc
                 return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
             if resp.status >= 400:
+                self._note_clock_reject(text)
                 raise FordPassApiError(resp.status, text[:300])
             if not text:
                 return None
@@ -776,6 +847,7 @@ class FordPassApi:
             # Both mean the access token lapsed mid-flight; treat exactly like an
             # HTTP 401: refresh once and retry.
             status = data.get("status")
+            self._note_clock_reject(str(data.get("error") or ""))
             # v5.3.4: 业务 401/600 判定不再依赖错误文案——此前要求
             # "token" in error.lower()，福特云若改文案（如 "Jwt expired"/
             # "Session invalid" 不含 token 字样）则 token 失效不刷新不报错、

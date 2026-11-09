@@ -239,8 +239,8 @@ def test_fire_attributes_local_time_and_cn() -> None:
     entity.coordinator.data = doors(driverDoor="Open")
     entity._process()
     attrs = fired(entity)[0][1]
-    assert attrs["event_time"] == "2026-10-30 14:09:26"      # 本地 +8
-    assert attrs["event_time_utc"] == "2026-10-30 06:09:26"  # UTC 原始
+    assert attrs["event_time"] == "2026-10-30T14:09:26+08:00"  # 本地 +8（v6.5.0 带偏移）
+    assert attrs["event_time_utc"] == "2026-10-30T06:09:26+00:00"  # UTC 原始（v6.5.0 带偏移）
     assert attrs["event_type_cn"] == "已开门"
 
     entity.coordinator.data = doors(driverDoor="Closed")
@@ -256,7 +256,7 @@ def test_alert_fire_attributes_cn() -> None:
     entity._process()
     attrs = fired(entity)[0][1]
     assert attrs["event_type_cn"] == "有告警"
-    assert attrs["event_time_utc"] == "2026-10-30 06:09:26"
+    assert attrs["event_time_utc"] == "2026-10-30T06:09:26+00:00"
 
     entity.coordinator.data = alerts()
     entity._process()

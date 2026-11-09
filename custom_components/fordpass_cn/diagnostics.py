@@ -84,6 +84,25 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "data_available": bool(getattr(coord, "data", None)),
             }
+            # v6.5.0: 主机时钟偏移自检结果——签名请求的 timestamp 由主机
+            # 时间生成，偏差超 120s 就会被云端按 t-2m~t+8m 窗口拒掉
+            # （表现为 token refresh 返回 100400）。这里给出实测偏差与结论，
+            # 排查时不必再手工比对 Date 头。
+            clock_off = getattr(
+                getattr(coord, "api", None), "clock_offset_seconds", None
+            )
+            if isinstance(clock_off, (int, float)):
+                off_val: float | None = round(float(clock_off), 1)
+            else:
+                off_val = None
+            clock_ok = None if off_val is None else abs(off_val) <= 120.0
+            payload["coordinator"]["clock_offset_seconds"] = off_val
+            payload["coordinator"]["clock_synced"] = clock_ok
+            payload["coordinator"]["clock_hint"] = (
+                None
+                if clock_ok is not False
+                else "主机时间与云端偏差超过 120 秒，请在 HA 设置→系统 同步时间"
+            )
         # v5.9.6: 原实现用 hass.states.async_all() 匹配 "fordpass_cn." 前缀——
         # entity_id 的域是 sensor/lock/switch…，集成域不会出现，计数恒为 0。
         # 改为从实体注册表按 entry 取实际涉及的实体域。只列域、不给数量：

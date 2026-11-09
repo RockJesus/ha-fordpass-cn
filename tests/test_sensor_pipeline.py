@@ -290,9 +290,9 @@ def test_sync_health_has_no_per_poll_timestamp() -> None:
 def test_ts_to_local_any() -> None:
     """v6.3.2: UTC 数字（秒/毫秒）与日期时间字符串统一转本地；无效/占位 → None。"""
     mod = load_sensor()
-    assert mod._ts_to_local_any(1730075400) == "2024-10-28 08:30:00"
-    assert mod._ts_to_local_any(1730075400000) == "2024-10-28 08:30:00"
-    assert mod._ts_to_local_any("10-28-2024 02:30:00") == "2024-10-28 10:30:00"
+    assert mod._ts_to_local_any(1730075400) == "2024-10-28T08:30:00+08:00"
+    assert mod._ts_to_local_any(1730075400000) == "2024-10-28T08:30:00+08:00"
+    assert mod._ts_to_local_any("10-28-2024 02:30:00") == "2024-10-28T10:30:00+08:00"
     assert mod._ts_to_local_any("01-01-0001 00:00:00") is None  # 云端占位
     assert mod._ts_to_local_any(0) is None
     assert mod._ts_to_local_any(None) is None
@@ -317,8 +317,8 @@ def test_localized_time_attributes() -> None:
         coord, "test", "测试", "%", None, "mdi:fuel", ["fuel"]
     )
     attrs = ent.extra_state_attributes
-    assert attrs["timestamp"] == "2024-10-28 08:30:00"  # 本地展示（00:30 UTC +8）
+    assert attrs["timestamp"] == "2024-10-28T08:30:00+08:00"  # 本地 +8，v6.5.0 起带偏移 ISO
     assert attrs["timestamp_raw"] == 1730075400000       # 云端原值保留
-    assert attrs["vehicle_data_time"] == "2024-10-28 10:30:00"
+    assert attrs["vehicle_data_time"] == "2024-10-28T10:30:00+08:00"
     assert attrs["vehicle_data_time_raw"] == "10-28-2024 02:30:00"
     assert attrs["source_status"] == "CURRENT"

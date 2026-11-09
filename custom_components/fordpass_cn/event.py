@@ -137,11 +137,15 @@ class _FordPassEventBase(EventEntity, RestoreEntity):
         """
         now_utc = dt_util.utcnow()
         attrs = dict(attributes or {})
+        # v6.5.0: 两个口径都改成带偏移的 ISO 8601（本地 +08:00 / UTC +00:00），
+        # 此前是无时区标识的 "YYYY-MM-DD HH:MM:SS"，自动化里无法区分口径。
         attrs.setdefault(
             "event_time",
-            dt_util.as_local(now_utc).strftime("%Y-%m-%d %H:%M:%S"),
+            dt_util.as_local(now_utc).isoformat(timespec="seconds"),
         )
-        attrs.setdefault("event_time_utc", now_utc.strftime("%Y-%m-%d %H:%M:%S"))
+        attrs.setdefault(
+            "event_time_utc", now_utc.isoformat(timespec="seconds")
+        )
         cn = self._attr_event_type_cn.get(event_type)
         if cn:
             attrs.setdefault("event_type_cn", cn)
