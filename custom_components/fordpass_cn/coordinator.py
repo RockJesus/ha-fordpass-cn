@@ -19,6 +19,10 @@ from homeassistant.util import dt as dt_util
 from .api import FordPassApi, FordPassApiError, FordPassProbeRejected
 from .const import (
     BRAND_LINCOLN,
+    CMD_ENGINE_START,
+    CMD_ENGINE_STOP,
+    CMD_LOCK,
+    CMD_UNLOCK,
     CONF_BRAND,
     COORDINATE_WGS84,
     DEFAULT_BRAND,
@@ -53,6 +57,52 @@ def _uid_key(vin: str) -> str:
     同一 VIN 永远同值（稳定，跨版本不变），不可逆（无法从哈希反推 VIN）。
     """
     return hashlib.sha256((vin or "").encode("utf-8")).hexdigest()[:16]
+
+
+# v6.6.4: 命令 → 车辆快照目标（快照确认纠偏）。
+# 云端命令执行状态接口（command-execution-status）偶尔不回写「完成」，但车辆
+# 实际已执行、快照里目标字段已翻转；只按命令接口判定会一直停在「未确认」。
+# 纠偏规则：命令下发前记录基线，下一次快照若基线 != 目标值且当前 == 目标值，
+# 说明这一轮刷新已经反证出结果，把状态改记为「已完成（快照确认）」。
+# 只覆盖有明确布尔/枚举语义的四个动作；后备箱等字段结构未实测，不参与。
+
+def _cmd_flag(value: Any) -> int | None:
+    """把云端布尔/枚举值归一成 1/0；无法识别返回 None。"""
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, (int, float)):
+        return 1 if int(value) else 0
+    if isinstance(value, str):
+        text = value.strip().upper()
+        if text in ("1", "TRUE", "ON", "YES", "LOCKED", "SET", "RUNNING"):
+            return 1
+        if text in ("0", "FALSE", "OFF", "NO", "UNLOCKED", "NOTSET", "STOPPED"):
+            return 0
+    return None
+
+
+def _lock_flag(status: dict[str, Any]) -> int | None:
+    """门锁状态归一（LOCKED=1 / UNLOCKED=0；云端可能是 dict.value）。"""
+    raw = (status or {}).get("lockStatus")
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    return _cmd_flag(raw)
+
+
+def _remote_start_flag(status: dict[str, Any]) -> int | None:
+    """远程启动是否进行中（remoteStartStatus 可能是带 value 的 dict）。"""
+    raw = (status or {}).get("remoteStartStatus")
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    return _cmd_flag(raw)
+
+
+_COMMAND_SNAPSHOT_TARGETS: dict[str, tuple[Any, int, str]] = {
+    CMD_UNLOCK: (_lock_flag, 0, "门锁已解锁"),
+    CMD_LOCK: (_lock_flag, 1, "门锁已锁定"),
+    CMD_ENGINE_START: (_remote_start_flag, 1, "远程启动已生效"),
+    CMD_ENGINE_STOP: (_remote_start_flag, 0, "远程启动已停止"),
+}
 
 
 def _status_summary(data: dict[str, Any]) -> str:
@@ -193,6 +243,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._command_followers: dict[str, asyncio.Task] = {}
         # v6.5.3: 最近一次车控命令的执行状态（按钮/开关/门锁状态属性可见）
         self._command_states: dict[str, dict[str, Any]] = {}
+        # v6.6.4: 命令下发前的目标状态基线（0/1/None，快照确认纠偏用）
+        self._command_baselines: dict[str, int | None] = {}
         # v6.5.3: 同命令连点去重窗口的最后一次下发时刻（monotonic 秒）
         self._last_cmd_sent: dict[str, float] = {}
         # v6.5.3: 命令后兜底刷新单飞标志（同时只跑一轮，防请求翻倍）
@@ -943,6 +995,9 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         self._last_cmd_sent[command_type] = now
 
+        # v6.6.4: 下发前记下目标字段基线，用于后续「快照反证」纠偏
+        self._capture_command_baseline(command_type)
+
         try:
             resp = await self.api.send_command(self.vin, command_type, cmd_spec)
         except Exception as exc:  # noqa: BLE001 - 记录车型不支持后如实上报
@@ -1002,6 +1057,80 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         finally:
             self._cmd_refresh_active = False
 
+    # v6.6.4: 快照反证窗口——命令下发后 15 分钟内才允许用快照纠偏，
+    # 避免很久之后的常规刷新把一条早已结束的旧命令翻成「已完成」。
+    COMMAND_RECONCILE_WINDOW = 900.0
+
+    def _capture_command_baseline(self, command_type: str) -> None:
+        """记录命令下发前目标字段的取值（快照确认纠偏基线，v6.6.4）。"""
+        target = _COMMAND_SNAPSHOT_TARGETS.get(command_type)
+        if not target:
+            return
+        status = (self.data or {}).get("status") or (self.data or {}).get(
+            "vehiclestatus"
+        )
+        getter = target[0]
+        try:
+            self._command_baselines[command_type] = (
+                getter(status) if isinstance(status, dict) else None
+            )
+        except Exception:  # noqa: BLE001 - 基线读失败按未知处理
+            self._command_baselines[command_type] = None
+
+    def _reconcile_command_states(self, status: dict[str, Any] | None) -> None:
+        """用最新车辆快照反证命令结果（v6.6.4）。
+
+        背景：点按开锁/关锁/远程启动后，云端 command-execution-status 接口
+        有时一直不回写「完成」，60s 后只能记「未确认」；但车辆快照里
+        ``lockStatus`` / ``remoteStartStatus`` 往往已经翻转。这里在每次拿到
+        新快照时补一次判断：命令前基线不是目标值、当前已经是目标值 → 说明
+        这轮刷新已反证出结果，状态从「未确认 / 执行中」改记为「已完成」。
+
+        保守条件（三条同时满足，宁可不纠偏也不误报成功）：
+        1. 该命令仍处于 pending / timeout；
+        2. 下发前基线 != 目标值（命令前已达成的不算本次生效）；
+        3. 距下发不超过 COMMAND_RECONCILE_WINDOW（默认 15 分钟）。
+        """
+        if not isinstance(status, dict) or not status:
+            return
+        now = dt_util.now()
+        for command_type, recorded in list(self._command_states.items()):
+            if recorded.get("state") not in ("pending", "timeout"):
+                continue
+            target = _COMMAND_SNAPSHOT_TARGETS.get(command_type)
+            if not target:
+                continue
+            getter, expected, desc = target
+            try:
+                current = getter(status)
+            except Exception:  # noqa: BLE001 - 快照结构异常时跳过
+                continue
+            if current is None or current != expected:
+                continue
+            if self._command_baselines.get(command_type) == expected:
+                # 命令前已经是目标状态，无法证明是本次命令生效
+                continue
+            sent_at = recorded.get("sent_at")
+            age: float | None = None
+            if sent_at:
+                try:
+                    parsed = dt_util.parse_datetime(str(sent_at))
+                    if parsed is not None:
+                        age = (now - parsed).total_seconds()
+                except (TypeError, ValueError):
+                    age = None
+            if age is not None and age > self.COMMAND_RECONCILE_WINDOW:
+                continue
+            delay = f"（{max(int(age), 0)}s）" if age is not None else ""
+            self._note_command_state(
+                command_type,
+                "done",
+                message=f"云端快照已确认：{desc}{delay}",
+            )
+            self.logger.info(
+                "FordPass %s 快照已反证执行结果：%s%s", command_type, desc, delay
+            )
+
     def _apply_command_snapshot(self, result: dict[str, Any]) -> None:
         """推送命令执行完成后的新快照（v6.5.2 抽出，同步/后台两路复用）。
 
@@ -1012,6 +1141,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         30 分钟轮询才恢复。
         """
         vs = result.get("vehiclestatus", result)
+        # v6.6.4: 推送前先用这份快照反证命令结果（命令接口没回写时补记「已完成」）
+        self._reconcile_command_states(vs)
         self.async_set_updated_data(
             {**(self.data or {}), "status": vs, "vehiclestatus": vs}
         )
@@ -1481,6 +1612,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v5.4.7: 云端同步健康打点（后端变更监控——复用轮询结果零额外请求）
         self._last_success_time = dt_util.now()
         self._consecutive_failures = 0
+        # v6.6.4: 每轮成功刷新后，用新快照反证「未确认」的命令（零额外请求）
+        if isinstance(data, dict):
+            self._reconcile_command_states(
+                data.get("status") or data.get("vehiclestatus")
+            )
         return data
 
 
