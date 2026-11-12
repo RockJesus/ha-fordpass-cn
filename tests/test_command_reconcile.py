@@ -248,6 +248,29 @@ def test_capture_baseline_uses_current_snapshot():
     assert coord._command_baselines["DoorLock"] == 1  # 快照是 Locked
 
 
+def test_reconcile_tolerates_missing_baselines_attr():
+    """对象未经 __init__ 构造（旧测试桩）时，缺少 _command_baselines 不能抛错。"""
+    coord = _build()
+    del coord._command_baselines
+    _set_state(coord, "DoorUnlock")
+
+    _mod().FordPassCoordinator._reconcile_command_states(
+        coord, {"lockStatus": {"value": "Unlocked"}}
+    )
+
+    # 没有基线时按「未知」处理：无法证明本次生效，保守保持未确认
+    assert coord._command_states["DoorUnlock"]["state"] == "timeout"
+
+
+def test_capture_baseline_creates_missing_attr():
+    """缺少 _command_baselines 时下发前的基线采集要自建字典。"""
+    coord = _build()
+    del coord._command_baselines
+    _mod().FordPassCoordinator._capture_command_baseline(coord, "DoorLock")
+
+    assert coord._command_baselines["DoorLock"] == 1
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [

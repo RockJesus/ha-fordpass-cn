@@ -1066,16 +1066,21 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         target = _COMMAND_SNAPSHOT_TARGETS.get(command_type)
         if not target:
             return
+        # v6.6.4: 实例属性按需创建——测试/轻量构造的对象可能未走 __init__
+        baselines = getattr(self, "_command_baselines", None)
+        if not isinstance(baselines, dict):
+            baselines = {}
+            self._command_baselines = baselines
         status = (self.data or {}).get("status") or (self.data or {}).get(
             "vehiclestatus"
         )
         getter = target[0]
         try:
-            self._command_baselines[command_type] = (
+            baselines[command_type] = (
                 getter(status) if isinstance(status, dict) else None
             )
         except Exception:  # noqa: BLE001 - 基线读失败按未知处理
-            self._command_baselines[command_type] = None
+            baselines[command_type] = None
 
     def _reconcile_command_states(self, status: dict[str, Any] | None) -> None:
         """用最新车辆快照反证命令结果（v6.6.4）。
@@ -1094,6 +1099,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not isinstance(status, dict) or not status:
             return
         now = dt_util.now()
+        baselines = getattr(self, "_command_baselines", None) or {}
         for command_type, recorded in list(self._command_states.items()):
             if recorded.get("state") not in ("pending", "timeout"):
                 continue
@@ -1107,14 +1113,16 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
             if current is None or current != expected:
                 continue
-            if self._command_baselines.get(command_type) == expected:
-                # 命令前已经是目标状态，无法证明是本次命令生效
+            baseline = baselines.get(command_type)
+            if baseline is None or baseline == expected:
+                # 无基线（命令前快照缺该字段）或命令前已是目标状态 → 不纠偏
                 continue
             sent_at = recorded.get("sent_at")
             age: float | None = None
-            if sent_at:
+            parser = getattr(dt_util, "parse_datetime", None)
+            if sent_at and callable(parser):
                 try:
-                    parsed = dt_util.parse_datetime(str(sent_at))
+                    parsed = parser(str(sent_at))
                     if parsed is not None:
                         age = (now - parsed).total_seconds()
                 except (TypeError, ValueError):

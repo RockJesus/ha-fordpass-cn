@@ -163,6 +163,7 @@ def _build_coordinator(api: _FakeApi):
     coord.hass = _FakeHass()
     coord._command_followers = {}
     coord._command_states = {}
+    coord._command_baselines = {}
     coord._last_cmd_sent = {}
     coord._persist_tasks = set()
     coord._cmd_refresh_active = False
