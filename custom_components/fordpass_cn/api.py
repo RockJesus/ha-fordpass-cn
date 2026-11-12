@@ -385,6 +385,7 @@ class FordPassApiError(Exception):
         code: Any = None,
         message: str | None = None,
         refresh_failed: bool = False,
+        clock_skew: bool = False,
     ) -> None:
         super().__init__(message or f"FordPass error ({code})")
         self.code = code
@@ -392,6 +393,18 @@ class FordPassApiError(Exception):
         # v5.3.2: 显式标志——access token 续期失败（区别于普通业务拒绝）；
         # coordinator 据此触发 reauth，不再靠字符串匹配异常文案
         self.refresh_failed = refresh_failed
+        # v6.6.6: 云端按签名时间窗拒绝（100400 timestamp is out of range）——
+        # 属主机时钟被拉偏的临时故障，不能当凭据失效（否则 entry 卡 setup_error）
+        self.clock_skew = clock_skew
+
+
+_CLOCK_SKEW_MARKERS = ("timestamp is out of range", "100400")
+
+
+def _is_clock_skew(text: Any) -> bool:
+    """识别"签名时间戳超出云端窗口"的业务拒绝（v6.6.6）。"""
+    low = str(text or "").lower()
+    return any(marker in low for marker in _CLOCK_SKEW_MARKERS)
 
 
 def _as_refresh_failed(exc: Exception) -> FordPassApiError:
@@ -403,6 +416,14 @@ def _as_refresh_failed(exc: Exception) -> FordPassApiError:
     重新认证（token 实际未失效）。
     """
     if isinstance(exc, FordPassApiError) and exc.code in (401, 403, 600):
+        if getattr(exc, "clock_skew", False) or _is_clock_skew(str(exc)):
+            # v6.6.6: 时间窗拒绝是主机时钟被拉偏导致的临时故障（实测 2026-11-12
+            # HA 重启瞬间时钟慢 39 分钟，refresh 被 100400 拒），不能归为
+            # 凭据失效——否则 entry 直接 setup_error 且不会自行重试。
+            return FordPassApiError(
+                600, f"token refresh failed: {exc}", refresh_failed=False,
+                clock_skew=True,
+            )
         # 业务性认证失败：token 真失效 / 被拒——refresh_failed=True 触发 reauth
         return FordPassApiError(
             401, f"token refresh failed: {exc}", refresh_failed=True
@@ -573,6 +594,9 @@ class FordPassApi:
         # "token refresh failed"。这里用响应 Date 头做对照并留痕。
         self.clock_offset_seconds: float | None = None
         self._clock_warned_at: float = 0.0
+        # v6.6.6: 时钟补偿量（秒）——检测到云端按时间窗拒绝后，用响应 Date
+        # 头算出的偏差补偿签名时间戳，让被拉偏的主机也能正常刷新（自愈）。
+        self._clock_compensation: float = 0.0
 
     async def _account_cached(
         self, key: str, ttl: float, factory
@@ -630,6 +654,11 @@ class FordPassApi:
             headers.update(extra)
         return headers
 
+    def _signed_ts_ms(self, now: float | None = None) -> int:
+        """签名用时间戳（毫秒），叠加时钟补偿（v6.6.6）。"""
+        base = time.time() if now is None else now
+        return int((base + self._clock_compensation) * 1000)
+
     def _note_clock(self, date_header: str | None) -> None:
         """用响应 Date 头校对主机时钟（v6.5.0）。
 
@@ -668,23 +697,29 @@ class FordPassApi:
                 direction,
             )
 
-    def _note_clock_reject(self, text: str) -> None:
-        """识别"时间戳超出窗口"的业务拒绝并给中文处置提示（v6.5.0）。"""
-        low = (text or "").lower()
-        if "timestamp is out of range" not in low and "100400" not in low:
-            return
+    def _note_clock_reject(self, text: str) -> bool:
+        """识别"时间戳超出窗口"的业务拒绝，并设置时钟补偿（v6.5.0/v6.6.6）。
+
+        返回 True 表示本次确实是时间窗拒绝（调用方据此带新时间戳重试一次）。
+        """
+        if not _is_clock_skew(text):
+            return False
+        offset = self.clock_offset_seconds
+        if offset is not None and abs(offset) >= 5.0:
+            # 响应 Date 头给出的偏差就是云端与本机的差：本机慢 2359 秒时
+            # offset=-2359，签名时间戳需 +2359 才落进云端窗口。
+            self._clock_compensation = -offset
         now = time.time()
-        if now - getattr(self, "_clock_reject_warned_at", 0.0) < 300:
-            return
-        self._clock_reject_warned_at = now
-        off = self.clock_offset_seconds
-        hint = f"（本机偏差约 {off:+.0f} 秒）" if off is not None else ""
-        self._log.error(
-            "FordPass 请求被云端按时间窗拒绝：timestamp is out of range"
-            "（允许 t-2m ~ t+8m）%s。这是 HA 主机时钟偏差导致，不是账号或版本问题；"
-            "同步主机时间后 reload 配置条目即可恢复。",
-            hint,
-        )
+        if now - getattr(self, "_clock_reject_warned_at", 0.0) >= 300:
+            self._clock_reject_warned_at = now
+            hint = f"（本机偏差约 {offset:+.0f} 秒）" if offset is not None else ""
+            self._log.error(
+                "FordPass 请求被云端按时间窗拒绝：timestamp is out of range"
+                "（允许 t-2m ~ t+8m）%s。已按响应时间补偿签名时间戳并重试；"
+                "若持续出现请在 HA 设置→系统 同步主机时间。",
+                hint,
+            )
+        return True
 
 
     async def _request(
@@ -699,6 +734,7 @@ class FordPassApi:
         raw_body: bool = False,
         _retried: bool = False,
         allow_refresh: bool = True,
+        _clock_retried: bool = False,
     ) -> Any:
         url = base + path
         if body is not None:
@@ -707,12 +743,12 @@ class FordPassApi:
                 # v3.7.5: cevs 域 DTO 不接受 timestamp/sign（日志实证
                 # Unrecognized field "timestamp"）——raw_body=True 时 body
                 # 原样发送（cevs 走 RSA 密文自校验，不依赖外层签名）
-                signed["timestamp"] = int(time.time() * 1000)
+                signed["timestamp"] = self._signed_ts_ms()
                 signed["sign"] = compute_sign(signed)
             kwargs: dict[str, Any] = {"json": signed}
         else:
             params = dict(query or {})
-            params["timestamp"] = int(time.time() * 1000)
+            params["timestamp"] = self._signed_ts_ms()
             params["sign"] = compute_sign(params)
             kwargs = {"params": params}
         # v5.2.4: 请求体日志只记录字段名不记录值——encryptedRefreshToken/
@@ -825,8 +861,20 @@ class FordPassApi:
                     raise _as_refresh_failed(exc) from exc
                 return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
             if resp.status >= 400:
-                self._note_clock_reject(text)
-                raise FordPassApiError(resp.status, text[:300])
+                skew = self._note_clock_reject(text)
+                if (
+                    skew
+                    and not _clock_retried
+                    and self.clock_offset_seconds is not None
+                ):
+                    # v6.6.6: 主机时钟被拉偏时按 Date 头补偿后立刻重试一次，
+                    # 避免把可自愈的时间窗拒绝升级成整条目 setup_error
+                    return await self._request(
+                        method, path, body, query, base, raw, headers,
+                        raw_body, _retried=_retried,
+                        allow_refresh=allow_refresh, _clock_retried=True,
+                    )
+                raise FordPassApiError(resp.status, text[:300], clock_skew=skew)
             if not text:
                 return None
             try:
@@ -3542,7 +3590,7 @@ class FordPassApi:
             return self._lbs_token
         xapi = await asyncio.to_thread(FordPassCrypto.get, None, "x_api")
         enc_vin, xjw = await asyncio.to_thread(lambda: xapi.encrypt_field(vin))
-        ts = int(now * 1000)
+        ts = self._signed_ts_ms(now)
         params = {
             "timestamp": ts,
             "tokenType": "LBS",
@@ -3626,7 +3674,7 @@ class FordPassApi:
             "source": 0,
             "secretVersion": "1.0",
         }
-        ts = int(time.time() * 1000)
+        ts = self._signed_ts_ms()
         headers = {
             "user-agent": "Dart (dart:io)",
             "x-dynatrace": "",

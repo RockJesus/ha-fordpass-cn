@@ -513,6 +513,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except TimeoutError as err:
         raise ConfigEntryNotReady(f"FordPass timeout: {err}") from err
     except FordPassApiError as err:
+        if getattr(err, "clock_skew", False):
+            # v6.6.6: 云端按签名时间窗拒绝（100400）是主机时钟被拉偏的临时
+            # 故障——api 已按 Date 头补偿并重试过，仍失败就交给 HA 退避重试，
+            # 不能当凭据失效（否则 entry 卡 setup_error、整套实体不可用）。
+            raise ConfigEntryNotReady(
+                f"FordPass 云端时间窗拒绝（主机时钟偏差）：{err}"
+            ) from err
         if err.code in (401, 403):
             # v4.4.9: token 失效（api 内部已自动 refresh 一次仍失败）→ 抛
             # ConfigEntryAuthFailed：HA 停止 setup 重试（不再每轮打云请求
