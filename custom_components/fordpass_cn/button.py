@@ -638,7 +638,14 @@ class FordPassButton(_FordPassButtonBase):
         （开锁/关锁/后备箱解锁等）失败提示都是「None 执行失败」，
         用户看不出是哪个按钮出错。
         """
-        return self._attr_name or getattr(self, "_label", None) or self._command
+        # v6.6.7: 翻译键实体（开锁/关锁/后备箱解锁等）从不设置 _attr_name，
+        # 直接取属性会抛 AttributeError，按钮点按报「object has no attribute
+        # '_attr_name'」而不是命令结果。此处必须 getattr 兜底。
+        return (
+            getattr(self, "_attr_name", None)
+            or getattr(self, "_label", None)
+            or self._command
+        )
 
     async def _do_press(self) -> None:
         """Send the command, then push the fresh snapshot to the entities.
@@ -670,6 +677,13 @@ class FordPassButton(_FordPassButtonBase):
                 _LOGGER.warning(
                     "FordPass command %s failed: %s", self._command, exc
                 )
+                if getattr(exc, "gateway_rejected", False):
+                    # v6.6.7: 凭据有效、云端只是短时拒绝（命令端点限流）——
+                    # 不能说成「该车不支持此命令」，否则用户会去删实体
+                    raise HomeAssistantError(
+                        f"福特派命令「{self._display_name()}」暂时被云端拒绝"
+                        f"（登录凭据正常，属云端限流，稍后重试即可）：{exc}"
+                    ) from exc
                 raise HomeAssistantError(
                     f"福特派命令「{self._display_name()}」执行失败"
                     f"（该车云端可能不支持此命令，已记录；"

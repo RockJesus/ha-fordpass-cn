@@ -386,6 +386,7 @@ class FordPassApiError(Exception):
         message: str | None = None,
         refresh_failed: bool = False,
         clock_skew: bool = False,
+        gateway_rejected: bool = False,
     ) -> None:
         super().__init__(message or f"FordPass error ({code})")
         self.code = code
@@ -396,6 +397,9 @@ class FordPassApiError(Exception):
         # v6.6.6: 云端按签名时间窗拒绝（100400 timestamp is out of range）——
         # 属主机时钟被拉偏的临时故障，不能当凭据失效（否则 entry 卡 setup_error）
         self.clock_skew = clock_skew
+        # v6.6.7: 刷新成功但云端仍以 401/600 拒绝本次请求——多为命令端点的
+        # 短时限流，凭据本身有效，不能当 refresh_failed 触发重新认证
+        self.gateway_rejected = gateway_rejected
 
 
 _CLOCK_SKEW_MARKERS = ("timestamp is out of range", "100400")
@@ -839,6 +843,15 @@ class FordPassApi:
                             self.on_token_refresh(new["access_token"])
                         return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
                     except Exception as exc:
+                        # v6.6.7: 递归重试抛回的「已分类」异常（gateway_rejected /
+                        # clock_skew）必须原样上抛——旧代码把它再包一层
+                        # _as_refresh_failed，600 被改写成 401 refresh_failed=True，
+                        # 凭据有效却被拉去重新认证。
+                        if isinstance(exc, FordPassApiError) and (
+                            getattr(exc, "gateway_rejected", False)
+                            or getattr(exc, "clock_skew", False)
+                        ):
+                            raise
                         self._log.error("FordPass token refresh failed: %s", exc)
                         raise _as_refresh_failed(exc) from exc
                     finally:
@@ -918,8 +931,15 @@ class FordPassApi:
                 # 不再无条件递归（旧代码 finally 滞后导致 _retrying 恒 True，
                 # 无限递归至 RecursionError）。
                 if _retried:
+                    # v6.6.7: 能走到这里说明 refresh 端点刚刚成功返回了新
+                    # token（失败会走下面的 except 分支），凭据本身有效；
+                    # 重试仍被 401/600 拒＝云端对该请求的短时拒绝（命令端点
+                    # 限流实测），不能置 refresh_failed 触发重新认证。
                     raise FordPassApiError(
-                        401, "token refresh failed (401/600 after retry)", refresh_failed=True
+                        600,
+                        "token refresh failed (401/600 after retry)",
+                        refresh_failed=False,
+                        gateway_rejected=True,
                     )
                 if not self._retrying:
                     self._retrying = True
@@ -933,6 +953,13 @@ class FordPassApi:
                             self.on_token_refresh(new["access_token"])
                         return await self._request(method, path, body, query, base, raw, headers, raw_body, _retried=True, allow_refresh=allow_refresh)
                     except Exception as exc:
+                        # v6.6.7: 同上——递归重试抛回的已分类异常原样上抛，
+                        # 不要二次包装成 401 refresh_failed 误触重新认证。
+                        if isinstance(exc, FordPassApiError) and (
+                            getattr(exc, "gateway_rejected", False)
+                            or getattr(exc, "clock_skew", False)
+                        ):
+                            raise
                         self._log.error("FordPass token refresh failed: %s", exc)
                         raise _as_refresh_failed(exc) from exc
                     finally:

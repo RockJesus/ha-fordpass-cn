@@ -26,10 +26,15 @@ SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
 
 
 class _FakeButtonEntity:
-    """替代 homeassistant.components.button.ButtonEntity。"""
+    """替代 homeassistant.components.button.ButtonEntity。
+
+    v6.6.7: 不提供 ``_attr_name`` 默认值——HA 2026.11 的 Entity 只留了
+    ``_attr_name: str | None`` 类型注解、没有类属性默认值，用 translation_key
+    命名的实体真的没有这个属性。桩里给默认值会把「直接读 self._attr_name」
+    的崩溃掩盖成通过（v6.6.7 线上实测踩到）。
+    """
 
     _attr_should_poll = True
-    _attr_name: str | None = None
     _attr_state: str | None = None
     _attr_icon: str | None = None
     _attr_unique_id: str | None = None
