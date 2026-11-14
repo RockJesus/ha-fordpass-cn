@@ -371,8 +371,11 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
         self._attr_translation_key = "chirp_type"
         self._attr_device_info = coordinator.device_info
         self._attr_options = list(CHIRP_TYPE_OPTIONS)
-        self._attr_current_option = settings.get(
-            CONF_CHIRP_TYPE, DEFAULT_CHIRP_TYPE
+        # v6.6.8：「声光共舞」已从选项移除（专属「声光寻车」开关）。旧 options/
+        # 云端残留该值时归一为默认类型，避免下拉框显示不在选项内的值。
+        _stored = settings.get(CONF_CHIRP_TYPE, DEFAULT_CHIRP_TYPE)
+        self._attr_current_option = (
+            _stored if _stored in CHIRP_TYPE_OPTIONS else DEFAULT_CHIRP_TYPE
         )
 
     async def async_select_option(self, option: str) -> None:

@@ -27,6 +27,18 @@ from typing import Any
 
 import aiohttp
 
+# v6.6.8: 已知长期失败的可选探测端点（账号/权限口径，非网关故障）——每次
+# 刷新探测都会返回 500，若按 WARNING 记录会把真正的错误淹掉。这些端点不影响
+# 任何已创建实体（旁路能力探测），统一降为 debug。
+#   search-new-ota-status            OTA 状态（100501）
+#   search-vehicle-device-list       SDA User does not exists（201250）
+#   search-vehicle-share-history-list 非车主账号无共享历史权限
+_QUIET_PROBE_PATHS = {
+    "/api/alert/v1/search-new-ota-status",
+    "/api/cnxapi-vds/v1/search-vehicle-device-list",
+    "/api/cnesl-user/v1/search-vehicle-share-history-list",
+}
+
 from .const import (
     BRAND_FORD,
     BRAND_LINCOLN,
@@ -818,10 +830,18 @@ class FordPassApi:
                     path, _log_summary(text),
                 )
             elif resp.status >= 500:
-                self._log.warning(
-                    "FordPass %s -> HTTP %s 网关层故障（熔断/5xx，退避后自愈）: %s",
-                    path, resp.status, _log_summary(text),
-                )
+                if path in _QUIET_PROBE_PATHS:
+                    # v6.6.8: 已知永久失败的可选探测——降为 debug，避免每次
+                    # 刷新都刷 WARNING 把真实错误淹没；结果仍写 probe_status。
+                    self._log.debug(
+                        "FordPass %s -> HTTP %s（已知不可用的可选探测，已降级）: %s",
+                        path, resp.status, _log_summary(text),
+                    )
+                else:
+                    self._log.warning(
+                        "FordPass %s -> HTTP %s 网关层故障（熔断/5xx，退避后自愈）: %s",
+                        path, resp.status, _log_summary(text),
+                    )
             if resp.status == 401 and self._refresh_token and allow_refresh:
                 # v5.3.3: 已重试过一次仍 401（刷新后新 token 仍被拒，或
                 # refresh 端点自身 401）——直接抛 refresh_failed 触发 reauth，

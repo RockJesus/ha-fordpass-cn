@@ -29,7 +29,10 @@ from homeassistant.util import dt as dt_util
 
 from . import capability
 from .const import (
+    ANNOUNCE_ENUM_CN,
+    CHIRP_TO_ANNOUNCE,
     CHIRP_TO_TYPE,
+    CHIRP_TYPE_OPTIONS,
     CMD_ENGINE_START,
     CMD_ENGINE_STOP,
     CMD_LIGHT_FIND_OFF,
@@ -255,12 +258,42 @@ class FordPassMomentarySwitch(FordPassTaskTracker):
             )
         except (TypeError, ValueError):
             duration = DEFAULT_HONK_DURATION
-        chirp_name = (
-            settings.get(CONF_CHIRP_TYPE)
-            or options.get(CONF_CHIRP_TYPE)
-            or DEFAULT_CHIRP_TYPE
-        )
-        return duration, str(chirp_name)
+        # v6.6.8: 内存 → 云端回读 → options → 默认，逐步归一。
+        # 旧逻辑只读内存/options：HA 重启后 runtime_data 重建、options 若没有
+        # 用户最后选择的类型，会落回 DEFAULT，而「鸣笛类型」select 显示的是
+        # 云端回读值——出现「显示 A、实际发 B」。云端兜底后即所见即所发。
+        chirp_name = self._norm_chirp(settings.get(CONF_CHIRP_TYPE))
+        if chirp_name is None:
+            chirp_name = self._cloud_chirp_name()
+        if chirp_name is None:
+            chirp_name = self._norm_chirp(options.get(CONF_CHIRP_TYPE))
+        if chirp_name is None:
+            chirp_name = DEFAULT_CHIRP_TYPE
+        return duration, chirp_name
+
+    @staticmethod
+    def _norm_chirp(name: Any) -> str | None:
+        """合法类型名返回自身，其余（含历史「声光共舞」=panic 4）返回 None。
+
+        v6.6.8：「声光共舞」已专属「声光寻车」开关，鸣笛开关读到该旧值
+        必须归一为默认类型，不能再把鸣笛切到 InitialVA VAType=4 通道。
+        """
+        value = str(name) if name else ""
+        return value if value in CHIRP_TYPE_OPTIONS else None
+
+    def _cloud_chirp_name(self) -> str | None:
+        """云端鸣笛设置回读 → 中文类型名（仅取鸣笛可用的 0-3 类型）。"""
+        pref = (self.coordinator.data or {}).get("chirp_cloud") or {}
+        if not isinstance(pref, dict):
+            return None
+        sound = pref.get("AnnouncementType") or pref.get("vehicleAnnouncementSoundType")
+        if sound is None:
+            return None
+        for name, enum_value in CHIRP_TO_ANNOUNCE.items():
+            if str(sound) == enum_value and name in CHIRP_TYPE_OPTIONS:
+                return name
+        legacy = ANNOUNCE_ENUM_CN.get(str(sound))
+        return legacy if legacy in CHIRP_TYPE_OPTIONS else None
 
     def _duration(self) -> int:
         """本次触发的持续时长（秒）。"""
@@ -783,38 +816,22 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPass
         duration, chirp_name = self._settings()
         chirp_type = CHIRP_TO_TYPE.get(chirp_name, 2)  # 0-4，App 枚举
         try:
-            if chirp_type == 4:
-                # v3.2.1: 声光共舞改走 send-command InitialVA（实机样本实证 200 +
-                # commandId=26）——App 的「鸣笛寻车」即此通道（VAType=4=panic
-                # 灯+喇叭）；V5 /panic 端点实测返回 404，不再使用。
-                _LOGGER.info(
-                    "FordPass 声光共舞（InitialVA VAType=4）触发 duration=%ss", duration,
-                )
-                resp = await self.coordinator.api.va_command(
-                    self.coordinator.vin, CMD_VA_INIT, vatype=4, duration=duration
-                )
-                cid = self._command_id(resp)
-                if cid:
-                    _LOGGER.info(
-                        "FordPass 声光共舞已触发 commandId=%s（时长=%ss）",
-                        cid, duration,
-                    )
-                    self._track_task(self._poll_cmd_status(CMD_VA_INIT, cid))
-            else:
-                resp = await self.coordinator.api.honk_command(
-                    self.coordinator.vin,
-                    duration=duration,
-                    interval=1,
-                    chirp_type=chirp_type,
-                )
+            # v6.6.8: 鸣笛开关只走 V5 /honk（ChirpType 0-3）。「声光共舞」
+            # (panic=4) 已从类型选项中移除、旧值由 _settings() 归一——
+            # 灯+喇叭通道专属「声光寻车」开关，两个实体不再重叠。
+            resp = await self.coordinator.api.honk_command(
+                self.coordinator.vin,
+                duration=duration,
+                interval=1,
+                chirp_type=chirp_type,
+            )
         except Exception as exc:
             _LOGGER.warning("FordPass 鸣笛寻车失败（类型=%s）: %s", chirp_name, exc)
             # v6.3.5: 操作结果记录 + 抛错 toast
             self._set_cmd_result(False, str(exc))
             raise
-        # 类型 0-3（V5 honk 通道）：commandId 走 V5 announcestatus 轮询；
-        # 类型 4（InitialVA）已在分支内用 command-execution-status 轮询，跳过。
-        if chirp_type != 4 and isinstance(resp, dict) and resp.get("commandId"):
+        # V5 /honk 通道：commandId 走 announcestatus 轮询，写「鸣笛命令状态」
+        if isinstance(resp, dict) and resp.get("commandId"):
             _LOGGER.info(
                 "FordPass 鸣笛寻车已触发 commandId=%s（时长=%ss 类型=%s）",
                 resp["commandId"], duration, chirp_name,
@@ -856,21 +873,11 @@ class FordPassHonkSwitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPass
         self.coordinator.async_update_listeners()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        # 真实停止通道：类型 0-3 = 车辆 v5 鸣笛取消（与 App 取消鸣笛一致）；
-        # 类型 4（声光共舞）= send-command CancelVA（App 取消声光寻车即此通道）。
-        _, chirp_name = self._settings()
-        chirp_type = CHIRP_TO_TYPE.get(chirp_name, 2)
+        # v6.6.8: 停止通道只走车辆 v5 鸣笛取消（与开一一对应）；
+        # 「声光寻车」的取消由 FordPassVAswitch 走 CancelVA，不在此处理。
         try:
-            if chirp_type == 4:
-                resp = await self.coordinator.api.va_command(
-                    self.coordinator.vin, CMD_VA_CANCEL, vatype=4
-                )
-                cid = self._command_id(resp)
-                if cid:
-                    _LOGGER.info("FordPass 声光共舞已取消 commandId=%s", cid)
-                    self._track_task(self._poll_cmd_status(CMD_VA_CANCEL, cid))
-            else:
-                resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
+            # v6.6.8: 取消同样只走 V5 鸣笛取消通道（与开一一对应）。
+            resp = await self.coordinator.api.honk_cancel_command(self.coordinator.vin)
         except Exception as exc:
             _LOGGER.warning("FordPass 鸣笛寻车（关）失败: %s", exc)
             self._set_cmd_result(False, str(exc))

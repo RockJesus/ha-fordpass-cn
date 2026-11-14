@@ -59,7 +59,12 @@ PREF_DURATION = "Duration"
 HONK_DURATION_OPTIONS = [5, 10, 15, 20]
 DEFAULT_HONK_DURATION = 10
 # 鸣笛类型选项（App 设置页 5 种，按强度从弱到强）
-CHIRP_TYPE_OPTIONS = ["雨落荷叶", "急浪拍岸", "汽笛长鸣", "空谷回音", "声光共舞"]
+# v6.6.8: 「声光共舞」(panic=4) 从鸣笛类型选项中移除——它走的是
+# InitialVA VAType=4（灯+喇叭），与独立的「声光寻车」开关完全同一条通道，
+# 保留会让两个开关功能重叠。该类型现在只由「声光寻车」提供；CHIRP_TO_TYPE
+# 仍保留 4 的映射，用于识别 options/云端里可能残留的旧值（switch 会把它
+# 归一为默认类型，不会再把鸣笛开关切到 panic 通道）。
+CHIRP_TYPE_OPTIONS = ["雨落荷叶", "急浪拍岸", "汽笛长鸣", "空谷回音"]
 DEFAULT_CHIRP_TYPE = "汽笛长鸣"  # App 设置页默认选中项
 # 中文类型 → VehicleAnnouncementType（v3.9.6 用户实测校准：App 真实枚举
 # 为 chrip1=0/chirp2=1/honk=2/chirpHonk=3/panic=4——HA 设「汽笛长鸣」App
@@ -85,8 +90,9 @@ ANNOUNCE_ENUM_CN = {
 # 中文类型 → v5 honk 请求的 ChirpType 数字（0-4，与 App 枚举一致，v3.1.8；
 # v3.9.6 与 CHIRP_TO_ANNOUNCE 同步校准——同属 App 枚举体系，实测
 # honk=2/chirpHonk=3）：0=chrip1 / 1=chirp2 / 2=honk / 3=chirpHonk / 4=panic。
-# 注意：4（声光共舞 panic）在部分车型走独立的 /panic/{duration} 端点
-# （灯+喇叭警报），实测返回 404（云端不支持）；其余 0-3 走 POST /honk。
+# v6.6.8：3 号以下才允许由「鸣笛寻车」下发。「声光共舞」(4=panic) 专属
+# 「声光寻车」开关（InitialVA VAType=4）；鸣笛开关遇到 4 一律归一为默认类型，
+# 不再切到 panic 通道。
 CHIRP_TO_TYPE = {
     "雨落荷叶": 0,
     "急浪拍岸": 1,

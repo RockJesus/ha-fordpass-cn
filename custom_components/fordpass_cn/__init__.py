@@ -157,6 +157,7 @@ PLATFORMS = [
     Platform.SELECT,
     Platform.EVENT,  # v5.9.5: 告警 / 车门开合事件
     Platform.UPDATE,  # v5.9.5: 车机固件版本
+    Platform.BINARY_SENSOR,  # v6.6.8: 车门窗未关汇总（对齐 App 未关提醒）
 ]
 
 # v5.1.7: 服务层（对齐 HA 官方 services.yaml 规范，自动化可直接调用）
