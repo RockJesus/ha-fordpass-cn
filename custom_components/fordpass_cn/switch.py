@@ -28,6 +28,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import capability
+from .api import FordPassApiError
 from .const import (
     ANNOUNCE_ENUM_CN,
     CHIRP_TO_ANNOUNCE,
@@ -139,6 +140,13 @@ async def async_setup_entry(
     except Exception:
         _LOGGER.debug("entity listener registration failed", exc_info=True)
 
+
+
+# v6.6.9: 声光通道择优——App 6.18.0 的声光寻车是独立 panic 命令
+# （PUT /api/vehicles/v5/{vin}/panic/{duration}），不再是 VA 的附属类型。
+# 首次触发先试 panic；云端以「不支持该通道」拒绝时回落 InitialVA VAType=4
+# 并记住结论（本次运行内不再试探），两种车型都能用。
+_PANIC_UNSUPPORTED_STATUS = (400, 404, 405)
 
 
 class FordPassCmdResultMixin:
@@ -679,20 +687,69 @@ class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCm
     def is_on(self) -> bool:
         return self._restore_bool(self._state)
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        duration = self._duration()
+    def _channel(self) -> str:
+        """当前声光通道：'panic'（V5 独立命令）或 'va'（InitialVA VAType=4）。"""
+        known = getattr(self.coordinator, "panic_channel", None)
+        if known is None:
+            return "panic"  # 首轮优先跟随 App 6.18.0 的独立 panic 命令
+        return "panic" if known else "va"
+
+    def _remember_channel(self, supported: bool) -> None:
+        self.coordinator.panic_channel = supported
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        attrs = dict(
+            FordPassCmdResultMixin.extra_state_attributes.fget(self)  # type: ignore[attr-defined]
+        )
+        attrs["light_horn_channel"] = self._channel()
+        return attrs
+
+    async def _fire_panic(self, duration: int) -> dict[str, Any]:
+        """panic 通道；不支持时回落 VA 并记住结论（只回落一次）。"""
+        first_try = getattr(self.coordinator, "panic_channel", None) is None
         try:
-            resp = await self.coordinator.api.va_command(
+            resp = await self.coordinator.api.panic_command(self.coordinator.vin, duration)
+            self._remember_channel(True)
+            return resp
+        except FordPassApiError as exc:
+            if not first_try or exc.status not in _PANIC_UNSUPPORTED_STATUS:
+                raise
+            _LOGGER.debug(
+                "FordPass 声光寻车 panic 通道不可用（HTTP %s），回落 InitialVA VAType=4",
+                exc.status,
+            )
+            self._remember_channel(False)
+            return await self.coordinator.api.va_command(
                 self.coordinator.vin, CMD_VA_INIT, vatype=4, duration=duration
             )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        duration = self._duration()
+        channel = self._channel()
+        try:
+            if channel == "panic":
+                resp = await self._fire_panic(duration)
+                # 回落发生时 _fire_panic 已把 panic_channel 置 False
+                channel = "panic" if getattr(self.coordinator, "panic_channel", None) else "va"
+            else:
+                resp = await self.coordinator.api.va_command(
+                    self.coordinator.vin, CMD_VA_INIT, vatype=4, duration=duration
+                )
         except Exception as exc:
             _LOGGER.warning("FordPass 声光寻车（开）失败: %s", exc)
             self._set_cmd_result(False, str(exc))
             raise
         cid = self._command_id(resp)
         if cid:
-            _LOGGER.info("FordPass 声光寻车已触发 commandId=%s（时长=%ss）", cid, duration)
-            self._track_task(self._poll_cmd_status(CMD_VA_INIT, cid))
+            _LOGGER.info(
+                "FordPass 声光寻车已触发 commandId=%s（时长=%ss，通道=%s）",
+                cid, duration, channel,
+            )
+            # announcestatus 只认 InitialVA 的 commandId；panic 走自己的 v5 命令，
+            # 轮询会一直查不到——故 panic 通道只记日志，不发起状态查询。
+            if channel == "va":
+                self._track_task(self._poll_cmd_status(CMD_VA_INIT, cid))
         self._state = True
         # v6.3.5: 操作结果记录（成功即时反馈；失败路径在 except 内已记录并抛错）
         self._set_cmd_result(True)
@@ -701,9 +758,23 @@ class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCm
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         try:
-            resp = await self.coordinator.api.va_command(
-                self.coordinator.vin, CMD_VA_CANCEL, vatype=4
-            )
+            if self._channel() == "panic":
+                # panic 的取消是 DELETE 同路径（duration 需与触发时一致）
+                try:
+                    resp = await self.coordinator.api.panic_cancel_command(
+                        self.coordinator.vin, self._duration()
+                    )
+                except FordPassApiError as exc:
+                    if exc.status not in _PANIC_UNSUPPORTED_STATUS:
+                        raise
+                    self._remember_channel(False)
+                    resp = await self.coordinator.api.va_command(
+                        self.coordinator.vin, CMD_VA_CANCEL, vatype=4
+                    )
+            else:
+                resp = await self.coordinator.api.va_command(
+                    self.coordinator.vin, CMD_VA_CANCEL, vatype=4
+                )
         except Exception as exc:
             _LOGGER.warning("FordPass 声光寻车（关）失败: %s", exc)
             self._set_cmd_result(False, str(exc))
@@ -711,7 +782,8 @@ class FordPassVAswitch(FordPassMomentarySwitch, FordPassRestoreMixin, FordPassCm
         cid = self._command_id(resp)
         if cid:
             _LOGGER.info("FordPass 声光寻车已取消 commandId=%s", cid)
-            self._track_task(self._poll_cmd_status(CMD_VA_CANCEL, cid))
+            if self._channel() == "va":
+                self._track_task(self._poll_cmd_status(CMD_VA_CANCEL, cid))
         self._cancel_auto_off()
         self._state = False
         self._set_cmd_result(True)

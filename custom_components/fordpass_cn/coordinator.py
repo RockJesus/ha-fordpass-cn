@@ -338,6 +338,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 防止福特云限流：只有 vehicle-status 每轮拉取，其余按 TTL 命中
         # 直接复用上次数据，不发请求；请求失败保留旧缓存（最后已知状态）。
         self._cache: dict[str, tuple[float, Any]] = {}
+        # v6.6.9: 声光通道探测结论（None=未试过 / True=panic 可用 / False=回落 VA）
+        self.panic_channel: bool | None = None
         # v5.1.8: 账号级共享缓存（问题 7 P2 修复）——chirp_cloud / messages
         # 等账户级端点（云端 UserPreference/未读消息摘要，多车共享同一份）
         # 存到这里，多车账号下每轮只真拉一次，其余车辆命中缓存，消除
