@@ -440,6 +440,11 @@
       "firmware_update": {
         "name": "Vehicle Firmware"
       }
+    },
+    "climate": {
+      "remote_climate": {
+        "name": "Remote Climate"
+      }
     }
   }
 }

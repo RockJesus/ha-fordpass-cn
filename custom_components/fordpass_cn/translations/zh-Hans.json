@@ -440,6 +440,11 @@
       "firmware_update": {
         "name": "车机固件"
       }
+    },
+    "climate": {
+      "remote_climate": {
+        "name": "远程空调"
+      }
     }
   }
 }
