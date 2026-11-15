@@ -374,7 +374,7 @@
         "name": "Prognostic Diagnostics"
       },
       "prognostic_range": {
-        "name": "Remaining Range"
+        "name": "Oil Life Remaining Range"
       },
       "messages": {
         "name": "Unread Messages"
@@ -393,6 +393,9 @@
       },
       "cevs_chargelogs": {
         "name": "Charging History"
+      },
+      "oil_zero_date": {
+        "name": "Oil Life Zero Date"
       }
     },
     "device_tracker": {

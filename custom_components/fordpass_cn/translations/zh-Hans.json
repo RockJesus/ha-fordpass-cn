@@ -374,7 +374,7 @@
         "name": "预测性诊断"
       },
       "prognostic_range": {
-        "name": "剩余可行驶里程"
+        "name": "机油剩余可行驶里程"
       },
       "messages": {
         "name": "未读消息"
@@ -393,6 +393,9 @@
       },
       "cevs_chargelogs": {
         "name": "充电记录"
+      },
+      "oil_zero_date": {
+        "name": "机油归零预计日期"
       }
     },
     "device_tracker": {

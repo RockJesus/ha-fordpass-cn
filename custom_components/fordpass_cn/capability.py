@@ -203,6 +203,28 @@ def battery_lifecycle_supported(fuel: str | None) -> bool:
     return str(fuel or "").strip().upper() in EV_FUEL_TYPES
 
 
+def zero_month(value: Any) -> str | None:
+    """把云端「机油归零」日期规范成 ``YYYY-MM``。
+
+    v6.7.5: 福特派 ``prognostic.data.dateOnZero`` 实测形如 ``2027/01``
+    （只精确到月）；这里兼容 ``2027-01`` / ``2027.01`` / ``2027/01/15`` /
+    ``2027年01月`` 等写法。解析不出合法年月（缺月份、越界、占位串）时返回
+    None——不编造月份精度，也不把无月份的值当成 1 月。
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in _INVALID_VALUES:
+        return None
+    match = re.match(r"(\d{4})\s*(?:年|/|-|\.)?\s*(\d{1,2})", text)
+    if not match:
+        return None
+    year, month = int(match.group(1)), int(match.group(2))
+    if not (1980 <= year <= 2100) or not (1 <= month <= 12):
+        return None
+    return f"{year:04d}-{month:02d}"
+
+
 # ---------------------------------------------------------------------------
 # v3.1.20: 云端能力探测（ccfeatures availableFeatures 位图 → VDSFeatureType）
 # 全车型自动创建的关键——每辆车登录后按各自云端能力位图探测开通的服务能力，

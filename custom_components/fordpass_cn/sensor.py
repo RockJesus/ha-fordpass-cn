@@ -637,6 +637,9 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
             # （实测车型 prognostic 曾返回无该字段 → 实体恒 unknown，不创建）
             if prog_payload.get("remainingKMs") is not None:
                 sensors.append(FordPassRangeSensor(coordinator))
+            # v6.7.5: 机油归零预计日期（dateOnZero 精确到月，有值才创建）
+            if prog_payload.get("dateOnZero") is not None:
+                sensors.append(FordPassOilZeroDateSensor(coordinator))
             sensors.append(FordPassSlowLeakSensor(coordinator))
             sensors.append(FordPassDiagnosticSensor(coordinator))
     # v3.1.17: 未读消息（GET /api/cnxapi-message/app/messages/summary，
@@ -714,6 +717,7 @@ _TRANSLATED_KEYS = frozenset({
     "messages",
     "odometer",
     "oil_health",
+    "oil_zero_date",
     "onlinernr",
     "ota_setting",
     "out_and_about",
@@ -1924,7 +1928,7 @@ class FordPassRangeSensor(_ServiceInfoSensor):
     """剩余可行驶里程（v3.1.9）：prognostic.data.remainingKMs（km）。"""
 
     def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "prognostic", "剩余可行驶里程", "mdi:road-variant", uid="prognostic_range")
+        super().__init__(coordinator, "prognostic", "机油剩余可行驶里程", "mdi:road-variant", uid="prognostic_range")
         # v5.4.6: 数值化（此前 state 为「123 km」文本无法统计/EVCC 读取）——
         # 纯数值 + km 单位 + measurement + distance，支持长期趋势图与 EVCC 消费
         self._attr_native_unit_of_measurement = "km"
@@ -1947,6 +1951,42 @@ class FordPassRangeSensor(_ServiceInfoSensor):
             out["oil_life"] = f"{int(payload['iolm'])}%"
         if payload.get("dateOnZero"):
             out["zero_on"] = str(payload["dateOnZero"])
+        return out
+
+
+class FordPassOilZeroDateSensor(_ServiceInfoSensor):
+    """机油归零预计日期（v6.7.5）：prognostic.data.dateOnZero（精确到月）。
+
+    与「机油寿命」「机油剩余可行驶里程」同属预测性诊断数据包：云端给的是
+    机油寿命归零的年月（实测 2027/01），这里规范成 YYYY-MM，便于排序、长期
+    记录与保养提醒；原始字符串另存 zero_on_raw 属性，云端改格式也不丢信息。
+    """
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(
+            coordinator, "prognostic", "机油归零预计日期",
+            "mdi:calendar-end", uid="oil_zero_date",
+        )
+
+    def _format(self, data: dict) -> str | None:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        return capability.zero_month(payload.get("dateOnZero"))
+
+    def _summary(self, data: dict) -> dict:
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict):
+            return {}
+        out: dict[str, Any] = {}
+        month = capability.zero_month(payload.get("dateOnZero"))
+        if month:
+            out["zero_month_iso"] = f"{month}-01"
+        raw = payload.get("dateOnZero")
+        if raw not in (None, ""):
+            out["zero_on_raw"] = str(raw)
+        if payload.get("remainingKMs") is not None:
+            out["remaining_km"] = payload["remainingKMs"]
         return out
 
 
