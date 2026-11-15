@@ -58,3 +58,43 @@ async def brand_with_vehicles(
         if vehicles:
             return brand, True
     return None, reachable
+
+
+
+async def vehicles_with_brand_fallback(
+    api_factory: Callable[[str], Any],
+    preferred: str,
+    timeout: float = PROBE_TIMEOUT,
+) -> tuple[str, list[Any], Any]:
+    """按「首选品牌 → 另一品牌」取车辆列表，返回真正有车的那一份。
+
+    v6.7.6: ``brand_with_vehicles`` 只服务添加流程；重启加载（setup）此前只
+    查 entry 里存的品牌，旧条目或「添加时自动切换但未落盘」的条目一旦品牌
+    与实际归属不符，就会在每次重启时报「账号下未发现车辆」。这里把同一套
+    兜底搬到 setup 使用。
+
+    返回 ``(品牌, 车辆列表, 该品牌对应的 api 实例)``：
+    - 首选品牌有车 → 原样返回首选品牌（不触发纠正）；
+    - 首选为空、另一品牌有车 → 返回另一品牌与其 api，调用方据此更新 entry；
+    - 两品牌都空 / 请求全失败 → ``(preferred, [], 首选 api)``，由调用方按
+      「账号确实没有车」处理。
+    单个品牌请求异常只记 debug 并继续下一个品牌，不把 setup 带崩。
+    """
+    last_api: Any = None
+    for brand in (preferred, alternate_brand(preferred)):
+        try:
+            api = api_factory(brand)
+        except Exception as err:  # noqa: BLE001 - 构造失败按该品牌不适用继续
+            _LOGGER.debug("品牌 %s api 构造失败：%s", brand, err)
+            continue
+        if last_api is None:
+            last_api = api
+        try:
+            async with asyncio.timeout(timeout):
+                vehicles = await api.get_vehicles()
+        except Exception as err:  # noqa: BLE001 - 单品牌失败按「该品牌不适用」继续
+            _LOGGER.debug("品牌 %s 车辆查询失败：%s", brand, err)
+            continue
+        if vehicles:
+            return brand, vehicles, api
+    return preferred, [], last_api

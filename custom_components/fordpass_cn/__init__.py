@@ -23,7 +23,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import capability
+from . import brand_probe, capability
 from .api import FordPassApi, FordPassApiError
 from .const import (
     BRAND_LABELS,
@@ -536,6 +536,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"FordPass setup error: {err}") from err
 
     if not vehicles:
+        # v6.7.6: 品牌兜底下移到 setup——v6.7.0 的跨品牌纠正只在添加流程，
+        # entry 里存的品牌与实际车辆归属不符时（旧条目 / 添加时切换未落盘），
+        # 每次重启都会单品牌查询并报「账号下未发现车辆」。
+        def _brand_factory(brand: str) -> FordPassApi:
+            alt = FordPassApi(session, _LOGGER, brand=brand)
+            alt.set_token(
+                entry.data.get(CONF_ACCESS_TOKEN),
+                entry.data.get(CONF_REFRESH_TOKEN),
+            )
+            alt.on_token_refresh = _persist_token
+            return alt
+
+        _cur_brand = entry.data.get(CONF_BRAND, DEFAULT_BRAND)
+        _brand, vehicles, _api = await brand_probe.vehicles_with_brand_fallback(
+            _brand_factory, _cur_brand
+        )
+        if vehicles and _brand != _cur_brand:
+            # 车辆确实归属另一品牌：把 entry 的品牌改正，并用新品牌 api 继续
+            # setup，用户无需删除重配（与添加流程自动切换保持一致）。
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_BRAND: _brand}
+            )
+            api = _api
+            _LOGGER.info(
+                "车辆归属品牌纠正：%s → %s（entry 品牌已更新）", _cur_brand, _brand
+            )
+
+    if not vehicles:
         # v5.3.1: 空账号不再抛 RuntimeError（HA 不自动重试、entry 永久失败
         # 态）——转 ConfigEntryError：显示配置错误、不循环重试、用户在
         # 配置中修改（如换绑了车辆再重新配置）。
@@ -545,9 +573,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.data.get(CONF_BRAND, DEFAULT_BRAND), entry.data.get(CONF_BRAND)
         )
         raise ConfigEntryError(
-            f"账号下未发现车辆（当前品牌：{_brand_label}）——请在福特派/林肯之道 "
-            f"App 中确认车辆已绑定并已开通互联服务；若车型属另一品牌，"
-            f"请删除后重新添加并在第 1 步选择对应品牌"
+            f"账号下未发现车辆（当前品牌：{_brand_label}；福特派与林肯之道两个"
+            f"品牌均已尝试）——请在 App 中确认车辆已绑定并已开通互联服务，"
+            f"如仍失败请附本次 debug 日志到项目 issue 排查"
         )
 
     # v4.2.7: 预热签名模块单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
