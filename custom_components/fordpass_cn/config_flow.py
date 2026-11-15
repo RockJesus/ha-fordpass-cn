@@ -27,7 +27,8 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import app_constants, crypto_data
-from .api import FordPassApi, FordPassApiError
+from .api import FordPassApi
+from . import brand_probe, FordPassApiError
 from .wbsk import CryptoDataMissing
 from .const import (
     B2C_AUTHORITY,
@@ -282,7 +283,25 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({}),
         )
 
-    def _finish_login(
+    async def _async_resolve_brand(self, tokens: dict) -> tuple[str | None, bool]:
+        """判定账号实际属于哪个品牌（v6.7.0，见 brand_probe）。
+
+        复用刚拿到的令牌构造 api：品牌只影响 appKey/clientType，令牌本身
+        来自同一登录网关；若令牌不适用于另一品牌，探测会安静失败并按
+        「该品牌无车」处理，不影响配置流程。
+        """
+        session = async_get_clientsession(self.hass)
+        access = tokens.get("access_token")
+        refresh = tokens.get("refresh_token")
+
+        def _factory(brand: str) -> FordPassApi:
+            api = FordPassApi(session, _LOGGER, brand=brand)
+            api.set_token(access, refresh)
+            return api
+
+        return await brand_probe.brand_with_vehicles(_factory, self._brand)
+
+    async def _finish_login(
         self, mode: str, tokens: dict, extra_data: dict[str, Any] | None = None
     ) -> FlowResult:
         """登录成功后的收尾（v3.9.8）：reauth 更新 entry；否则创建 entry。
@@ -378,6 +397,33 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return reload_abort(entry, data=data, reason="reauth_successful")
             self.hass.config_entries.async_update_entry(entry, data=data)
             return self.async_abort(reason="reauth_successful")
+        # v6.7.0：创建 entry 前先判定车辆归属——品牌选错时登录照样成功，
+        # 车辆列表却是空的，用户只能看到「设置失败：账号下未发现车辆」，
+        # 不知道该改品牌。这里按「首选品牌 → 另一品牌」实际取一次列表：
+        # 另一品牌有车就自动改用它（免去用户重发验证码），两个品牌都没有
+        # 才明确中止并提示检查 App 绑定。
+        resolved, reachable = await self._async_resolve_brand(tokens)
+        if resolved is None and reachable:
+            # 两个品牌都成功返回空列表：账号确实没有可用的车
+            return self.async_abort(
+                reason="no_vehicles",
+                description_placeholders={
+                    "brand": BRAND_LABELS.get(self._brand, self._brand)
+                },
+            )
+        elif resolved is None:
+            # 请求全部失败（网络/超时）——不把临时故障判成「没有车」，
+            # 照常创建 entry（沿用用户选的品牌），由 setup 的
+            # ConfigEntryNotReady 走重试
+            _LOGGER.warning("FordPass 车辆归属判定全部请求失败，按临时故障继续创建")
+        elif resolved != self._brand:
+            _LOGGER.info(
+                "FordPass 账号在「%s」品牌下无可用车辆，已自动切换到「%s」",
+                BRAND_LABELS.get(self._brand, self._brand),
+                BRAND_LABELS.get(resolved, resolved),
+            )
+            self._brand = resolved
+
         return self.async_create_entry(
             title=f"{self._phone or self._username or DOMAIN}（{BRAND_LABELS.get(self._brand, self._brand)}）",
             data={
@@ -547,7 +593,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
                 _LOGGER.exception("unexpected error during login")
             else:
-                return self._finish_login(LOGIN_MODE_SMS, tokens)
+                return await self._finish_login(LOGIN_MODE_SMS, tokens)
         return self.async_show_form(
             step_id="code",
             data_schema=STEP_CODE_SCHEMA,
@@ -616,7 +662,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     # v6.2.2: 不再持久化密码——全仓库无任何代码读取
                     # entry.data["password"]（实际登录链路是用户浏览器地址栏
                     # 粘贴的 authorization code），明文落盘徒增 .storage 泄露面。
-                    return self._finish_login(LOGIN_MODE_PASSWORD, tokens)
+                    return await self._finish_login(LOGIN_MODE_PASSWORD, tokens)
         # v6.2.1: B2C 固定值来自运行时数据包——先确保数据包可用再构造 URL
         # v6.3.7: 检查返回值——此前忽略结果，数据包缺失时 client_id 为 None，
         # 表单里给出一条无效登录链接且没有任何提示。

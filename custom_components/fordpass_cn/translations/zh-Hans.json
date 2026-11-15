@@ -69,7 +69,8 @@
       "already_configured": "该手机号已配置此品牌",
       "reauth_phone_mismatch": "重新认证账号与原手机号不一致，请删除后重新配置集成",
       "reauth_successful": "账号重新认证成功",
-      "reconfigure_successful": "配置已更新"
+      "reconfigure_successful": "配置已更新",
+      "no_vehicles": "当前品牌「{brand}」下未发现车辆。请确认车辆已在对应 App 内绑定并开通互联服务；若车型属另一品牌，重新添加时请在第 1 步选择对应品牌"
     }
   },
   "options": {

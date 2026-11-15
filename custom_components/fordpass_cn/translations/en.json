@@ -69,7 +69,8 @@
       "already_configured": "This phone number is already configured for this brand",
       "reauth_phone_mismatch": "The logged-in account differs from the original phone number. Please remove and reconfigure the integration.",
       "reauth_successful": "Account re-authenticated successfully",
-      "reconfigure_successful": "Configuration updated"
+      "reconfigure_successful": "Configuration updated",
+      "no_vehicles": "No vehicles found under the selected brand \"{brand}\". Make sure the vehicle is bound in the matching app, or choose the other brand in step 1."
     }
   },
   "options": {

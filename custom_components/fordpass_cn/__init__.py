@@ -26,6 +26,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from . import capability
 from .api import FordPassApi, FordPassApiError
 from .const import (
+    BRAND_LABELS,
     CONF_ACCESS_TOKEN,
     CONF_BRAND,
     CONF_CHIRP_TYPE,
@@ -537,8 +538,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # v5.3.1: 空账号不再抛 RuntimeError（HA 不自动重试、entry 永久失败
         # 态）——转 ConfigEntryError：显示配置错误、不循环重试、用户在
         # 配置中修改（如换绑了车辆再重新配置）。
+        # v6.7.0: 文案带上当前品牌并给出改品牌指引——此前所有「空账号」
+        # 都报同一句，林肯车主在「福特」品牌下添加时无法自查。
+        _brand_label = BRAND_LABELS.get(
+            entry.data.get(CONF_BRAND, DEFAULT_BRAND), entry.data.get(CONF_BRAND)
+        )
         raise ConfigEntryError(
-            "账号下未发现车辆——请先在福特派/林肯之道 App 中确认已绑定车辆"
+            f"账号下未发现车辆（当前品牌：{_brand_label}）——请在福特派/林肯之道 "
+            f"App 中确认车辆已绑定并已开通互联服务；若车型属另一品牌，"
+            f"请删除后重新添加并在第 1 步选择对应品牌"
         )
 
     # v4.2.7: 预热签名模块单例（x_api/cevs/lbs_p2c 三个场景）——纯 Python
