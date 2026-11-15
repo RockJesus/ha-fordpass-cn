@@ -12,7 +12,7 @@
 [![Ruff](https://img.shields.io/github/actions/workflow/status/RockJesus/ha-fordpass-cn/ruff.yml?style=flat-square&label=Ruff)](https://github.com/RockJesus/ha-fordpass-cn/actions/workflows/ruff.yml)
 [![许可证](https://img.shields.io/github/license/RockJesus/ha-fordpass-cn?style=flat-square)](LICENSE)
 
-[功能特性](#-功能特性) · [安装](#-安装) · [配置](#-配置) · [服务](#-服务) · [支持的实体](#-支持的实体) · [自动化示例](#-自动化示例) · [EVCC 联动](#-与-evcc-联动) · [故障排查](#-故障排查) · [隐私与安全](#-隐私与安全) · [版本与更新](#-版本与更新)
+[支持的车型](#-支持的车型) · [功能特性](#-功能特性) · [安装](#-安装) · [配置](#-配置) · [服务](#-服务) · [支持的实体](#-支持的实体) · [自动化示例](#-自动化示例) · [EVCC 联动](#-与-evcc-联动) · [故障排查](#-故障排查) · [隐私与安全](#-隐私与安全) · [版本与更新](#-版本与更新)
 
 </div>
 
@@ -75,6 +75,24 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 - 命令失败黑名单带 90 天自动过期，云端后续放开的能力会自动补建实体，选项页可一键重置
 
 > **蓝牙域边界**：汽车 BLE 车控指令（一键制冷/制热、熄火、门锁、后备箱、车窗、寻车、前备箱、举升顶、车窗通风）与 PAAK 数字钥匙是**纯 BLE 物理链路**（需手机在车旁约 10 米内并建立安全会话），云端无 HTTP 通道，因此本云集成无法执行——支持 BLE 的车型请用手机在车旁操作官方 App。云端可用的蓝牙域能力（家充桩 BLE 自动认证）已接入。
+
+## 🚗 支持的车型
+
+本集成对**福特派**与**林肯之道**两个云端下已开通服务的车型通用，中英文并列便于按车型检索：
+
+**福特（Ford）**
+
+锐际 Escape · 锐界 Edge · 锐界L Edge L · 探险者 Explorer · 领裕 Equator · 领睿 Equator Sport ·
+蒙迪欧 Mondeo · 致胜 · EVOS · 烈马 Bronco · 智趣烈马 · 游骑侠 Ranger · F-150 猛禽 Raptor ·
+Mustang 野马 · 电马 Mustang Mach-E · 途睿欧 Tourneo · 全顺 Transit · 福克斯 Focus · 嘉年华 Fiesta ·
+福睿斯 Escort · 金牛座 Taurus · 翼虎 Kuga · 翼搏 EcoSport · 领界 Territory · 撼路者 Everest
+
+**林肯（Lincoln）**
+
+冒险家 Corsair · 航海家 Nautilus · 飞行家 Aviator · 领航员 Navigator · 林肯Z Zephyr ·
+大陆 Continental · MKZ · MKX
+
+> 能否接入取决于该车是否已在福特派 / 林肯之道开通云端服务；未开通或云端未提供服务的车辆不会出现在车辆列表中。实体按车辆实际云端能力自动创建（纯燃油车不会出现充电与预约出发实体）。
 
 ## 📦 安装
 
@@ -502,6 +520,14 @@ recorder:
 ✍️ 作者博客：[rockjesus.cn](https://rockjesus.cn)
 
 </div>
+### v6.7.2
+
+- 仓库描述与 Topics 补齐福特 / 林肯中国市场车型的中英文名（含在售与经典停售车型），
+  便于车主按车型名检索到本集成。
+- README 新增「支持的车型」章节，明确接入以云端服务开通情况为准。
+- 集成逻辑与显示名无变化，已安装用户无需更新。
+
+
 ### v6.7.1
 
 - **集成显示名调整**：`FordPass China 福特派互联` → `FordPass / Lincoln Way China 福特派 / 林肯之道`。
