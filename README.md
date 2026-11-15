@@ -2,7 +2,7 @@
 
 <img src="custom_components/fordpass_cn/brand/logo.png" alt="FordPass China / Lincoln Way" width="380">
 
-# FordPass China 福特派互联 / Lincoln Way 林肯之道
+# FordPass / Lincoln Way China 福特派 / 林肯之道
 
 **把爱车接进 Home Assistant** —— 远程控车 · 车况监控 · 定位追踪 · 预约充电 · EVCC 联动
 
@@ -35,7 +35,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 - **Login** — SMS passcode (both brands) or username/password (FordPass only, browser-assisted)
 - **Zero dependencies** — pure Python, no extra packages
 
-**Install**: Settings → Marketplace (HACS before 2026.11) → search "福特派互联" → Download → restart. Or add this repository as a custom integration repository. Then add the integration "FordPass China 福特派互联".
+**Install**: Settings → Marketplace (HACS before 2026.11) → search “福特派” 或 “林肯之道” → Download → restart. Or add this repository as a custom integration repository. Then add the integration "FordPass / Lincoln Way China 福特派 / 林肯之道".
 
 > Disclaimer: independent, non-official project for research and personal use only. No affiliation with Ford Motor Company. Use at your own risk.
 
@@ -502,6 +502,15 @@ recorder:
 ✍️ 作者博客：[rockjesus.cn](https://rockjesus.cn)
 
 </div>
+### v6.7.1
+
+- **集成显示名调整**：`FordPass China 福特派互联` → `FordPass / Lincoln Way China 福特派 / 林肯之道`。
+  Home Assistant「添加集成」页的搜索只匹配集成名与域名，此前两者都不含「林肯」，
+  林肯车主搜索时看不到本集成；改名后「福特」「林肯」两个中文词都能直接搜到。
+  已安装用户无需重装，实体与配置不受影响。
+- 仓库 Topics 补充车型标签（escape / corsair / mondeo 等），便于按车型检索。
+
+
 ### v6.7.0
 
 - **添加集成时自动识别品牌**：同一手机号在福特派与林肯之道是两套车辆体系。
