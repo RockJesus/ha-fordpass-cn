@@ -349,6 +349,22 @@ action:
 
 ## 🎛 仪表盘卡片示例
 
+除了下面的通用卡片，也可以直接使用为福特派集成适配的 [**ha-car**](https://github.com/RockJesus/ha-car)（纯前端单文件卡片，HACS 添加自定义仓库 `RockJesus/ha-car` 后安装）：
+
+- 会把 **俯视车图 + 车门/车窗/前后盖/胎压** 按真实方位叠在车身上，四轮位、四门位各自成卡；
+- 面板视图（`type: panel`）按 1440×900 设计稿一屏铺满、不滚动，手机竖屏按 390×840 等比缩放；
+- 自动识别本集成的实体（拼音 `entity_id`、英文 translation key、`device_id` 分组都认），也能在编辑器里逐项手绑或一键「自动适配集成实体」；
+- 内置 7 套主题（含 iOS 风格毛玻璃）、长按 2 秒防误触、截图脱敏开关。
+
+用本集成的实体时，卡片配置只要一行：
+
+```yaml
+type: custom:ha-car
+hash: 我的车        # 或 device: <集成里那辆车的 device_id>
+```
+
+多辆车会在 `hash` / `device` 里按需选择，单辆车自动识别，不需要手填实体。
+
 推荐搭配 **Vehicle Status Card**（HACS → Frontend 搜索安装）把实体拼成车况面板。在仪表盘「原始配置编辑器」中添加：
 
 <details>
