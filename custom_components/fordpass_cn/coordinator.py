@@ -1342,12 +1342,14 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_error_detail = detail[:400] if detail else "未知错误"
 
     async def _async_update_data(self, force_all: bool = False) -> dict[str, Any]:
+        data: dict[str, Any] = {}
         try:
             status = await self.api.get_vehicle_status(self.vin)
-            data: dict[str, Any] = {
-                "status": status,
-                "vehiclestatus": status.get("vehiclestatus", status),
-            }
+            data["status"] = status
+            data["vehiclestatus"] = status.get("vehiclestatus", status)
+        except ConfigEntryAuthFailed:
+            # 凭据永久失效（refresh 也失败）→ 透传，停止轮询并触发 reauth。
+            raise
         except FordPassApiError as err:
             if err.code in (401, 403) and getattr(err, "refresh_failed", False):
                 # v4.5.0: 仅 refresh 也失败（api 内部已自动 refresh 一次且
@@ -1355,26 +1357,34 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # ConfigEntryAuthFailed 停止轮询（避免每轮打云请求制造
                 # "刷新失败"噪音），HA 自动启动 reauth flow；实体保留最后
                 # 已知状态，重新认证后恢复。其他 401/403（无 refresh_token
-                # 的瞬时 401、单端点业务 401 等）走下方 UpdateFailed 保留
-                # 旧值，不误停轮询（此前所有 401 都停，实测 token 有效却
-                # "实体不刷新"）。
+                # 的瞬时 401、单端点业务 401 等）走下方软失败，不误停轮询。
                 await self._log_activity("登录凭据已失效，请重新认证（设置 → 设备与服务 → 福特派互联）")
                 raise ConfigEntryAuthFailed(f"FordPass token expired: {err}") from err
-            # v4.3.8: 刷新失败也写活动（"不可用活动"）——此前 UpdateFailed
-            # 直接抛出，摘要代码不执行 → 活动日志无任何记录，用户看不到
-            # "刷新失败/云端不可用"的活动。失败保留最后已知状态（实体恒
-            # available），但活动日志如实记录失败原因。
+            # v6.7.7: 单端点业务失败改为软失败——此前车辆状态一抛错就
+            # raise UpdateFailed，整轮中断，后续位置/告警/OTA/保养/召回/
+            # SIM/WiFi 端点全部拿不到，活跃实体大面积 unavailable。现在保留
+            # 上一轮状态快照、记活动与失败打点后继续刷新其余端点；实体恒
+            # 保留最后已知状态。仅凭据永久失效（上方 AuthFailed）才中断整轮。
             await self._log_activity(
                 f"车辆状态刷新失败（保留最后已知状态）：{err}"
             )
             self._mark_sync_failure(err)
-            raise UpdateFailed(f"FordPass update failed: {err}") from err
+            prev_status = (self.data or {}).get("status") or (
+                self.data or {}
+            ).get("vehiclestatus")
+            data["status"] = prev_status
+            data["vehiclestatus"] = prev_status
         except TimeoutError as err:
+            # v6.7.7: 超时同样软失败，保留旧快照并继续后续端点（见上）。
             await self._log_activity(
                 "车辆状态刷新失败（保留最后已知状态）：请求超时"
             )
             self._mark_sync_failure(err)
-            raise UpdateFailed("FordPass update timed out") from err
+            prev_status = (self.data or {}).get("status") or (
+                self.data or {}
+            ).get("vehiclestatus")
+            data["status"] = prev_status
+            data["vehiclestatus"] = prev_status
 
         # ---- v3.4.1 防限流优化：以下均走 TTL 缓存，慢变数据命中即复用，
         # 不发请求；请求失败保留旧缓存（最后已知状态），不阻塞主刷新。
