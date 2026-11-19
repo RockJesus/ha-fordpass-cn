@@ -42,6 +42,7 @@ from .const import (
 )
 from .coordinator import FordPassCoordinator
 from .crypto_data import async_ensure_crypto_data, missing_help
+from .frontend import async_register_card
 from .wbsk import FordPassCrypto
 
 _LOGGER = logging.getLogger(__name__)
@@ -403,8 +404,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """集成级 setup：注册全局服务（注册逻辑幂等，重载亦由 entry setup 兜底）。"""
+    """集成级 setup：注册全局服务 + 内置爱车卡片（均幂等）。"""
     await _async_register_services(hass)
+    await async_register_card(hass)
     return True
 
 
@@ -440,6 +442,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # v6.3.7: 幂等兜底——重载 entry 不会重跑 async_setup，此处确保服务仍在
     # （此前修复前重载后服务永久丢失，见 _async_register_services 注释）。
     await _async_register_services(hass)
+    # v6.7.9: 卡片随集成分发，entry 兜底注册（非 HACS 安装、单独 reload 也能拿到）
+    await async_register_card(hass)
 
     session = async_get_clientsession(hass)
     api = FordPassApi(session, _LOGGER, brand=entry.data.get(CONF_BRAND, DEFAULT_BRAND))

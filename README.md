@@ -146,7 +146,7 @@ Mustang 野马 · 电马 Mustang Mach-E · 途睿欧 Tourneo · 全顺 Transit �
 
 ## 🎛 仪表盘卡片示例
 
-除了下面的通用卡片，也可以直接使用为福特派集成适配的 [**ha-car**](https://github.com/RockJesus/ha-car)（纯前端单文件卡片，HACS 添加自定义仓库 `RockJesus/ha-car` 后安装）：
+除了下面的通用卡片，也可以直接使用为福特派集成适配的 [**ha-car**](https://github.com/RockJesus/ha-car) —— **它已随本集成分发**，安装/更新集成后自动注册为前端资源（`/fordpass_cn/ha-car.js`），不需要再去 HACS 装插件，重启一次即可在仪表盘里添加 `custom:ha-car`：
 
 - 会把 **俯视车图 + 车门/车窗/前后盖/胎压** 按真实方位叠在车身上，四轮位、四门位各自成卡；
 - 面板视图（`type: panel`）按 1440×900 设计稿一屏铺满、不滚动，手机竖屏按 390×840 等比缩放；
@@ -161,6 +161,8 @@ hash: 我的车        # 或 device: <集成里那辆车的 device_id>
 ```
 
 多辆车会在 `hash` / `device` 里按需选择，单辆车自动识别，不需要手填实体。
+
+> 卡片与集成了共用一次发版：更新集成后卡片同步升级。若之前已在 HACS 里以自定义仓库装过独立的 `RockJesus/ha-car` 插件，请在 HACS「前端」中卸载它（或至少删掉 Lovelace 资源里那条 `/local/community/ha-car/ha-car.js`），避免两份同名卡片同时加载。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/RockJesus/ha-car/main/docs/preview-card.webp" width="300" alt="ha-car 面板模式预览（假数据）">
