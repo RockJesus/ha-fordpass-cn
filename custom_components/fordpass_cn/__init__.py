@@ -47,6 +47,9 @@ from .wbsk import FordPassCrypto
 
 _LOGGER = logging.getLogger(__name__)
 
+# 集成只从 config entry 设置，无 YAML 配置项（hassfest CONFIG_SCHEMA 校验）
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 # v5.3.8: 车辆对象日志安全转储——车辆 dict 含手机号/用户 ID 等个人标识
 # 字段（sensor.py 的 _PHONE_KEYS/_IDENTITY_KEYS 掩码逻辑证明），直接
 # dump 进日志（尤其 warning 级）会泄露。过滤敏感键后再截断。
