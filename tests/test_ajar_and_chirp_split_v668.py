@@ -3,9 +3,9 @@
 回归保护点：
 1. 车门窗未关（binary_sensor）：任一车门/车窗/天窗未关 → on，属性列出具体项；
    未知值不计入（不得把 Unknown 误报成未关）；车型无车门/车窗字段不创建。
-2. 鸣笛开关只走 V5 /honk：历史类型「声光共舞」(panic=4) 已被移除并归一为
-   默认类型——旧实现会把鸣笛切到 InitialVA VAType=4，与「声光寻车」完全
-   同通道（用户实测两开关反馈一样）。
+2. 鸣笛开关只走 V5 /honk：「声光共舞」(panic=4) 虽回到偏好下拉，但不在
+   HONK_COMMAND_TYPES 内，鸣笛开关读到仍归一默认类型——不会把鸣笛切到
+   InitialVA VAType=4，与「声光寻车」保持独立通道。
 3. 鸣笛设置来源：内存 → 云端回读 → options → 默认，保证「所见即所发」。
 """
 from __future__ import annotations
@@ -255,12 +255,15 @@ def _honk_switch(coordinator):
     return ent
 
 
-def test_chirp_options_exclude_panic():
+def test_panic_in_preference_but_not_honk_command():
+    """v6.8.3：共舞回到偏好下拉（与 App 设置页对齐），鸣笛命令通道仍隔离。"""
     _install_fakes()
     const = sys.modules["fp668.const"]
-    assert "声光共舞" not in const.CHIRP_TYPE_OPTIONS
+    assert "声光共舞" in const.CHIRP_TYPE_OPTIONS
     assert const.DEFAULT_CHIRP_TYPE in const.CHIRP_TYPE_OPTIONS
-    # 旧值仍可识别（回读/兼容），但不在可选集
+    # 鸣笛可下发类型（0-3）不含 panic 4
+    assert "声光共舞" not in const.HONK_COMMAND_TYPES
+    # 映射仍保留 4，供云端回读与独立「声光寻车」开关使用
     assert const.CHIRP_TO_TYPE["声光共舞"] == 4
 
 

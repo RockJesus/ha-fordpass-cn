@@ -33,7 +33,6 @@ from .const import (
     ANNOUNCE_ENUM_CN,
     CHIRP_TO_ANNOUNCE,
     CHIRP_TO_TYPE,
-    CHIRP_TYPE_OPTIONS,
     CMD_ENGINE_START,
     CMD_ENGINE_STOP,
     CMD_LIGHT_FIND_OFF,
@@ -46,6 +45,7 @@ from .const import (
     DEFAULT_CHIRP_TYPE,
     DEFAULT_HONK_DURATION,
     HONK_AUTO_OFF_SECONDS,
+    HONK_COMMAND_TYPES,
     LIGHT_FIND_AUTO_OFF_SECONDS,
 )
 from .coordinator import FordPassCoordinator
@@ -281,13 +281,14 @@ class FordPassMomentarySwitch(FordPassTaskTracker):
 
     @staticmethod
     def _norm_chirp(name: Any) -> str | None:
-        """合法类型名返回自身，其余（含历史「声光共舞」=panic 4）返回 None。
+        """鸣笛可下发类型返回自身，其余（含「声光共舞」=panic 4）返回 None。
 
-        v6.6.8：「声光共舞」已专属「声光寻车」开关，鸣笛开关读到该旧值
-        必须归一为默认类型，不能再把鸣笛切到 InitialVA VAType=4 通道。
+        v6.8.3：「声光共舞」虽回到偏好下拉（CHIRP_TYPE_OPTIONS），但鸣笛
+        开关只认 HONK_COMMAND_TYPES（0-3）；读到 panic 4 仍归一为默认类型，
+        不把鸣笛切到 InitialVA VAType=4 通道——共舞专属「声光寻车」开关。
         """
         value = str(name) if name else ""
-        return value if value in CHIRP_TYPE_OPTIONS else None
+        return value if value in HONK_COMMAND_TYPES else None
 
     def _cloud_chirp_name(self) -> str | None:
         """云端鸣笛设置回读 → 中文类型名（仅取鸣笛可用的 0-3 类型）。"""
@@ -298,10 +299,10 @@ class FordPassMomentarySwitch(FordPassTaskTracker):
         if sound is None:
             return None
         for name, enum_value in CHIRP_TO_ANNOUNCE.items():
-            if str(sound) == enum_value and name in CHIRP_TYPE_OPTIONS:
+            if str(sound) == enum_value and name in HONK_COMMAND_TYPES:
                 return name
         legacy = ANNOUNCE_ENUM_CN.get(str(sound))
-        return legacy if legacy in CHIRP_TYPE_OPTIONS else None
+        return legacy if legacy in HONK_COMMAND_TYPES else None
 
     def _duration(self) -> int:
         """本次触发的持续时长（秒）。"""

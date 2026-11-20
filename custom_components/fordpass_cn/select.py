@@ -371,8 +371,9 @@ class FordPassChirpTypeSelect(_FordPassHonkSettingSelect):
         self._attr_translation_key = "chirp_type"
         self._attr_device_info = coordinator.device_info
         self._attr_options = list(CHIRP_TYPE_OPTIONS)
-        # v6.6.8：「声光共舞」已从选项移除（专属「声光寻车」开关）。旧 options/
-        # 云端残留该值时归一为默认类型，避免下拉框显示不在选项内的值。
+        # v6.8.3：「声光共舞」(panic=4) 已回到偏好选项（与 App 设置页对齐）；
+        # 不在选项内的旧残留值仍归一为默认类型，避免下拉显示非法值。
+        # 注意：共舞的实际触发由独立「声光寻车」开关完成，鸣笛开关不下发 panic。
         _stored = settings.get(CONF_CHIRP_TYPE, DEFAULT_CHIRP_TYPE)
         self._attr_current_option = (
             _stored if _stored in CHIRP_TYPE_OPTIONS else DEFAULT_CHIRP_TYPE
