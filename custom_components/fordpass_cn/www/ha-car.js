@@ -451,6 +451,13 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
   backdrop-filter: blur(6px); }
 .brand { display: inline-flex; align-items: center; margin-right: 7px; vertical-align: -1px; }
 .brand.lin svg { width: 60px; }
+.brand.gen .genmark { display:inline-flex; align-items:center; height:19px; padding:0 8px; border-radius:6px;
+  font: 700 10.5px/1 var(--hc-font, system-ui, -apple-system, "PingFang SC", sans-serif); letter-spacing:.06em;
+  color:#eef5ff; background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 2px 6px rgba(0,0,0,.35);
+  white-space:nowrap; }
+.brand.custom img { display:block; height:20px; max-width:72px; object-fit:contain;
+  filter: drop-shadow(0 0 8px rgba(var(--hc-a,55,214,232),.3)); }
 .brand svg { width: 46px; height: 21px; display: block;
   filter: drop-shadow(0 0 8px rgba(var(--hc-a,55,214,232),.35)) drop-shadow(0 2px 4px rgba(0,0,0,.5));
   transform: translateZ(0); }
@@ -1615,7 +1622,7 @@ var ZH = {
   reset: "恢复默认",
   none: "不显示",
   detect: "自动识别",
-  noVehicleFound: "没有检测到福特派互联的车辆实体",
+  noVehicleFound: "没有自动识别到整车实体",
   editVehicle: "更改",
   every: "全部"
 };
@@ -1713,7 +1720,7 @@ var EN = {
   reset: "Reset",
   none: "Hidden",
   detect: "Auto",
-  noVehicleFound: "No FordPass vehicle entities detected",
+  noVehicleFound: "No vehicle entities detected automatically",
   editVehicle: "Change",
   every: "All"
 };
@@ -1799,6 +1806,8 @@ function normOpen(state) {
   if (!s) return "unknown";
   if (s.includes("开启") || s.includes("打开") || s.includes("open")) return "open";
   if (s.includes("关闭") || s.includes("关好") || s.includes("closed")) return "closed";
+  if (s === "on" || s === "true" || s === "1") return "open";
+  if (s === "off" || s === "false" || s === "0") return "closed";
   return "unknown";
 }
 function normTire(state) {
@@ -1859,6 +1868,37 @@ var LINCOLN_LOGO = `<span class="brand lin" aria-hidden="true"><svg viewBox="0 0
 <path d="M7 4.8 L8.1 8.7 L12 10 L8.1 11.3 L7 15.2 L5.9 11.3 L2 10 L5.9 8.7 Z" fill="#eef4ff"/>
 <text x="37" y="13" text-anchor="middle" font-family="Georgia,'Times New Roman',serif"
  font-weight="700" font-size="7.4" fill="#f4f8ff" letter-spacing="1.04">LINCOLN</text></svg></span>`;
+var BRAND_WORDS = [
+  [/lincoln|林肯|corsair|nautilus|navigator|continental|zephyr/i, "lincoln"],
+  [/ford|福特|escape|explorer|mondeo|mustang|ranger|bronco|territory/i, "ford"],
+  [/tesla|特斯拉/i, "特斯拉"],
+  [/byd|比亚迪|王朝|海洋/i, "比亚迪"],
+  [/nio|蔚来/i, "蔚来"],
+  [/xpeng|小鹏/i, "小鹏"],
+  [/li\s?auto|理想/i, "理想"],
+  [/zeekr|极氪/i, "极氪"],
+  [/geely|吉利|领克|lynk/i, "吉利"],
+  [/changan|长安|深蓝|阿维塔/i, "长安"],
+  [/haval|哈弗|wey|坦克|great\s?wall|长城/i, "长城"],
+  [/chery|奇瑞|星途|jetour|捷途/i, "奇瑞"],
+  [/gac|广汽|埃安|aion|传祺/i, "广汽"],
+  [/saic|上汽|mg|roewe|荣威|im\s?智己/i, "上汽"],
+  [/dongfeng|东风|岚图|voyah/i, "东风"],
+  [/toyota|丰田|lexus|雷克萨斯/i, "丰田"],
+  [/honda|本田|acura|讴歌/i, "本田"],
+  [/nissan|日产|infiniti|英菲尼迪/i, "日产"],
+  [/mazda|马自达/i, "马自达"],
+  [/volkswagen|大众|audi|奥迪|porsche|保时捷|skoda|斯柯达/i, "大众"],
+  [/bmw|宝马|mini/i, "宝马"],
+  [/mercedes|benz|奔驰|amg|smart/i, "奔驰"],
+  [/volvo|沃尔沃|polestar|极星/i, "沃尔沃"],
+  [/land\s?rover|路虎|jaguar|捷豹/i, "路虎"],
+  [/cadillac|凯迪拉克|buick|别克|chevrolet|雪佛兰/i, "通用"],
+  [/hyundai|现代|kia|起亚|genesis|捷尼赛思/i, "现代"],
+  [/peugeot|标致|citroen|雪铁龙|renault|雷诺/i, "标致"],
+  [/tesla|stellantis|fiat|菲亚特|jeep|jeep/i, "吉普"],
+  [/subaru|斯巴鲁|suzuki|铃木|mitsubishi|三菱/i, "斯巴鲁"]
+];
 var MODULES = ["status", "actions", "energy", "tires", "doors", "charging", "alerts", "service"];
 var BLOCK_TYPES = ["meta", "hero", "energy", "alerts", "doors", "charging", "service", "actions", "custom"];
 var ITEM_DEFS = {
@@ -2005,6 +2045,11 @@ function hexRgb(hex) {
 var DEFAULTS = {
   title: "",
   brand: "auto",
+  // auto / ford / lincoln / generic（其他品牌走文字标或自定义图）
+  brand_name: "",
+  // 通用模式显示的品牌名，留空按设备厂商识别
+  logo_url: "",
+  // 自定义车标图片（本地 /local 或 https 均可）
   layout: "full",
   // 默认不渲染「服务信息」，可在编辑器里手动勾选
   modules: MODULES.filter((m) => m !== "service"),
@@ -2128,6 +2173,9 @@ var HaCarCard = class extends HTMLElement {
     cfg.find.car = typeof cfg.find.car === "string" ? cfg.find.car : "";
     cfg.find.device = typeof cfg.find.device === "string" ? cfg.find.device : "";
     cfg.bg_image = typeof cfg.bg_image === "string" ? cfg.bg_image.trim() : "";
+    cfg.brand = ["auto", "ford", "lincoln", "generic"].includes(String(cfg.brand || "").toLowerCase()) ? String(cfg.brand).toLowerCase() : "auto";
+    cfg.brand_name = typeof cfg.brand_name === "string" ? cfg.brand_name.trim().slice(0, 8) : "";
+    cfg.logo_url = typeof cfg.logo_url === "string" && /^(https?:\/\/|data:image\/|\/local\/)/i.test(cfg.logo_url.trim()) ? cfg.logo_url.trim() : "";
     cfg.bg_style = BG_STYLES.indexOf(cfg.bg_style) >= 0 ? cfg.bg_style : DEFAULTS.bg_style;
     cfg.chip_style = CHIP_STYLES.indexOf(cfg.chip_style) >= 0 ? cfg.chip_style : DEFAULTS.chip_style;
     if (cfg.bg_image && !bgUrl(cfg.bg_image) && !isMediaSource(cfg.bg_image)) cfg.bg_image = "";
@@ -2451,7 +2499,7 @@ var HaCarCard = class extends HTMLElement {
   // 品牌识别：设备 manufacturer/model/名称里带林肯特征就用林肯标，也允许配置里强制指定
   _brand() {
     const force = this._config && this._config.brand || "auto";
-    if (force === "ford" || force === "lincoln") return force;
+    if (force === "ford" || force === "lincoln" || force === "generic") return force;
     const h = this._hass;
     if (!h || !h.entities || !h.devices) return "ford";
     const ids = /* @__PURE__ */ new Set();
@@ -2463,17 +2511,74 @@ var HaCarCard = class extends HTMLElement {
     for (const v of Object.values(this._config && this._config.entities || {})) {
       if (typeof v === "string" && v) ids.add(v);
     }
+    const label = this._brandLabel();
+    if (label === "lincoln") return "lincoln";
+    if (label === "ford") return "ford";
+    return "generic";
+  }
+  // 设备厂商/型号/名称 → 品牌名（福特、林肯单独保留官方标）
+  _brandLabel() {
+    const h = this._hass;
+    if (!h || !h.entities || !h.devices) return "";
+    const ids = /* @__PURE__ */ new Set();
+    try {
+      const data = resolve(h, this._config);
+      for (const hit of data.slots.values()) if (hit && hit.id) ids.add(hit.id);
+    } catch {
+    }
+    for (const v of Object.values(this._config && this._config.entities || {})) {
+      if (typeof v === "string" && v) ids.add(v);
+    }
+    const texts = [];
     for (const id of ids) {
       const ent = h.entities[id];
       const dev = ent && ent.device_id ? h.devices[ent.device_id] : null;
       if (!dev) continue;
-      const txt = `${dev.manufacturer || ""} ${dev.model || ""} ${dev.name || ""}`;
-      if (/lincoln|林肯|冒险家|航海家|领航员|corsair|nautilus|navigator|continental|zephyr/i.test(txt)) return "lincoln";
+      texts.push(`${dev.manufacturer || ""} ${dev.model || ""} ${dev.name || ""}`);
     }
-    return "ford";
+    for (const t of texts) {
+      for (const [re, name] of BRAND_WORDS) {
+        if (re.test(t)) return name;
+      }
+    }
+    return "";
+  }
+  // 没有品牌名时，用设备名称兜底（多数第三方集成把车名放在设备名上）
+  _deviceHint() {
+    const h = this._hass;
+    if (!h || !h.devices || !h.entities) return "";
+    const data = (() => {
+      try {
+        return resolve(h, this._config);
+      } catch {
+        return null;
+      }
+    })();
+    const ids = /* @__PURE__ */ new Set();
+    if (data) {
+      for (const hit of data.slots.values()) if (hit && hit.id) ids.add(hit.id);
+    }
+    for (const v of Object.values(this._config && this._config.entities || {})) {
+      if (typeof v === "string" && v) ids.add(v);
+    }
+    for (const id of ids) {
+      const ent = h.entities[id];
+      const dev = ent && ent.device_id ? h.devices[ent.device_id] : null;
+      if (!dev) continue;
+      const n = String(dev.name_by_user || dev.name || "").trim();
+      if (n) return n;
+    }
+    return "";
   }
   _logo() {
-    return this._brand() === "lincoln" ? LINCOLN_LOGO : FORD_LOGO;
+    const cfg = this._config || {};
+    const url = typeof cfg.logo_url === "string" ? cfg.logo_url.trim() : "";
+    if (url) return `<span class="brand custom" aria-hidden="true"><img src="${esc(url)}" alt=""></span>`;
+    const b = this._brand();
+    if (b === "lincoln") return LINCOLN_LOGO;
+    if (b === "ford") return FORD_LOGO;
+    const name = String(cfg.brand_name || this._brandLabel() || this._deviceHint() || "").trim().slice(0, 8);
+    return name ? `<span class="brand gen" aria-hidden="true"><span class="genmark">${esc(name)}</span></span>` : "";
   }
   _fitPanel() {
     if (this._applyFixedSizeIfAny()) return;
@@ -4941,9 +5046,9 @@ var OVERRIDES = [
 var ACCENTS = ["#37d6e8", "#6ea8ff", "#7ee2a8", "#ffb347", "#ff7ab0"];
 var L = {
   vehicle: "车辆",
-  vehicleHint: "选择要显示的车辆；卡片按实体前缀自动绑定，不需要手填实体。",
+  vehicleHint: "选择要显示的车辆；福特派/林肯之道会按实体前缀自动绑定，其他品牌/集成可在下方手动指定实体。",
   autoDetect: "自动识别",
-  noVehicle: "没有检测到福特派互联的车辆实体，请先在集成里完成登录。",
+  noVehicle: "没有自动识别到整车实体。其他品牌/集成可先在下方按槽位或模块项手动指定实体（车标也会自动切换为通用文字标）。",
   title: "卡片标题",
   showPlate: "显示车牌",
   privacy: "脱敏显示",
@@ -5037,7 +5142,15 @@ var HaCarEditor = class extends HTMLElement {
           <option value="auto">自动识别（按设备厂商）</option>
           <option value="ford">福特 Ford</option>
           <option value="lincoln">林肯 Lincoln</option>
+          <option value="generic">其他品牌（通用）</option>
         </select>
+        <div id="genrow" style="display:none">
+          <label class="f">品牌名（通用模式显示）</label>
+          <input class="tf" id="brandname" type="text" maxlength="8" placeholder="特斯拉 / BMW">
+          <label class="f">自定义车标图片 URL（可选）</label>
+          <input class="tf" id="logourl" type="text" placeholder="/local/xxx/logo.png 或 https://…">
+          <p class="hint" style="margin-top:4px">不填图就用上面的文字标；图片建议透明底、高 40–80px。</p>
+        </div>
         <div class="row"><span class="rl">${L.showPlate}</span>
           <button class="sw" id="plate" role="switch" aria-checked="true"></button></div>
         <div class="row"><span class="rl">${L.privacy}</span>
@@ -5205,6 +5318,16 @@ var HaCarEditor = class extends HTMLElement {
     });
     q("brand").addEventListener("change", (e) => {
       this._config.brand = e.target.value;
+      this._syncGenRow();
+      this._emit();
+    });
+    q("brandname").addEventListener("input", (e) => {
+      this._config.brand_name = e.target.value.trim().slice(0, 8);
+      this._emit();
+    });
+    q("logourl").addEventListener("change", (e) => {
+      const v = e.target.value.trim();
+      this._config.logo_url = /^(https?:\/\/|data:image\/|\/local\/)/i.test(v) ? v : "";
       this._emit();
     });
     q("privacy").addEventListener("click", () => {
@@ -5619,12 +5742,19 @@ var HaCarEditor = class extends HTMLElement {
     const hint = this.shadowRoot.getElementById("vehhint");
     if (hint) hint.textContent = cars.length ? "" : L.noVehicle;
   }
+  _syncGenRow() {
+    const row = this.shadowRoot && this.shadowRoot.getElementById("genrow");
+    if (row) row.style.display = this._config.brand === "generic" ? "block" : "none";
+  }
   _sync() {
     if (!this._built) return;
     const q = (id) => this.shadowRoot.getElementById(id);
     this._syncVehicles();
     q("title").value = this._config.title || "";
-    q("brand").value = ["auto", "ford", "lincoln"].includes(this._config.brand) ? this._config.brand : "auto";
+    q("brand").value = ["auto", "ford", "lincoln", "generic"].includes(this._config.brand) ? this._config.brand : "auto";
+    q("brandname").value = this._config.brand_name || "";
+    q("logourl").value = this._config.logo_url || "";
+    this._syncGenRow();
     q("plate").setAttribute("aria-checked", String(Boolean(this._config.show_plate)));
     q("privacy").setAttribute("aria-checked", String(Boolean(this._config.privacy)));
     this.shadowRoot.querySelectorAll("[data-layout]").forEach((b) => {
@@ -5711,7 +5841,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.7.5";
+var VERSION = "3.7.6";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
