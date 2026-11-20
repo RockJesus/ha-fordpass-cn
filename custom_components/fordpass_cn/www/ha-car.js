@@ -4029,7 +4029,7 @@ var HaCarCard = class extends HTMLElement {
     if (fn) fn.style.transform = `translateX(-50%) rotate(${h}deg)`;
     if (stat) {
       const en = isEn(this._hass);
-      const base = this._heading == null ? en ? "Compass off" : "指南针未启用" : this._headingSrc === "gps" ? en ? "Moving direction" : "移动方向" : en ? "Compass" : "指南针";
+      const base = this._heading == null ? this._compassGranted ? en ? "Waiting for compass" : "等待指南针数据" : en ? "Compass off" : "指南针未启用" : this._headingSrc === "gps" ? en ? "Moving direction" : "移动方向" : en ? "Compass" : "指南针";
       stat.textContent = base;
     }
   }
@@ -4116,6 +4116,7 @@ var HaCarCard = class extends HTMLElement {
   }
   _closeFind() {
     this._findOpen = false;
+    this._compassAutoAsked = false;
     this._stopGpsHeading();
     cancelAnimationFrame(this._headingRaf);
     this._sig = "";
@@ -4123,15 +4124,37 @@ var HaCarCard = class extends HTMLElement {
     if (m) m.remove();
     this._render(true);
   }
-  async _askCompass() {
+  _autoAskCompass() {
+    if (this._compassGranted || this._compassGot) return;
+    if (this._compassAutoAsked) return;
+    try {
+      if (window.localStorage && window.localStorage.getItem("ha-car-compass-denied") === "1") return;
+    } catch {
+    }
+    this._compassAutoAsked = true;
+    if (typeof DeviceOrientationEvent === "undefined" || typeof DeviceOrientationEvent.requestPermission !== "function") {
+      return;
+    }
+    this._askCompass(true);
+  }
+  async _askCompass(quiet = false) {
     try {
       if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
         const r = await DeviceOrientationEvent.requestPermission();
         if (r !== "granted") {
-          this._showToast(isEn(this._hass) ? "Motion permission denied" : "未获得指南针权限", "err");
+          try {
+            window.localStorage.setItem("ha-car-compass-denied", "1");
+          } catch {
+          }
+          if (!quiet) this._showToast(isEn(this._hass) ? "Motion permission denied" : "未获得指南针权限", "err");
           return false;
         }
       }
+      try {
+        window.localStorage.removeItem("ha-car-compass-denied");
+      } catch {
+      }
+      this._compassGranted = true;
       this._bindOrientation(true);
       this._compassGot = false;
       this._heading = null;
@@ -4140,18 +4163,18 @@ var HaCarCard = class extends HTMLElement {
       this._headingSpike = 0;
       this._lastOrientEv = null;
       if (this._findOpen) this._updateFind();
-      this._showToast(isEn(this._hass) ? "Compass on — turn your phone" : "指南针已开启，缓慢转动手机", "ok");
+      if (!quiet) this._showToast(isEn(this._hass) ? "Compass on — turn your phone" : "指南针已开启，缓慢转动手机", "ok");
       clearTimeout(this._compassTimer);
       this._compassTimer = setTimeout(() => {
         if (this._findOpen && !this._compassGot) {
           this._startGpsHeading();
-          this._showToast(isEn(this._hass) ? "No compass data — trying GPS heading" : "未收到指南针，已尝试用移动方向", "err");
+          if (!quiet) this._showToast(isEn(this._hass) ? "No compass data — trying GPS heading" : "未收到指南针，已尝试用移动方向", "err");
           if (this._findOpen) this._updateFind();
         }
       }, 1800);
       return true;
     } catch {
-      this._showToast(isEn(this._hass) ? "Compass unavailable" : "此设备不支持指南针", "err");
+      if (!quiet) this._showToast(isEn(this._hass) ? "Compass unavailable" : "此设备不支持指南针", "err");
       return false;
     }
   }
@@ -4759,6 +4782,7 @@ var HaCarCard = class extends HTMLElement {
     const findBtn = ev.target.closest && ev.target.closest("[data-find]");
     if (findBtn) {
       this._openFind();
+      this._autoAskCompass();
       return;
     }
     const more = ev.target.closest && ev.target.closest("[data-more]");
@@ -4973,7 +4997,7 @@ var HaCarEditor = class extends HTMLElement {
 
       <div class="sec">
         <h3>找车引导</h3>
-        <p class="hint">选择手机、登录设备与车辆的定位实体。手机定位需带 latitude / longitude；未取得手机坐标时会尝试浏览器网络定位，再退回登录设备定位。手机指南针需在找车面板里点一次“校准指南针”授权。</p>
+        <p class="hint">选择手机、登录设备与车辆的定位实体。手机定位需带 latitude / longitude；未取得手机坐标时会尝试浏览器网络定位，再退回登录设备定位。手机指南针在打开找车面板时会自动申请一次授权，若被拒绝可点“校准指南针”重新授权。</p>
         <label class="f">手机定位</label>
         <div class="pick" id="findphone"></div>
         <label class="f" style="margin-top:6px">登录设备定位（兜底）</label>
@@ -5614,7 +5638,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.7.3";
+var VERSION = "3.7.4";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
