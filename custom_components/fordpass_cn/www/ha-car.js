@@ -2021,6 +2021,9 @@ var DEFAULTS = {
   // 续航仪表的满量程（km）：每台车续航上限不同，0 表示沿用车型默认值
   range_full: 0,
   ev_range_full: 0,
+  // 固定尺寸：0 表示随容器自适应；非 0 则按该像素尺寸排版，不再缩放
+  fixed_width: 0,
+  fixed_height: 0,
   image: "auto",
   image_url: "",
   bg_image: "",
@@ -2131,6 +2134,10 @@ var HaCarCard = class extends HTMLElement {
     cfg.hold_ms = clamp(Number(cfg.hold_ms) || DEFAULTS.hold_ms, 300, 3e3);
     cfg.range_full = clamp(Math.round(Number(cfg.range_full) || 0), 0, 2e3);
     cfg.ev_range_full = clamp(Math.round(Number(cfg.ev_range_full) || 0), 0, 2e3);
+    const fw = Math.round(Number(cfg.fixed_width) || 0);
+    const fh = Math.round(Number(cfg.fixed_height) || 0);
+    cfg.fixed_width = fw > 0 ? clamp(fw, 320, 2e3) : 0;
+    cfg.fixed_height = fh > 0 ? clamp(fh, 320, 3e3) : 0;
     delete cfg.floor;
     cfg.blocks = normBlocks(cfg);
     cfg.confirm = normalizeConfirm(config, cfg);
@@ -2342,6 +2349,7 @@ var HaCarCard = class extends HTMLElement {
     return this.parentElement && this.parentElement.parentElement ? this.parentElement.parentElement : null;
   }
   _fitGrid() {
+    if (this._applyFixedSizeIfAny()) return;
     if (this._panel || !this._grid || !this._card) return;
     const boxEl = this._gridBox();
     if (!boxEl) return;
@@ -2468,6 +2476,7 @@ var HaCarCard = class extends HTMLElement {
     return this._brand() === "lincoln" ? LINCOLN_LOGO : FORD_LOGO;
   }
   _fitPanel() {
+    if (this._applyFixedSizeIfAny()) return;
     if (!this._panel || !this._card) return;
     const w = this.clientWidth;
     const vh = document.documentElement && document.documentElement.clientHeight || window.innerHeight || 0;
@@ -2503,6 +2512,47 @@ var HaCarCard = class extends HTMLElement {
     const designH = Math.max(900, Math.round(h / k));
     this._card.style.width = `${designW}px`;
     this._card.style.height = `${designH}px`;
+  }
+  _applyFixedSizeIfAny() {
+    if (!this._card) return false;
+    const fw = Number(this._config && this._config.fixed_width || 0);
+    const fh = Number(this._config && this._config.fixed_height || 0);
+    if (fw > 0 || fh > 0) {
+      this._applyFixedSize(fw, fh);
+      return true;
+    }
+    if (this._fixedApplied) this._clearFixedSize();
+    return false;
+  }
+  _clearFixedSize() {
+    const c = this._card;
+    this._fixedApplied = false;
+    this._fitKey = null;
+    if (!c) return;
+    c.style.width = "";
+    c.style.height = "";
+    c.style.margin = "";
+    c.style.left = "";
+    c.style.top = "";
+    c.style.removeProperty("--pscale");
+    c.style.removeProperty("--gscale");
+  }
+  _applyFixedSize(fw, fh) {
+    const c = this._card;
+    this._fixedApplied = true;
+    c.classList.remove("fit", "pfit", "gfit", "gtwo");
+    c.style.removeProperty("--fit");
+    c.style.removeProperty("--gscale");
+    c.style.left = "";
+    c.style.top = "";
+    this._fitState = void 0;
+    c.style.removeProperty("--fit");
+    c.style.setProperty("--pscale", "1");
+    c.style.width = fw > 0 ? `${fw}px` : "";
+    c.style.height = fh > 0 ? `${fh}px` : "";
+    c.style.margin = "0 auto";
+    this._setRadius(1);
+    this.classList.add("fitready");
   }
   // HA 进入编辑仪表盘时会直接给元素赋 preview=true；用 setter 捕获，立刻重判上下文
   get preview() {
@@ -2702,6 +2752,7 @@ var HaCarCard = class extends HTMLElement {
     const cfg = this._config;
     this._syncPanel();
     this._syncGrid();
+    this._applyFixedSizeIfAny();
     this._card.classList.toggle("compact", cfg.layout === "compact");
     const th = THEMES[cfg.theme] || THEMES.midnight;
     this._card.classList.toggle("theme-glass", !!th.glass);
@@ -4926,7 +4977,11 @@ var L = {
   gaugeFull: "仪表量程",
   gaugeFullHint: "每台车的满油/满电续航不一样，填上你这台车的上限，环形进度才准。留空用车型默认值。",
   rangeFull: "满续航（km）",
-  evRangeFull: "满电续航（km）"
+  evRangeFull: "满电续航（km）",
+  fixedSize: "固定尺寸",
+  fixedSizeHint: "留空＝随格子自适应（默认）。填了宽度后卡片按该尺寸排版、居中，不再随窗口或列宽缩放；宽度或高度留空时，该项仍取容器尺寸。",
+  fixedW: "固定宽度（px）",
+  fixedH: "固定高度（px）"
 };
 var IMG_MODES = [
   ["auto", "自动（俯视 → 3D → 侧视）"],
@@ -5089,6 +5144,14 @@ var HaCarEditor = class extends HTMLElement {
           <label class="f">${L.evRangeFull}</label>
           <input class="tf" id="evrangefull" type="number" min="0" max="2000" step="10" placeholder="500">
         </div>
+        <label class="f">${L.fixedSize}</label>
+        <p class="hint" style="margin-top:-2px">${L.fixedSizeHint}</p>
+        <div class="grid2">
+          <label class="f">${L.fixedW}</label>
+          <input class="tf" id="fixedw" type="number" min="0" max="2000" step="10" placeholder="430">
+          <label class="f">${L.fixedH}</label>
+          <input class="tf" id="fixedh" type="number" min="0" max="3000" step="10" placeholder="留空">
+        </div>
       </div>
 
       <details class="sec adv">
@@ -5192,6 +5255,14 @@ var HaCarEditor = class extends HTMLElement {
       this._config.theme = e.target.value;
       this._emit();
     });
+    for (const [id, key, max] of [["fixedw", "fixed_width", 2e3], ["fixedh", "fixed_height", 3e3]]) {
+      q(id).addEventListener("change", (e) => {
+        const n = Math.round(Number(e.target.value) || 0);
+        this._config[key] = n > 0 ? Math.max(320, Math.min(max, n)) : 0;
+        this._sync();
+        this._emit();
+      });
+    }
     for (const [id, key] of [["rangefull", "range_full"], ["evrangefull", "ev_range_full"]]) {
       q(id).addEventListener("change", (e) => {
         const n = Math.round(Number(e.target.value) || 0);
@@ -5572,6 +5643,8 @@ var HaCarEditor = class extends HTMLElement {
     q("chipstyle").value = this._config.chip_style || "glass";
     q("rangefull").value = this._config.range_full ? String(this._config.range_full) : "";
     q("evrangefull").value = this._config.ev_range_full ? String(this._config.ev_range_full) : "";
+    q("fixedw").value = this._config.fixed_width ? String(this._config.fixed_width) : "";
+    q("fixedh").value = this._config.fixed_height ? String(this._config.fixed_height) : "";
     this._syncBackground();
     const picked = /^#[0-9a-f]{6}$/i.test(this._config.accent || "") ? this._config.accent : (THEMES[this._config.theme] || THEMES.midnight).accent;
     q("color").value = picked;
@@ -5638,7 +5711,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.7.4";
+var VERSION = "3.7.5";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
