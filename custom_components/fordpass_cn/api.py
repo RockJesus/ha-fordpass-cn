@@ -1498,16 +1498,16 @@ class FordPassApi:
         写在路径里。实测返回 404（云端不支持该通道），调用方应捕获
         FordPassApiError(404) 并向用户明确提示车型不支持。
         """
-        return await self._v5_verb("PUT", PATH_V5_PANIC.format(vin=vin, duration=duration),
-                                   "panic")
+        url = V5_BASE_URL + PATH_V5_PANIC.format(vin=vin, duration=duration)
+        return await self._v5_verb("PUT", url, "panic")
 
     async def panic_cancel_command(self, vin: str, duration: int = 10) -> dict[str, Any]:
         """DELETE /api/vehicles/v5/{vin}/panic/{paniconduration} — 取消声光警报。
 
         v4.2.5：6.16.0 实测确认 sendPanicCancelCommand 为 DELETE（此前缺失）。
         """
-        return await self._v5_verb("DELETE", PATH_V5_PANIC.format(vin=vin, duration=duration),
-                                   "panic-cancel")
+        url = V5_BASE_URL + PATH_V5_PANIC.format(vin=vin, duration=duration)
+        return await self._v5_verb("DELETE", url, "panic-cancel")
 
     async def _v5_verb(self, method: str, url: str, what: str) -> dict[str, Any]:
         """v5 直控通用请求封装（v4.2.5 重构）：任意 HTTP 方法 + 401 刷新重试。
@@ -1515,6 +1515,10 @@ class FordPassApi:
         6.16.0 Dart 接口分析确认 v5 命令方法语义化（PUT=执行、DELETE=取消/反向、
         POST=鸣笛、GET=轮询），各命令通道共用本封装避免重复 401 分支。
         """
+        if not url.startswith(("http://", "https://")):
+            # 防御：调用方漏拼 base 时把相对路径补全，否则 aiohttp 直接抛
+            # InvalidUrlClientError（请求未到网关，404 回落逻辑也不会触发）。
+            url = V5_BASE_URL + url
         async with self._session.request(method, url, headers=self._headers()) as resp:
             try:
                 text = await resp.text()
