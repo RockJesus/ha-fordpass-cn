@@ -146,7 +146,7 @@ Mustang 野马 · 电马 Mustang Mach-E · 途睿欧 Tourneo · 全顺 Transit �
 
 ## 🎛 仪表盘卡片示例
 
-除了下面的通用卡片，也可以直接使用为福特派集成适配的 [**ha-car**](https://github.com/RockJesus/ha-car) —— **它已随本集成分发**，安装/更新集成后自动注册为前端资源（`/fordpass_cn/ha-car.js`），不需要再去 HACS 装插件，重启一次即可在仪表盘里添加 `custom:ha-car`：
+为福特派集成适配的 [**ha-car**](https://github.com/RockJesus/ha-car) 卡片**已随本集成分发**：安装/更新集成后自动注册为前端资源（`/fordpass_cn/ha-car.js`），不需要再去 HACS 装插件，重启一次即可在仪表盘里添加 `custom:ha-car`：
 
 - 会把 **俯视车图 + 车门/车窗/前后盖/胎压** 按真实方位叠在车身上，四轮位、四门位各自成卡；
 - 面板视图（`type: panel`）按 1440×900 设计稿一屏铺满、不滚动，手机竖屏按 390×840 等比缩放；
@@ -167,44 +167,6 @@ hash: 我的车        # 或 device: <集成里那辆车的 device_id>
 <p align="center">
   <img src="https://raw.githubusercontent.com/RockJesus/ha-car/main/docs/preview-card.webp" width="300" alt="ha-car 面板模式预览（假数据）">
 </p>
-
-推荐搭配 **Vehicle Status Card**（HACS → Frontend 搜索安装）把实体拼成车况面板。在仪表盘「原始配置编辑器」中添加：
-
-<details>
-<summary>Vehicle Status Card 卡片配置（YAML）</summary>
-
-```yaml
-type: custom:vehicle-status-card
-vehicle: 我的车
-image: /local/fordpass_cn/vehicle.png        # 可选：自定义车辆图片
-entities:
-  - entity: button.<前缀>_unlock_doors       # 开锁
-    label: 开锁
-  - entity: button.<前缀>_lock_doors         # 关锁
-    label: 关锁
-  - entity: button.<前缀>_unlock_trunk       # 后备箱解锁（弹开）
-    label: 后备箱
-  - entity: sensor.<前缀>_fuel_level        # 燃油量 %
-    unit: "%"
-  - entity: sensor.<前缀>_driving_range     # 续航 km
-    unit: km
-  - entity: sensor.<前缀>_odometer          # 总里程 km
-    unit: km
-  - entity: sensor.<前缀>_lf_tire           # 左前胎压 kPa
-    unit: kPa
-  - entity: sensor.<前缀>_rr_tire           # 右后胎压 kPa
-    unit: kPa
-buttons:
-  - entity: button.<前缀>_refresh           # 刷新车辆状态
-  - entity: button.<前缀>_horn              # 鸣笛（按车型）
-  - entity: button.<前缀>_remote_start      # 远程启动（按车型）
-map:
-  entity: device_tracker.<前缀>_location    # 车辆定位
-```
-
-</details>
-
-> 不同车型可用按钮不同，在开发者工具按 `button.` 前缀查询实际实体；定位实体需在集成选项中开启「车辆定位追踪」。卡片字段以 Vehicle Status Card 官方文档为准。
 
 ## 📊 支持的实体
 
