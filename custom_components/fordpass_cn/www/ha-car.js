@@ -2600,21 +2600,27 @@ var HaCarCard = class extends HTMLElement {
     const pfit = !fit && w > 0 && h > 0;
     this._card.classList.toggle("pfit", pfit);
     if (pfit) {
-      const k2 = Math.max(0.42, Math.min(2.2, Math.min(w / 390, h / 840)));
+      const k2 = Math.max(0.42, Math.min(1, Math.min(w / 390, h / 840)));
       this._card.style.setProperty("--pscale", String(Math.round(k2 * 1e3) / 1e3));
-      this._card.style.width = `${Math.round(w / k2)}px`;
-      this._card.style.height = `${Math.round(h / k2)}px`;
+      const cw = Math.min(960, Math.max(390, Math.round(w / k2)));
+      const ch = Math.max(840, Math.round(h / k2));
+      this._card.style.width = `${cw}px`;
+      this._card.style.height = `${ch}px`;
+      this._card.style.left = `${Math.max(0, Math.round((w - cw * k2) / 2))}px`;
+      this._card.style.top = "0px";
       this._setRadius(k2);
       this.classList.add("fitready");
       return;
     }
     if (!fit) return;
-    const k = Math.min(w / 1440, h / 900);
-    this._card.style.setProperty("--fit", String(Math.round(k * 1e3) / 1e3));
+    const k = 1;
+    this._card.style.removeProperty("left");
+    this._card.style.removeProperty("top");
+    this._card.style.setProperty("--fit", "1");
     this.classList.add("fitready");
     this._setRadius(k);
-    const designW = Math.max(1440, Math.round(w / k));
-    const designH = Math.max(900, Math.round(h / k));
+    const designW = Math.round(w);
+    const designH = Math.round(h);
     this._card.style.width = `${designW}px`;
     this._card.style.height = `${designH}px`;
   }
@@ -5841,7 +5847,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.7.6";
+var VERSION = "3.7.7";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
