@@ -3527,6 +3527,7 @@ var HaCarCard = class extends HTMLElement {
       const doorRF = bodyR + sideGap - 4;
       const doorRR = doorRF;
       const bodyT = topPad + shownH * 0.053;
+      const trunkUp = Math.max(20, Math.round(shownH * 0.055));
       const bodyB = topPad + shownH * 0.947;
       const capH = this._wrap.querySelector(".cap.hood");
       const capT = this._wrap.querySelector(".cap.trunk");
@@ -3546,7 +3547,7 @@ var HaCarCard = class extends HTMLElement {
         };
         const gapHood = Math.max(10, Math.round(shownH * 0.042));
         const hH = fit(capH, bodyT - ringT - gapHood + 8);
-        const tTopMin = bodyB + Math.max(5, Math.round(shownH * 0.012));
+        const tTopMin = bodyB - trunkUp;
         const ringR2 = Math.max(12, (ringB - ringT) / 2);
         const cyR2 = (ringT + ringB) / 2;
         let tBotMax = ringB - 9;
@@ -3559,7 +3560,7 @@ var HaCarCard = class extends HTMLElement {
         }
         let hTop = bodyT - gapHood - hH;
         if (hTop < ringT + 10) hTop = ringT + 10;
-        let tTop = Math.round((tTopMin + (tBotMax - tH)) / 2);
+        let tTop = Math.round((tTopMin + (tBotMax - tH)) / 2 - Math.max(8, Math.round(shownH * 0.03)));
         tTop = Math.max(tTopMin, Math.min(tTop, tBotMax - tH));
         capH.style.top = `${Math.round(hTop)}px`;
         capT.style.top = `${Math.round(tTop)}px`;
@@ -3636,7 +3637,7 @@ var HaCarCard = class extends HTMLElement {
       {
         const caps = [
           { el: this._wrap.querySelector(".cap.hood"), side: "top", hug: bodyT - Math.max(10, Math.round(shownH * 0.042)) },
-          { el: this._wrap.querySelector(".cap.trunk"), side: "bottom", hug: bodyB + 4 }
+          { el: this._wrap.querySelector(".cap.trunk"), side: "bottom", hug: bodyB - trunkUp }
         ].filter((c) => c.el);
         const cx0 = (ringL + ringR) / 2, cy0 = (ringT + ringB) / 2, rr0 = (ringR - ringL) / 2;
         for (let pass = 0; pass < 8 && caps.length; pass++) {
@@ -5915,7 +5916,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.8.1";
+var VERSION = "3.8.2";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
