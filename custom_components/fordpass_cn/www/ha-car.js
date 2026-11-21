@@ -483,6 +483,11 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
   border-color: rgba(255,255,255,.055); }
 
 /* 主视觉：车图 + 双同心轨道 + 四枚发光节点（参考图同构） */
+/* 分享脱敏：车图层模糊，避免照片里带车牌/门牌/住址 */
+.carimg.pmask { filter: blur(6px) saturate(.95) brightness(.98); transform: scale(1.005); }
+.pmtag { position: absolute; top: 10px; right: 12px; z-index: 3; font-size: 10px; letter-spacing: .06em;
+  padding: 3px 7px; border-radius: 999px; color: #dbe6ff; background: rgba(18,24,40,.72);
+  border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(6px); }
 .hero { position: relative; height: clamp(224px, 52cqw, 430px); display: flex; align-items: center; justify-content: center;
   overflow: clip; overflow-clip-margin: 60px; --r: 92px; container-type: size; }
 .halo { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
@@ -1613,7 +1618,7 @@ var ZH = {
   titleLabel: "卡片标题",
   showPlate: "显示车牌",
   privacy: "脱敏显示",
-  privacyHint: "分享截图时把车牌、地址、电话与 VIN 打码，数据本身不变",
+  privacyHint: "分享截图用：车牌打点、地址只留到市、电话/VIN 及 4 位以上数字打码、车图模糊、人车距离打码，数据本身不变",
   layoutLabel: "布局",
   layoutFull: "完整",
   layoutCompact: "紧凑",
@@ -1711,7 +1716,7 @@ var EN = {
   titleLabel: "Title",
   showPlate: "Show plate",
   privacy: "Mask for sharing",
-  privacyHint: "Blur plate, address, phone and VIN — data itself stays unchanged",
+  privacyHint: "For sharing: plate masked, address narrowed to city, phone/VIN and 4+ digit runs masked, car photo blurred, distance hidden — data itself stays unchanged",
   layoutLabel: "Layout",
   layoutFull: "Full",
   layoutCompact: "Compact",
@@ -1851,7 +1856,7 @@ function maskPlate(p) {
 }
 function maskText(s) {
   if (!s) return "";
-  return String(s).replace(/\b[A-Z0-9]{12,}\b/g, (m) => m.match(/\d/) ? `${m.slice(0, 4)}${"•".repeat(Math.max(4, m.length - 4))}` : m).replace(/\d{7,}/g, (m) => `${m.slice(0, 3)}${"•".repeat(Math.max(4, m.length - 3))}`);
+  return String(s).replace(/\b[A-Z0-9]{12,}\b/g, (m) => m.match(/\d/) ? `${m.slice(0, 4)}${"•".repeat(Math.max(4, m.length - 4))}` : m).replace(/\d{4,}/g, (m) => `${m.slice(0, 2)}${"•".repeat(Math.max(3, m.length - 2))}`);
 }
 
 // src/card.js
@@ -3290,8 +3295,8 @@ var HaCarCard = class extends HTMLElement {
     return `<div class="hero bs-${esc(bg)}${running ? " run" : ""}"><div class="halo"></div>
       <span class="orbit${running ? " run" : ""}"><svg class="hring2" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="49"/></svg><i class="node n1"></i><i class="node n2"></i><i class="node n3"></i><i class="node n4"></i></span>
       <span class="orbit o2"></span>
-      ${imgUrl ? `<img class="carimg" src="${esc(imgUrl)}"${fbUrl && fbUrl.length ? ` data-fb="${esc(JSON.stringify(fbUrl))}"` : ""} alt="">` : `<div class="carph">${icon("car")}</div>`}
-      <div class="ground"></div><div class="covl cs-${esc(this._config && this._config.chip_style || "glass")}">${inner}</div>${edge ? `<div class="cedge">${edge}</div>` : ""}</div>`;
+      ${imgUrl ? `<img class="carimg${this._config && this._config.privacy ? " pmask" : ""}" src="${esc(imgUrl)}"${fbUrl && fbUrl.length ? ` data-fb="${esc(JSON.stringify(fbUrl))}"` : ""} alt="">` : `<div class="carph">${icon("car")}</div>`}
+      <div class="ground"></div>${this._config && this._config.privacy ? '<span class="pmtag">脱敏</span>' : ""}<div class="covl cs-${esc(this._config && this._config.chip_style || "glass")}">${inner}</div>${edge ? `<div class="cedge">${edge}</div>` : ""}</div>`;
   }
   // 俯视图状态层：每个车门一张聚合卡（门 + 窗 + 该轮位胎压），前后盖各一张小卡，全部落在圆环内侧
   _carOverlay(data, t, b, running) {
@@ -3911,7 +3916,7 @@ var HaCarCard = class extends HTMLElement {
     const loc = this._findLocation(p);
     const d = this._distanceM(loc.coords, p.car);
     const label = isEn(this._hass) ? "Find car" : "找车";
-    const dist = d == null ? "" : ` ${esc(this._distText(d))}`;
+    const dist = d == null ? "" : this._config.privacy ? " ••• m" : ` ${esc(this._distText(d))}`;
     const src = this._findSourceText(loc.source);
     const hint = isEn(this._hass) ? "Open find-car panel" : "打开找车面板";
     const tip = src ? `${hint} · ${src}` : hint;
@@ -5121,7 +5126,7 @@ var L = {
   title: "卡片标题",
   showPlate: "显示车牌",
   privacy: "脱敏显示",
-  privacyHint: "分享截图时把车牌、地址、电话与 VIN 打码，数据本身不变",
+  privacyHint: "分享截图用：车牌打点、地址只留到市、电话/VIN 及 4 位以上数字打码、车图模糊、人车距离打码，数据本身不变",
   layout: "布局",
   layoutFull: DEFAULTS.layout === "full" ? "完整" : "完整",
   layoutCompact: "紧凑",
@@ -5910,7 +5915,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.8.0";
+var VERSION = "3.8.1";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
