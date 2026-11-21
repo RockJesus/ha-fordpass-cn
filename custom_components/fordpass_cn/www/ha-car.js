@@ -3143,7 +3143,7 @@ var HaCarCard = class extends HTMLElement {
     const cfg = this._config;
     const t = dict(this._hass);
     if (!data.group && !Object.keys(cfg.entities || {}).length) {
-      return this._empty(isEn(this._hass) ? "No vehicle entity found. Check that FordPass integration is loaded, or pick a vehicle in the card editor." : "没找到车辆实体。确认福特派互联集成已加载，或在卡片编辑器里选择车辆。");
+      return this._empty(isEn(this._hass) ? "No vehicle entity found. Check that the vehicle integration is loaded, or pick a vehicle in the card editor." : "没找到车辆实体。确认车辆相关集成已加载，或在卡片编辑器里选择车辆。");
     }
     const compact = cfg.layout === "compact";
     const list = cfg.blocks || normBlocks(cfg);
@@ -5931,7 +5931,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.1";
+var VERSION = "3.9.2";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
