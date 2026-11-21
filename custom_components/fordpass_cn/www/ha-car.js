@@ -695,6 +695,10 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
 
 /* 能耗：双环形仪表 + 中间量纲图标（参考图同构） */
 .energy { display: grid; grid-template-columns: 1fr 1px 1fr; align-items: center; column-gap: 14px; padding: 2px 2px 0; }
+/* 插混/增程三表并排（燃油 / 电量 / 续航）：多一根分隔线、表盘收窄，避免挤到下面的数据条 */
+.energy.trio { grid-template-columns: 1fr 1px 1fr 1px 1fr; column-gap: 8px; }
+.energy.trio .gauge { max-width: 104px; }
+.energy.trio .gauge .gn b { font-size: 26px; }
 .gauge { position: relative; width: 100%; max-width: 132px; aspect-ratio: 1; margin: 0 auto; overflow: visible;
   container-type: inline-size; }
 .gauge > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -1951,7 +1955,7 @@ var ITEM_DEFS = {
 var DEFAULT_ITEMS = {
   meta: [{ slot: "addr" }, { slot: "place" }, { slot: "sync" }],
   hero: [{ slot: "image" }],
-  energy: ["fuel", "battery", "range", "odo", "volt", "oil"],
+  energy: ["fuel", "battery", "range", "ev_range", "odo", "volt", "oil"],
   alerts: ["alerts"],
   doors: [
     "ignition",
@@ -3275,13 +3279,14 @@ var HaCarCard = class extends HTMLElement {
       const html = `<div class="lr tire${warn ? " warn" : ""}" data-more="${esc(entFor(slot))}"><span class="ri">${icon("tireo")}</span><b>${txt}<s>${esc(unit)}</s></b></div>`;
       return { slot, html, warn };
     };
+    const pureEv = this._isPureEv(data);
     const out = [];
     if (running) {
       out.push(`<i class="beam lb"></i><i class="beam rb"></i><i class="gpool"></i><i class="tailbar"></i><i class="tailglow"></i>`);
     }
     const engItem = itemFor("ignition");
     const engSt = doors ? engItem ? this._itemState(engItem, data) : data.get("sw_engine") || data.get("remote_start") : null;
-    if (engSt) {
+    if (engSt && !pureEv) {
       const engEnt = engItem ? this._itemEnt(engItem, data) : data.id("sw_engine") || data.id("remote_start") || data.id("ignition");
       const rsEnd = this._rsEndMs(data);
       const engTxt = rsEnd ? zh ? "远程启动" : "Remote" : engItem ? String(engSt.state) : running ? zh ? "已启动" : "Running" : zh ? "已熄火" : "Off";
@@ -3330,7 +3335,7 @@ var HaCarCard = class extends HTMLElement {
         `<div class="cap ${cls}${bBad ? " bad" : open ? " open" : ""}" data-more="${esc(ent)}" title="${esc(label)}"><span class="chd"><span class="ri">${icon(ic)}</span><b>${esc(label)}</b><em class="lk${locked ? " on" : ""}">${icon(locked ? "lock" : "unlock")}</em></span><i>${bBad ? zh ? "不可用" : "N/A" : open ? zh ? "已打开" : "Open" : zh ? "已关闭" : "Closed"}</i></div>`
       );
     };
-    cap("hood", zh ? "引擎盖" : "Hood", "hood", "engine");
+    cap("hood", pureEv ? zh ? "前备箱" : "Frunk" : zh ? "引擎盖" : "Hood", "hood", "engine");
     cap("trunk", zh ? "尾门" : "Tailgate", "tailgate", "trunk");
     return { inner: out.join(""), edge: "" };
   }
@@ -4355,10 +4360,16 @@ var HaCarCard = class extends HTMLElement {
     });
     return it ? it.entity || "" : "";
   }
+  // 纯电车型：有电量（SOC）且没有燃油量。插混/增程两者都有，不算纯电。
+  _isPureEv(data) {
+    return Boolean(data && data.get("battery") && !data.get("fuel"));
+  }
   _energy(data, t, b) {
     const items = this._items(b);
     const gauges = [];
     const stats = [];
+    const hybrid = Boolean(data.get("fuel") && data.get("battery"));
+    const gaugeCap = hybrid ? 3 : 2;
     for (const it of items) {
       const def = this._itemDef(it);
       const st = this._itemState(it, data);
@@ -4368,7 +4379,8 @@ var HaCarCard = class extends HTMLElement {
       const unit = attrs(st, "unit_of_measurement") || it.unit || "";
       const numv = num(st);
       const kind = def ? def.kind : "stat";
-      if ((kind === "pct" || kind === "range" || kind === "odo") && gauges.length < 2 && numv != null) {
+      const voltSlot = it.slot === "volt" || def === ITEM_DEFS.volt;
+      if ((kind === "pct" || kind === "range" || kind === "odo") && gauges.length < gaugeCap && numv != null) {
         let full = def && def.full ? def.full : 1e3;
         if (def === ITEM_DEFS.range && this._config.range_full) full = this._config.range_full;
         if (def === ITEM_DEFS.ev_range && this._config.ev_range_full) full = this._config.ev_range_full;
@@ -4386,11 +4398,11 @@ var HaCarCard = class extends HTMLElement {
       }
       if (numv == null && kind !== "stat") continue;
       stats.push(
-        `<span class="sstat" data-more="${esc(ent)}">${this._itemShowLabel(it) ? `<i>${esc(label)}</i>` : ""}<b>${numv == null ? esc(String(st.state)) : fmtNum(numv)}</b><span>${esc(unit)}</span></span>`
+        `<span class="sstat" data-more="${esc(ent)}">${this._itemShowLabel(it) ? `<i>${esc(label)}</i>` : ""}<b>${numv == null ? esc(String(st.state)) : fmtNum(numv, voltSlot ? 1 : 0)}</b><span>${esc(unit)}</span></span>`
       );
     }
     if (!gauges.length && !stats.length) return "";
-    return `${gauges.length ? `<div class="energy">${gauges.join(`<span class="egdiv"></span>`)}</div>` : ""}
+    return `${gauges.length ? `<div class="energy${gauges.length >= 3 ? " trio" : ""}">${gauges.join(`<span class="egdiv"></span>`)}</div>` : ""}
       ${stats.length ? `<div class="substats">${stats.join("")}</div>` : ""}`;
   }
   // 环形仪表：SVG 描边弧，从 12 点起顺时针
@@ -4425,6 +4437,7 @@ var HaCarCard = class extends HTMLElement {
         continue;
       }
       const slot = it.slot || "";
+      if (slot === "sw_engine" && this._isPureEv(data)) continue;
       if (slot === "sw_va" || slot === "sw_light") {
         if (!compact) {
           pills.push(this._pill({
@@ -5847,7 +5860,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.7.7";
+var VERSION = "3.7.8";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
