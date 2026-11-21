@@ -473,13 +473,16 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
 .status.bad { color: #ff9d8e; background: rgba(255,145,130,.11); border-color: rgba(255,145,130,.34); }
 
 /* 锁态下面一行：定位 + 同步时间 */
-.hmeta { display: flex; align-items: center; gap: 8px; margin-top: -6px; min-width: 0; }
+.hmeta { display: flex; align-items: center; gap: calc(8px * var(--ks, 1)); margin-top: calc(-6px * var(--ks, 1)); min-width: 0; }
 .hmeta .doors { flex: 1 1 auto; min-width: 0; overflow: hidden; }
-.hmeta .door { flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; height: 26px;
+.hmeta .door { flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; height: calc(28px * var(--ks, 1));
+  padding: 0 calc(12px * var(--ks, 1)); gap: calc(7px * var(--ks, 1)); border-radius: calc(11px * var(--ks, 1));
+  font-size: calc(12.5px * var(--ks, 1));
   background: rgba(255,255,255,.024); border-color: rgba(255,255,255,.055); }
 .hmeta .door .addr { flex: 1 1 auto; min-width: 0; }
-.hmeta .door .ic { width: 14px; height: 14px; }
-.hmeta .baseline.solo { flex: none; margin: 0 0 0 auto; padding: 4px 9px; background: rgba(255,255,255,.024);
+.hmeta .door .ic { width: calc(16px * var(--ks, 1)); height: calc(16px * var(--ks, 1)); }
+.hmeta .baseline.solo { flex: none; margin: 0 0 0 auto; padding: calc(4px * var(--ks, 1)) calc(9px * var(--ks, 1));
+  font-size: calc(11px * var(--ks, 1)); background: rgba(255,255,255,.024);
   border-color: rgba(255,255,255,.055); }
 
 /* 主视觉：车图 + 双同心轨道 + 四枚发光节点（参考图同构） */
@@ -5936,7 +5939,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.8.9";
+var VERSION = "3.9.0";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
