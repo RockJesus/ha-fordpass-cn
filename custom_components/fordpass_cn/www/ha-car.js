@@ -1199,17 +1199,15 @@ ha-card.panel.fit .b-hero-col { display: flex; flex: 1 1 0; min-width: 0; }
 ha-card.panel.fit .b-side { display: flex; flex: 0 0 34%; }
 /* 模块是 .blocks 的直接子元素（没有 b-hero-col/b-side 包裹）：给车图与能量表明确占比，
    位置/里程信息条改为浮在车图区左上，避免它单独占一列把圆环挤窄 */
-ha-card.panel.fit .blocks { display: grid; grid-template-columns: minmax(0, 1.95fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto auto auto; column-gap: calc(26px * var(--ks, 1)); }
-ha-card.panel.fit .blocks > .b-hero { grid-column: 1; grid-row: 1 / span 4; min-width: 0; align-self: stretch; }
-ha-card.panel.fit .blocks > .b-energy { align-self: center; }
-ha-card.panel.fit .blocks > .b-energy,
-ha-card.panel.fit .blocks > .b-alerts,
-ha-card.panel.fit .blocks > .b-actions,
-ha-card.panel.fit .blocks > .b-service,
-ha-card.panel.fit .blocks > .b-charging { grid-column: 2; min-width: 0; }
-ha-card.panel.fit .blocks > .b-actions { margin-top: calc(10px * var(--ks, 1)); }
-ha-card.panel.fit .blocks > .b-meta { position: absolute; left: 2%; top: 0; z-index: 2; max-width: 36%; }
+/* 真实 HA 里 .blocks 的子节点是 .b-hero-col / .b-side 两个包裹列：
+   车图列占 1fr 并撑满可视高度，右栏给固定占比，否则能量表按内容宽度抢位、圆环被压扁 */
+ha-card.panel.fit .blocks { display: flex; flex-direction: row; align-items: stretch;
+  gap: calc(30px * var(--ks, 1)); }
+ha-card.panel.fit .b-hero-col { display: flex; flex: 1 1 0; min-width: 0; }
+ha-card.panel.fit .b-side { display: flex; flex: 0 0 32%; min-width: 0; flex-direction: column;
+  justify-content: flex-start; gap: calc(16px * var(--ks, 1)); }
+ha-card.panel.fit .b-side > .b-energy { flex: 0 1 auto; display: flex; flex-direction: column; justify-content: center; }
+ha-card.panel.fit .b-side > .b-actions { margin-top: calc(10px * var(--ks, 1)); }
 ha-card.panel.fit .b-hero-col .b-hero { flex: 1 1 auto; justify-content: center; }
 ha-card.panel.fit .b-side { display: flex; flex-direction: column; flex: .98 1 0; min-width: 0;
   justify-content: flex-start; gap: calc(16px * var(--ks, 1)); }
@@ -5935,7 +5933,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.8.4";
+var VERSION = "3.8.5";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
