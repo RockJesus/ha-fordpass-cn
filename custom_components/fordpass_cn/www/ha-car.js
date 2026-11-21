@@ -577,14 +577,14 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
 
 /* 操作：圆形玻璃钮 + 标签，长按沿圆环走一圈（参考图同构） */
 .acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
-.acts { gap: 4px; }
+.acts { gap: calc(4px * var(--ks, 1)); }
 /* 按钮自成一套赛博配色：青 / 电紫 / 洋红，不跟主题强调色走，任何主题下都能从底色里跳出来 */
-.tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 11px; padding: 0;
+.tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: calc(11px * var(--ks, 1)); padding: 0;
   background: none; border: none; cursor: pointer; color: var(--hc-ink); font: inherit; text-align: center;
   -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
   touch-action: manipulation;
   --cy-a: 34,232,255; --cy-b: 168,86,255; --cy-c: 255,52,196; --cy-ok: 48,255,168; }
-.orb { position: relative; width: 72px; height: 72px; display: grid; place-items: center; border-radius: 50%;
+.orb { position: relative; width: calc(72px * var(--ks, 1)); height: calc(72px * var(--ks, 1)); display: grid; place-items: center; border-radius: 50%;
   border: 1px solid rgba(34,232,255,.22);
   background:
     radial-gradient(120% 92% at 34% 16%, rgba(255,255,255,.52) 0%, rgba(255,255,255,.10) 32%, rgba(255,255,255,0) 54%),
@@ -603,10 +603,10 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
 .orb::after { content: ""; position: absolute; left: 17%; top: 9%; width: 46%; height: 32%; border-radius: 50%;
   background: radial-gradient(60% 60% at 50% 50%, rgba(255,255,255,.6), rgba(255,255,255,.08) 68%, transparent 78%);
   filter: blur(1px); pointer-events: none; opacity: .7; }
-.tile .ic { width: 27px; height: 27px; color: #ddf8ff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
-.tile .glyph { width: 62px; height: 62px; object-fit: contain; pointer-events: none;
+.tile .ic { width: calc(27px * var(--ks, 1)); height: calc(27px * var(--ks, 1)); color: #ddf8ff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+.tile .glyph { width: calc(62px * var(--ks, 1)); height: calc(62px * var(--ks, 1)); object-fit: contain; pointer-events: none;
   filter: hue-rotate(var(--hc-btnhue,0deg)) saturate(var(--hc-btnsat,1)) drop-shadow(0 2px 3px rgba(0,0,0,.72)); }
-.tile .glyph.wide { width: 70px; height: 46px; }
+.tile .glyph.wide { width: calc(70px * var(--ks, 1)); height: calc(46px * var(--ks, 1)); }
 /* 艺术按钮：去掉球体底和霓虹圈，让 3D logo 本身成为按钮 */
 .orb.art { background: none; border-color: transparent; box-shadow: none; }
 .orb.art::before, .orb.art::after { display: none; }
@@ -614,7 +614,7 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
 .tile.hot .orb.art .glyph { filter: hue-rotate(var(--hc-btnhue,0deg)) saturate(var(--hc-btnsat,1)) drop-shadow(0 0 8px rgba(var(--cy-c),.8)) drop-shadow(0 2px 3px rgba(0,0,0,.72)); }
 .tile.on .orb.art .glyph { filter: hue-rotate(var(--hc-btnhue,0deg)) saturate(var(--hc-btnsat,1)) drop-shadow(0 0 8px rgba(var(--cy-ok),.7)) drop-shadow(0 2px 3px rgba(0,0,0,.72)); }
 .tile:active .orb.art, .tile.pressing .orb.art { box-shadow: none; }
-.tile .lbl { max-width: 100%; font-size: 13.5px; font-weight: 620; letter-spacing: .06em;
+.tile .lbl { max-width: 100%; font-size: calc(13.5px * var(--ks, 1)); font-weight: 620; letter-spacing: .06em;
   color: rgba(206,229,244,.88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes hc-ring-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .tile.spin .orb.art::before, .tile:active .orb.art::before { display: block; }
@@ -678,17 +678,17 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
 .tile.pending .orb.art::after { display: block; }
 .tile.pending .orb::after { content: ""; position: absolute; top: 1px; right: 4px; width: 6px; height: 6px;
   border-radius: 50%; background: var(--hc-accent); animation: hc-pulse 1.4s ease-in-out infinite; }
-.pills { display: flex; gap: 8px; margin-top: 10px; }
+.pills { display: flex; gap: calc(8px * var(--ks, 1)); margin-top: calc(10px * var(--ks, 1)); }
 .pill { flex: 1; height: calc(32px * var(--ks, 1)); display: inline-flex; align-items: center; justify-content: center; gap: calc(6px * var(--ks, 1));
   border-radius: 999px; cursor: pointer; border: 1px solid rgba(255,255,255,.08);
   background: rgba(255,255,255,.03); color: var(--hc-dim); font: 600 calc(11.5px * var(--ks, 1))/1 inherit;
   -webkit-tap-highlight-color: transparent; user-select: none;
   transition: color .18s, background .18s, border-color .18s; position: relative; overflow: hidden; }
 
-.selpill { position: relative; justify-content: center; gap: 7px; }
-.selpill .sl { font-size: 11px; letter-spacing: .06em; color: rgba(178,196,216,.86); }
-.selpill b { font-size: 12.5px; font-weight: 680; color: #eef5fd; white-space: nowrap; }
-.selpill .caret { font-style: normal; font-size: 9px; opacity: .55; margin-left: -2px; }
+.selpill { position: relative; justify-content: center; gap: calc(7px * var(--ks, 1)); }
+.selpill .sl { font-size: calc(11px * var(--ks, 1)); letter-spacing: .06em; color: rgba(178,196,216,.86); }
+.selpill b { font-size: calc(12.5px * var(--ks, 1)); font-weight: 680; color: #eef5fd; white-space: nowrap; }
+.selpill .caret { font-style: normal; font-size: calc(9px * var(--ks, 1)); opacity: .55; margin-left: -2px; }
 .selpill select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
   border: none; appearance: none; }
 .pill .ic { width: 15px; height: 15px; }
@@ -5933,7 +5933,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.8.7";
+var VERSION = "3.8.8";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
