@@ -3489,10 +3489,10 @@ var HaCarCard = class extends HTMLElement {
       const cy0 = (heroR.top + heroR.bottom) / 2;
       const zk = heroR.width ? hero.clientWidth / heroR.width : 1;
       const halfScreen = Math.min(cx0 - visL, visR - cx0, cy0 - visT, visB - cy0);
-      const d = Math.max(40, halfScreen * 2 * 0.965 * zk - 4 * zk);
+      const d = Math.max(40, halfScreen * 2 * 0.95 * zk - 6 * zk);
       if (d > 0) {
         orb.style.width = orb.style.height = `${d}px`;
-        if (orb2) orb2.style.width = orb2.style.height = `${d * 1.035}px`;
+        if (orb2) orb2.style.width = orb2.style.height = `${d * 1.012}px`;
       }
       const hk = Math.min(2.6, Math.max(1, d / 430));
       if (hero) hero.style.setProperty("--hk", hk.toFixed(3));
@@ -5933,7 +5933,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.8.6";
+var VERSION = "3.8.7";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
