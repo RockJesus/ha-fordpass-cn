@@ -1205,12 +1205,15 @@ ha-card.panel.fit .blocks { display: flex; flex-direction: row; align-items: str
   gap: calc(30px * var(--ks, 1)); }
 ha-card.panel.fit .b-hero-col { display: flex; flex: 1 1 0; min-width: 0; }
 ha-card.panel.fit .b-side { display: flex; flex: 0 0 32%; min-width: 0; flex-direction: column;
-  justify-content: flex-start; gap: calc(16px * var(--ks, 1)); }
-ha-card.panel.fit .b-side > .b-energy { flex: 0 1 auto; display: flex; flex-direction: column; justify-content: center; }
-ha-card.panel.fit .b-side > .b-actions { margin-top: calc(10px * var(--ks, 1)); }
+  justify-content: flex-start; gap: calc(9px * var(--ks, 1)); }
+ha-card.panel.fit .b-side > .b-energy { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
+ha-card.panel.fit .b-side > .b-actions,
+ha-card.panel.fit .b-side > .b-meta,
+ha-card.panel.fit .b-side > .b-alerts { flex: 0 0 auto; }
+ha-card.panel.fit .b-side > .b-actions { margin-top: 0; }
 ha-card.panel.fit .b-hero-col .b-hero { flex: 1 1 auto; justify-content: center; }
 ha-card.panel.fit .b-side { display: flex; flex-direction: column; flex: .98 1 0; min-width: 0;
-  justify-content: flex-start; gap: calc(16px * var(--ks, 1)); }
+  justify-content: flex-start; gap: calc(9px * var(--ks, 1)); }
 /* 右栏纵向铺满：仪表吃掉多余高度并居中，副指标/告警/按钮组自然下移贴底，底部不再留大片空白 */
 ha-card.panel.fit .b-side > .b-energy { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
 ha-card.panel.fit .b-side > .b-energy > .energy { width: 100%; }
@@ -5933,7 +5936,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.8.8";
+var VERSION = "3.8.9";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
