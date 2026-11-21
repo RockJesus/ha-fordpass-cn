@@ -3239,19 +3239,11 @@ var HaCarCard = class extends HTMLElement {
       if (html) blocks.push({ html, hero: b.type === "hero", type: b.type });
     }
     const ai = blocks.findIndex((x) => x.type === "alerts");
-    const ei = blocks.findIndex((x) => x.type === "energy");
-    if (ai > -1 && ei > -1 && ai !== ei + 1) {
-      const [alerts] = blocks.splice(ai, 1);
-      const target = blocks.findIndex((x) => x.type === "energy");
-      blocks.splice(target + 1, 0, alerts);
-    }
-    const enIdx = blocks.findIndex((x) => x.type === "energy");
-    if (enIdx > -1 && blocks[enIdx + 1] && blocks[enIdx + 1].type === "alerts") {
-      const eh = blocks[enIdx].html;
-      const ah = blocks[enIdx + 1].html;
-      if (eh.endsWith("</div>")) {
-        blocks[enIdx].html = eh.slice(0, -6) + ah + "</div>";
-        blocks.splice(enIdx + 1, 1);
+    if (ai > -1) {
+      const mi = blocks.findIndex((x) => x.type === "meta");
+      if (mi > -1 && ai !== mi + 1) {
+        const [alerts] = blocks.splice(ai, 1);
+        blocks.splice(mi + 1, 0, alerts);
       }
     }
     let inner;
@@ -5939,7 +5931,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.0";
+var VERSION = "3.9.1";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
