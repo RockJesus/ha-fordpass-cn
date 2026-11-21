@@ -100,6 +100,11 @@ var DEFS = [
   { s: "odo", d: ["sensor"], a: ["odometer", "zong_li_cheng"], n: ["总里程"] },
   { s: "volt", d: ["sensor"], a: ["battery_voltage", "xu_dian_chi_dian_ya"], n: ["蓄电池电压"] },
   { s: "oil", d: ["sensor"], a: ["prognostic", "ji_you_shou_ming", "oil_health", "ji_you_jian_kang_zhuang_tai"], n: ["机油寿命", "机油健康状态"] },
+  // 柴油 / 氢燃料 / 其他动力专属项：只有映射了对应实体才出现，不影响油车电车
+  { s: "adblue", d: ["sensor"], a: ["adblue_level", "def_level", "niao_su_liang", "che_yong_niao_su_yu_liang"], n: ["尿素余量", "车用尿素余量"] },
+  { s: "h2", d: ["sensor"], a: ["h2_level", "hydrogen_level", "qing_guan_yu_liang", "qing_qi_yu_liang"], n: ["氢罐余量", "氢气余量"] },
+  { s: "dpf", d: ["sensor"], a: ["dpf_status", "dpf_zai_sheng", "li_zi_bu_zhuo_qi_zhuang_tai"], n: ["DPF 状态", "颗粒捕集器状态"] },
+  { s: "coolant", d: ["sensor"], a: ["coolant_temp", "leng_que_ye_wen_du", "shui_wen"], n: ["冷却液温度", "水温"] },
   { s: "tp_lf", d: ["sensor"], a: ["lf_tire", "zuo_qian_lun_tai_ya"], n: ["左前轮胎压"] },
   { s: "tp_rf", d: ["sensor"], a: ["rf_tire", "you_qian_lun_tai_ya"], n: ["右前轮胎压"] },
   { s: "tp_lr", d: ["sensor"], a: ["lr_tire", "zuo_hou_lun_tai_ya"], n: ["左后轮胎压"] },
@@ -402,6 +407,14 @@ ha-card::after { content: ""; position: absolute; left: 8%; right: 8%; top: 0; h
   background: linear-gradient(90deg, transparent, rgba(190,240,255,.5) 18%, rgba(190,240,255,.5) 82%, transparent);
   opacity: .55; }
 .plate, .gn b, .tc b, .stat b { font-variant-numeric: tabular-nums; }
+/* 车牌里的车企标识：缩到 20×9 的官方标高度，文字标压到 13px，自定义图 11px */
+.plate .mk { display: inline-flex; align-items: center; }
+.plate .mk .brand { display: inline-flex; align-items: center; }
+.plate .mk .brand svg { width: 20px; height: 9px; filter: none; transform: none; }
+.plate .mk .brand.lin svg { width: 26px; height: 9px; }
+.plate .mk .brand.gen .genmark { height: 13px; padding: 0 4px; border-radius: 4px; font-size: 8px; letter-spacing: .04em; box-shadow: none; }
+.plate .mk .brand.custom img { height: 11px; max-width: 28px; filter: none; }
+.plate b { font-weight: inherit; letter-spacing: inherit; }
 .plate { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
 ha-card.has-photo .wrap { background-image:
   linear-gradient(180deg, rgba(5,10,18,.58) 0%, rgba(5,10,18,.78) 48%, rgba(4,8,14,.9) 100%),
@@ -441,7 +454,7 @@ h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
   -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 2px 6px rgba(0,0,0,.55));
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plate { flex: 0 0 auto; display: inline-block; font-size: 11px; font-weight: 620;
+.plate { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 620;
   letter-spacing: .2em; color: rgba(190,214,230,.82); vertical-align: .14em;
   text-shadow: 0 0 12px rgba(var(--hc-a,55,214,232),.22); }
 .status { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 14px;
@@ -1872,6 +1885,38 @@ var LINCOLN_LOGO = `<span class="brand lin" aria-hidden="true"><svg viewBox="0 0
 <path d="M7 4.8 L8.1 8.7 L12 10 L8.1 11.3 L7 15.2 L5.9 11.3 L2 10 L5.9 8.7 Z" fill="#eef4ff"/>
 <text x="37" y="13" text-anchor="middle" font-family="Georgia,'Times New Roman',serif"
  font-weight="700" font-size="7.4" fill="#f4f8ff" letter-spacing="1.04">LINCOLN</text></svg></span>`;
+var BRAND_TINT = {
+  特斯拉: "#e82127",
+  比亚迪: "#d71920",
+  蔚来: "#00bebd",
+  小鹏: "#00b3a4",
+  理想: "#00b96b",
+  极氪: "#00b0ea",
+  吉利: "#0d5eaf",
+  长安: "#0f4c9c",
+  长城: "#c8102e",
+  奇瑞: "#005bac",
+  广汽: "#0f6cbd",
+  上汽: "#1d6fa5",
+  东风: "#1b4f8f",
+  丰田: "#eb0a1e",
+  本田: "#e60012",
+  日产: "#c3002f",
+  马自达: "#910a2d",
+  大众: "#001e50",
+  宝马: "#0066b1",
+  奔驰: "#00adef",
+  沃尔沃: "#0a5bd4",
+  路虎: "#005a2b",
+  通用: "#c8102e",
+  现代: "#002c5f",
+  标致: "#0a3d62",
+  斯巴鲁: "#003da5",
+  吉普: "#2b4736",
+  三菱: "#e60012",
+  铃木: "#003399",
+  起亚: "#05141f"
+};
 var BRAND_WORDS = [
   [/lincoln|林肯|corsair|nautilus|navigator|continental|zephyr/i, "lincoln"],
   [/ford|福特|escape|explorer|mondeo|mustang|ranger|bronco|territory/i, "ford"],
@@ -1928,6 +1973,10 @@ var ITEM_DEFS = {
   win_rr: { zh: "右后车窗", en: "Rear R window", icon: "carwin", kind: "door" },
   ignition: { zh: "引擎", en: "Engine", icon: "engine", kind: "stat" },
   hood: { zh: "引擎盖", en: "Hood", icon: "engine", kind: "cap" },
+  adblue: { zh: "尿素", en: "AdBlue", icon: "fuel", kind: "stat" },
+  h2: { zh: "氢罐", en: "H₂ tank", icon: "gauge", kind: "pct", full: 100 },
+  dpf: { zh: "DPF", en: "DPF", icon: "engine", kind: "stat" },
+  coolant: { zh: "冷却液", en: "Coolant", icon: "gauge", kind: "stat" },
   tailgate: { zh: "尾门", en: "Tailgate", icon: "trunk", kind: "cap" },
   tp_lf: { zh: "左前胎压", en: "LF tire", icon: "tire", kind: "tire" },
   tp_rf: { zh: "右前胎压", en: "RF tire", icon: "tire", kind: "tire" },
@@ -1955,7 +2004,7 @@ var ITEM_DEFS = {
 var DEFAULT_ITEMS = {
   meta: [{ slot: "addr" }, { slot: "place" }, { slot: "sync" }],
   hero: [{ slot: "image" }],
-  energy: ["fuel", "battery", "range", "ev_range", "odo", "volt", "oil"],
+  energy: ["fuel", "battery", "h2", "range", "ev_range", "odo", "volt", "oil", "adblue", "dpf", "coolant"],
   alerts: ["alerts"],
   doors: [
     "ignition",
@@ -2582,7 +2631,14 @@ var HaCarCard = class extends HTMLElement {
     if (b === "lincoln") return LINCOLN_LOGO;
     if (b === "ford") return FORD_LOGO;
     const name = String(cfg.brand_name || this._brandLabel() || this._deviceHint() || "").trim().slice(0, 8);
-    return name ? `<span class="brand gen" aria-hidden="true"><span class="genmark">${esc(name)}</span></span>` : "";
+    const tint = BRAND_TINT[name] || "";
+    const st = tint ? ` style="border-color:${tint}88;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 0 12px -4px ${tint}cc"` : "";
+    return name ? `<span class="brand gen" aria-hidden="true"><span class="genmark"${st}>${esc(name)}</span></span>` : "";
+  }
+  // 车牌左侧的车企标识：官方标（福特/林肯）、自定义车标图、或通用文字标，按品牌自动切换
+  _logoMark() {
+    const html = this._logo();
+    return html ? `<i class="mk">${html}</i>` : "";
   }
   _fitPanel() {
     if (this._applyFixedSizeIfAny()) return;
@@ -3104,7 +3160,7 @@ var HaCarCard = class extends HTMLElement {
     if (running) chips.push({ cls: "warn", label: t.running });
     const blocks = [];
     const plateTxt = cfg.show_plate && plate ? cfg.privacy ? maskPlate(plate) : plate : "";
-    const head = `<div class="head"><div class="ttl">${this._logo()}<h1>${esc(title)}</h1>` + (plateTxt ? `<span class="plate">${esc(plateTxt)}</span>` : "") + `</div><span class="status ${status.cls}"><span class="dot"></span>${esc(status.label)}</span></div>`;
+    const head = `<div class="head"><div class="ttl">${this._logo()}<h1>${esc(title)}</h1>` + (plateTxt ? `<span class="plate">${this._logoMark()}<b>${esc(plateTxt)}</b></span>` : "") + `</div><span class="status ${status.cls}"><span class="dot"></span>${esc(status.label)}</span></div>`;
     const hero = this._imagePair(data);
     for (const b of list) {
       if (b.on === false) continue;
@@ -5054,7 +5110,14 @@ var OVERRIDES = [
   ["fuel", "燃油量"],
   ["battery", "动力电池电量"],
   ["range", "续航里程"],
+  ["ev_range", "纯电续航"],
   ["odo", "总里程"],
+  ["volt", "蓄电池电压"],
+  ["oil", "机油寿命"],
+  ["adblue", "尿素余量（AdBlue）"],
+  ["h2", "氢罐余量"],
+  ["dpf", "DPF 状态"],
+  ["coolant", "冷却液温度"],
   ["tp_lf", "左前轮胎压"],
   ["tp_rf", "右前轮胎压"],
   ["tracker", "车辆定位"],
@@ -5860,7 +5923,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.7.8";
+var VERSION = "3.7.9";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
