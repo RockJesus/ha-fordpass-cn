@@ -26,6 +26,7 @@ def _card_path() -> Path:
 
 
 def _version() -> str:
+    """读取 manifest.json 版本号（同步 IO，必须在 executor 中调用）。"""
     try:
         manifest = Path(__file__).parent / "manifest.json"
         return str(json.loads(manifest.read_text("utf-8")).get("version", "0"))
@@ -55,8 +56,10 @@ async def async_register_card(hass: HomeAssistant) -> None:
         _LOGGER.debug("福特派互联：静态路径已存在，跳过注册：%s", err)
 
     # 带版本号做缓存击穿：升级后浏览器立刻拿到新卡片
+    # 版本读取是同步文件 IO，放 executor，避免事件循环阻塞告警
     try:
-        add_extra_js_url(hass, f"{CARD_URL_PATH}?v={_version()}")
+        version = await hass.async_add_executor_job(_version)
+        add_extra_js_url(hass, f"{CARD_URL_PATH}?v={version}")
     except Exception as err:  # noqa: BLE001 - 前端资源注册失败不应阻断集成加载
         _LOGGER.warning("福特派互联：爱车卡片前端资源注册失败：%s", err)
         return

@@ -48,6 +48,10 @@ PARALLEL_UPDATES = 1
 # preCondStatusDsply 取值中视为「座舱温控运行中」的枚举（与 sensor._precond_map 同源）
 _PRECOND_ON = {"ON", "RUNNING", "PENDING"}
 
+# HA 2026.11 起 ClimateEntity 的温控成员改为 native_* 前缀，旧名于 2027.11 失效。
+# 按基类是否已提供新成员决定用哪一套，兼容旧版 HA（本地 2025.1.x）与新版本。
+_NATIVE_TEMP_API = hasattr(ClimateEntity, "native_temperature_unit")
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -89,7 +93,10 @@ class FordPassRemoteClimate(FordPassRestoreMixin, ClimateEntity):
     _attr_has_entity_name = True
     _attr_translation_key = "remote_climate"
     _attr_icon = "mdi:air-conditioner"
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    if _NATIVE_TEMP_API:
+        _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
+    else:
+        _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT_COOL, HVACMode.OFF]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_min_temp = min(REMOTE_CLIMATE_TEMP_OPTIONS)
@@ -145,14 +152,27 @@ class FordPassRemoteClimate(FordPassRestoreMixin, ClimateEntity):
         on = self._pending if self._pending is not None else self._status_on()
         return HVACMode.HEAT_COOL if on else HVACMode.OFF
 
-    @property
-    def current_temperature(self) -> None:
-        # 云端不提供真实座舱温度，只有目标温度
-        return None
+    if _NATIVE_TEMP_API:
 
-    @property
-    def target_temperature(self) -> int:
-        return self._cloud_target() or self._target
+        @property
+        def native_current_temperature(self) -> None:
+            # 云端不提供真实座舱温度，只有目标温度
+            return None
+
+        @property
+        def native_target_temperature(self) -> int:
+            return self._cloud_target() or self._target
+
+    else:
+
+        @property
+        def current_temperature(self) -> None:
+            # 云端不提供真实座舱温度，只有目标温度
+            return None
+
+        @property
+        def target_temperature(self) -> int:
+            return self._cloud_target() or self._target
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
