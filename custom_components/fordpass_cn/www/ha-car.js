@@ -4226,6 +4226,7 @@ var HaCarCard = class extends HTMLElement {
   }
   _startGpsHeading() {
     if (this._gpsWatch != null || !navigator.geolocation) return;
+    if (this._hasHaPoint(this._findData ? this._findPoints(this._findData) : {})) return;
     try {
       this._gpsWatch = navigator.geolocation.watchPosition((pos) => {
         const h = pos && pos.coords && pos.coords.heading;
@@ -5967,7 +5968,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.6";
+var VERSION = "3.9.7";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
