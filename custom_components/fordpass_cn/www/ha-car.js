@@ -2960,14 +2960,17 @@ var HaCarCard = class extends HTMLElement {
     this._restoreGeo();
     this._rebindHold();
     if (this._findOpen) {
-      this._card.querySelectorAll(".findmodal").forEach((m) => m.remove());
-      this._card.insertAdjacentHTML("beforeend", this._findModal(data));
+      const mods = this._card.querySelectorAll(".findmodal");
+      if (!mods.length) this._card.insertAdjacentHTML("beforeend", this._findModal(data));
+      else mods.forEach((m, i) => {
+        if (i < mods.length - 1) m.remove();
+      });
     }
     this._findData = data;
     this._updateFind();
     if (this._findOpen) {
       cancelAnimationFrame(this._mapRaf);
-      this._mapRaf = requestAnimationFrame(() => this._paintFindMap(true));
+      this._mapRaf = requestAnimationFrame(() => this._paintFindMap(!this._findOpen || !this._card.querySelector(".findmodal [data-fmap]")));
     }
     this._placeToast();
     cancelAnimationFrame(this._pt1);
@@ -4206,29 +4209,41 @@ var HaCarCard = class extends HTMLElement {
     if (force || sig !== this._mapSig) {
       this._mapSig = sig;
       this._mapCtx = { sig, z, w, h, tlx: tl.x, tly: tl.y, at: Date.now() };
-      const parts = [];
       const tx0 = Math.floor(tl.x / 256);
       const tx1 = Math.floor((tl.x + w - 1) / 256);
       const ty0 = Math.floor(tl.y / 256);
       const ty1 = Math.floor((tl.y + h - 1) / 256);
+      const keep = /* @__PURE__ */ new Set();
       for (let ty = ty0; ty <= ty1; ty++) {
         if (ty < 0 || ty >= n) continue;
         for (let tx = tx0; tx <= tx1; tx++) {
           const wx = (tx % n + n) % n;
-          const url = `https://webrd0${wx % 4 + 1}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x=${wx}&y=${ty}&z=${z}`;
-          parts.push(`<img src="${url}" alt="" draggable="false" loading="eager" style="left:${Math.round(tx * 256 - tl.x)}px;top:${Math.round(ty * 256 - tl.y)}px">`);
+          const key = `${z}/${wx}/${ty}`;
+          keep.add(key);
+          let img = tiles.querySelector(`img[data-k="${key}"]`);
+          if (!img) {
+            img = document.createElement("img");
+            img.dataset.k = key;
+            img.alt = "";
+            img.draggable = false;
+            img.loading = "eager";
+            img.src = `https://webrd0${wx % 4 + 1}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x=${wx}&y=${ty}&z=${z}`;
+            img.addEventListener("error", function retry() {
+              const r = Number(this.dataset.retry || 0);
+              if (r >= 2) return;
+              this.dataset.retry = String(r + 1);
+              const rnd = 1 + Math.floor(Math.random() * 4);
+              this.src = this.src.replace(/webrd0[1-4]/, "webrd0" + rnd);
+            });
+            tiles.appendChild(img);
+          }
+          img.style.left = Math.round(tx * 256 - tl.x) + "px";
+          img.style.top = Math.round(ty * 256 - tl.y) + "px";
         }
       }
-      tiles.innerHTML = parts.join("");
-      tiles.querySelectorAll("img").forEach((img) => {
-        img.addEventListener("error", function retry() {
-          const n2 = Number(this.dataset.retry || 0);
-          if (n2 >= 2) return;
-          this.dataset.retry = String(n2 + 1);
-          const rnd = 1 + Math.floor(Math.random() * 4);
-          this.src = this.src.replace(/webrd0[1-4]/, "webrd0" + rnd);
-        });
-      });
+      for (const img of Array.from(tiles.children)) {
+        if (!keep.has(img.dataset.k || "")) img.remove();
+      }
     }
     const at = (pt) => {
       const q = proj(pt.lat, pt.lon, z);
@@ -6040,7 +6055,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.8";
+var VERSION = "3.9.9";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
