@@ -3828,7 +3828,11 @@ var HaCarCard = class extends HTMLElement {
     if (!user || !this._hass.states) return null;
     for (const st of Object.values(this._hass.states)) {
       if (!st || !String(st.entity_id || "").startsWith("person.")) continue;
-      if (st.attributes && st.attributes.user_id === user.id) return this._ll(st);
+      if (st.attributes && st.attributes.user_id === user.id) {
+        const src = st.attributes.source;
+        const srcSt = src && this._hass.states[src];
+        return srcSt && this._ll(srcSt) || this._ll(st);
+      }
     }
     return null;
   }
@@ -5963,7 +5967,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.5";
+var VERSION = "3.9.6";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
