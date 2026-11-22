@@ -3800,7 +3800,7 @@ var HaCarCard = class extends HTMLElement {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     const raw = Number(st.attributes.gps_accuracy != null ? st.attributes.gps_accuracy : st.attributes.accuracy);
     const acc = Number.isFinite(raw) && raw > 0 && raw < 5e3 ? raw : null;
-    return { lat, lon, acc };
+    return { lat, lon, acc, ts: st.last_updated || st.last_changed || null };
   }
   _findPoints(data) {
     const f = this._config && this._config.find || {};
@@ -3836,13 +3836,39 @@ var HaCarCard = class extends HTMLElement {
     }
     return null;
   }
-  _findLocation(p) {
-    if (p.phone) return { coords: p.phone, source: "phone" };
+  // 本机定位候选：HA 侧（手机追踪实体 / 登录用户 person / 指定设备）+ 浏览器本机 GPS。
+  // 两边互为兜底，按「有效精度 = 精度 + 陈旧惩罚」选最准且最新的那个：
+  // 精度接近时本机 GPS 更快（watch 秒级推送），差得太多才退回 HA 坐标。
+  _pickSelf(p) {
+    const cands = [];
+    const add = (coords, source, ts) => {
+      if (!coords) return;
+      cands.push({ coords, source, ts: ts || coords.ts || null });
+    };
+    if (p && p.phone) add(p.phone, "phone");
     const person = this._loginPoint();
-    if (person) return { coords: person, source: "person" };
-    if (p.device) return { coords: p.device, source: "device" };
-    if (this._netLoc) return { coords: this._netLoc, source: "network" };
-    return { coords: null, source: "" };
+    if (person) add(person, "person");
+    if (p && p.device) add(p.device, "device");
+    if (this._nativeLoc) add(this._nativeLoc, "native", this._nativeLoc.ts);
+    const eff = (c) => {
+      const acc = c.coords.acc != null && c.coords.acc > 0 ? c.coords.acc : 400;
+      const age = c.ts ? Math.max(0, (Date.now() - new Date(c.ts).getTime()) / 1e3) : 0;
+      let e = acc + Math.min(age, 240) * 1.5;
+      if (c.source === "native") e *= 0.85;
+      return e;
+    };
+    let best = null;
+    for (const c of cands) if (!best || eff(c) < eff(best)) best = c;
+    const cur = this._selfPick;
+    if (cur && best && cur.source !== best.source) {
+      const same = cands.find((c) => c.source === cur.source);
+      if (same && eff(same) <= eff(best) * 1.35) best = same;
+    }
+    this._selfPick = best;
+    return best || { coords: null, source: "" };
+  }
+  _findLocation(p) {
+    return this._pickSelf(p);
   }
   // HA 侧是否已提供本机位置（手机定位实体或登录用户 person 实体）
   _hasHaPoint(p) {
@@ -3853,9 +3879,58 @@ var HaCarCard = class extends HTMLElement {
     const en = isEn(this._hass);
     if (source === "phone") return en ? "phone location" : "手机定位";
     if (source === "network") return en ? "network location" : "网络定位";
+    if (source === "native") return en ? "device GPS" : "本机 GPS";
     if (source === "device") return en ? "logged-in device" : "登录设备";
     if (source === "person") return en ? "logged-in user" : "登录用户";
     return "";
+  }
+  // 本机 GPS：watch 秒级推送，面板打开期间常驻；关面板即释放
+  _startNativeWatch() {
+    if (this._nativeWatch != null) return;
+    if (!navigator.geolocation) return;
+    try {
+      this._nativeWatch = navigator.geolocation.watchPosition(
+        (pos) => this._applyNativePos(pos),
+        () => {
+          this._nativeFailed = true;
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 2e4 }
+      );
+    } catch {
+      this._nativeWatch = null;
+    }
+  }
+  _stopNativeWatch() {
+    if (this._nativeWatch != null && navigator.geolocation) {
+      try {
+        navigator.geolocation.clearWatch(this._nativeWatch);
+      } catch {
+      }
+    }
+    this._nativeWatch = null;
+    this._nativeRaf = 0;
+  }
+  _applyNativePos(pos) {
+    const c = pos && pos.coords;
+    if (!c) return;
+    const lat = Number(c.latitude);
+    const lon = Number(c.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const acc = Number(c.accuracy);
+    this._nativeLoc = { lat, lon, acc: Number.isFinite(acc) && acc > 0 ? acc : null, ts: Date.now() };
+    this._nativeFailed = false;
+    const h = Number(c.heading);
+    const sp = Number(c.speed);
+    if (Number.isFinite(h) && h >= 0 && Number.isFinite(sp) && sp > 2 && this._headingSrc !== "compass") {
+      this._heading = h;
+      this._headingSrc = "gps";
+    }
+    if (!this._findOpen || this._nativeRaf) return;
+    this._nativeRaf = requestAnimationFrame(() => {
+      this._nativeRaf = 0;
+      this._paintFindMap(false);
+      this._updateFind();
+    });
   }
   // 找车面板打开后每 10 秒刷新一次本机定位；普通渲染只在缓存过期（20 秒）时才重新取
   _requestNetworkLocation(force) {
@@ -4119,10 +4194,18 @@ var HaCarCard = class extends HTMLElement {
     const c0 = meG && carG ? { lat: (meG.lat + carG.lat) / 2, lon: (meG.lon + carG.lon) / 2 } : carG || meG;
     const ctr = proj(c0.lat, c0.lon, z);
     const tl = { x: ctr.x - w / 2, y: ctr.y - h / 2 };
-    const sig = [w, h, z, tl.x.toFixed(1), tl.y.toFixed(1)].join("|");
+    let sig = [w, h, z, tl.x.toFixed(1), tl.y.toFixed(1)].join("|");
+    const ctx = this._mapCtx;
+    if (!force && ctx && ctx.z === z && ctx.w === w && ctx.h === h && Date.now() - ctx.at < 1200) {
+      sig = ctx.sig;
+      tl.x = ctx.tlx;
+      tl.y = ctx.tly;
+      this._mapSig = ctx.sig;
+    }
     const n = Math.pow(2, z);
     if (force || sig !== this._mapSig) {
       this._mapSig = sig;
+      this._mapCtx = { sig, z, w, h, tlx: tl.x, tly: tl.y, at: Date.now() };
       const parts = [];
       const tx0 = Math.floor(tl.x / 256);
       const tx1 = Math.floor((tl.x + w - 1) / 256);
@@ -4225,20 +4308,7 @@ var HaCarCard = class extends HTMLElement {
     this._orientBound = true;
   }
   _startGpsHeading() {
-    if (this._gpsWatch != null || !navigator.geolocation) return;
-    if (this._hasHaPoint(this._findData ? this._findPoints(this._findData) : {})) return;
-    try {
-      this._gpsWatch = navigator.geolocation.watchPosition((pos) => {
-        const h = pos && pos.coords && pos.coords.heading;
-        if (!Number.isFinite(h) || h < 0) return;
-        if (this._headingSrc === "compass") return;
-        this._heading = h;
-        this._headingSrc = "gps";
-        if (this._findOpen) this._updateFind();
-      }, () => {
-      }, { enableHighAccuracy: true, maximumAge: 1e3, timeout: 15e3 });
-    } catch {
-    }
+    if (this._findOpen) this._startNativeWatch();
   }
   _stopGpsHeading() {
     if (this._gpsWatch != null && navigator.geolocation) {
@@ -4362,16 +4432,15 @@ var HaCarCard = class extends HTMLElement {
     this._compassGot = false;
     this._lastOrientEv = null;
     this._sig = "";
-    const pts = this._findData ? this._findPoints(this._findData) : { phone: null };
-    if (!this._hasHaPoint(pts)) this._requestNetworkLocation(true);
+    this._selfPick = null;
+    this._mapCtx = null;
+    this._startNativeWatch();
     this._stopFindTimer();
     this._findTimer = setInterval(() => {
       if (!this._findOpen) return;
-      const np = this._findData ? this._findPoints(this._findData) : { phone: null };
-      if (!this._hasHaPoint(np)) this._requestNetworkLocation(true);
       this._paintFindMap(false);
       this._updateFind();
-    }, 1e4);
+    }, 15e3);
     if (this._hass) this._paint(resolve(this._hass, this._config));
     else this._render(true);
   }
@@ -4385,6 +4454,9 @@ var HaCarCard = class extends HTMLElement {
     this._findOpen = false;
     this._stopFindTimer();
     this._compassAutoAsked = false;
+    this._selfPick = null;
+    this._mapCtx = null;
+    this._stopNativeWatch();
     this._stopGpsHeading();
     cancelAnimationFrame(this._headingRaf);
     this._sig = "";
@@ -4436,7 +4508,7 @@ var HaCarCard = class extends HTMLElement {
       this._compassTimer = setTimeout(() => {
         if (this._findOpen && !this._compassGot) {
           this._startGpsHeading();
-          if (!quiet) this._showToast(isEn(this._hass) ? "No compass data — trying GPS heading" : "未收到指南针，已尝试用移动方向", "err");
+          if (!quiet) this._showToast(isEn(this._hass) ? "No compass data — using travel direction" : "未收到指南针，移动时将用行进方向", "err");
           if (this._findOpen) this._updateFind();
         }
       }, 1800);
@@ -5968,7 +6040,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.7";
+var VERSION = "3.9.8";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
