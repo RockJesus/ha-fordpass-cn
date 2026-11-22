@@ -3849,8 +3849,11 @@ var HaCarCard = class extends HTMLElement {
     if (source === "person") return en ? "logged-in user" : "登录用户";
     return "";
   }
-  _requestNetworkLocation() {
-    if (this._netLoc || this._netPending || !navigator.geolocation) return;
+  // 找车面板打开后每 10 秒刷新一次本机定位；普通渲染只在缓存过期（20 秒）时才重新取
+  _requestNetworkLocation(force) {
+    if (!navigator.geolocation || this._netPending) return;
+    const age = Date.now() - (this._netLocAt || 0);
+    if (!force && this._netLoc && age < 2e4) return;
     this._netPending = true;
     this._netFailed = false;
     try {
@@ -3865,16 +3868,22 @@ var HaCarCard = class extends HTMLElement {
             return;
           }
           const acc = Number(pos && pos.coords && pos.coords.accuracy);
+          const prev = this._netLoc;
           this._netLoc = { lat, lon, acc: Number.isFinite(acc) && acc > 0 ? acc : null };
-          if (this._findOpen) this._refreshFind();
-          else this._render(true);
+          this._netLocAt = Date.now();
+          const moved = prev ? this._distanceM(prev, this._netLoc) : null;
+          if (this._findOpen && (!prev || moved != null && moved > 8)) this._refreshFind();
+          else if (this._findOpen) {
+            this._paintFindMap(false);
+            this._updateFind();
+          } else if (!prev || moved != null && moved > 8) this._render(true);
         },
         () => {
           this._netPending = false;
           this._netFailed = true;
           if (this._findOpen) this._refreshFind();
         },
-        { enableHighAccuracy: false, timeout: 12e3, maximumAge: 12e4 }
+        { enableHighAccuracy: Boolean(force), timeout: 12e3, maximumAge: force ? 5e3 : 12e4 }
       );
     } catch {
     }
@@ -4345,12 +4354,26 @@ var HaCarCard = class extends HTMLElement {
     this._lastOrientEv = null;
     this._sig = "";
     const pts = this._findData ? this._findPoints(this._findData) : { phone: null };
-    if (!this._isPhoneView() || !pts.phone) this._requestNetworkLocation();
+    if (!this._isPhoneView() || !pts.phone) this._requestNetworkLocation(true);
+    this._stopFindTimer();
+    this._findTimer = setInterval(() => {
+      if (!this._findOpen) return;
+      this._requestNetworkLocation(true);
+      this._paintFindMap(false);
+      this._updateFind();
+    }, 1e4);
     if (this._hass) this._paint(resolve(this._hass, this._config));
     else this._render(true);
   }
+  _stopFindTimer() {
+    if (this._findTimer) {
+      clearInterval(this._findTimer);
+      this._findTimer = 0;
+    }
+  }
   _closeFind() {
     this._findOpen = false;
+    this._stopFindTimer();
     this._compassAutoAsked = false;
     this._stopGpsHeading();
     cancelAnimationFrame(this._headingRaf);
@@ -5935,7 +5958,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.3";
+var VERSION = "3.9.4";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
