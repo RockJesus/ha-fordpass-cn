@@ -1398,14 +1398,12 @@ ha-card.panel.fit .pills { width: 100%; max-width: none; }
 /* 找车地图：高德栅格瓦片静态取景，铺满上半屏，只标手机与车辆 */
 .findmodal .fmap { position: absolute; inset: 0; width: 100%; height: 100%;
   overflow: hidden; background: #0b1624; }
-.findmodal .fmap::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
-  background: linear-gradient(180deg, rgba(var(--hc-a,55,214,232),.42), rgba(var(--hc-a,55,214,232),.24) 55%, rgba(var(--hc-a,55,214,232),.10) 92%);
-  mix-blend-mode: color; }
+/* 地图不再叠主题色蒙版：瓦片保持高德原色，只在边缘压暗一圈收边 */
 .findmodal .ftiles { position: absolute; inset: 0; }
 .findmodal .fmap::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   box-shadow: inset 0 0 46px rgba(3,10,18,.72); }
 .findmodal .ftiles img { position: absolute; width: 256px; height: 256px; opacity: 0;
-  user-select: none; -webkit-user-drag: none; filter: brightness(.86) saturate(.95) contrast(1.05);
+  user-select: none; -webkit-user-drag: none; filter: brightness(.95) saturate(1.04) contrast(1.02);
   animation: hc-mapfade .35s ease forwards; }
 @keyframes hc-mapfade { to { opacity: 1; } }
 .findmodal .flink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -6055,7 +6053,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.9";
+var VERSION = "4.0.0";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
