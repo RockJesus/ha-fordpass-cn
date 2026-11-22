@@ -3833,13 +3833,17 @@ var HaCarCard = class extends HTMLElement {
     return null;
   }
   _findLocation(p) {
-    if (!this._isPhoneView() && this._netLoc) return { coords: this._netLoc, source: "network" };
     if (p.phone) return { coords: p.phone, source: "phone" };
-    if (this._netLoc) return { coords: this._netLoc, source: "network" };
-    if (p.device) return { coords: p.device, source: "device" };
     const person = this._loginPoint();
     if (person) return { coords: person, source: "person" };
+    if (p.device) return { coords: p.device, source: "device" };
+    if (this._netLoc) return { coords: this._netLoc, source: "network" };
     return { coords: null, source: "" };
+  }
+  // HA 侧是否已提供本机位置（手机定位实体或登录用户 person 实体）
+  _hasHaPoint(p) {
+    if (p && p.phone) return true;
+    return Boolean(this._loginPoint());
   }
   _findSourceText(source) {
     const en = isEn(this._hass);
@@ -4354,11 +4358,12 @@ var HaCarCard = class extends HTMLElement {
     this._lastOrientEv = null;
     this._sig = "";
     const pts = this._findData ? this._findPoints(this._findData) : { phone: null };
-    if (!this._isPhoneView() || !pts.phone) this._requestNetworkLocation(true);
+    if (!this._hasHaPoint(pts)) this._requestNetworkLocation(true);
     this._stopFindTimer();
     this._findTimer = setInterval(() => {
       if (!this._findOpen) return;
-      this._requestNetworkLocation(true);
+      const np = this._findData ? this._findPoints(this._findData) : { phone: null };
+      if (!this._hasHaPoint(np)) this._requestNetworkLocation(true);
       this._paintFindMap(false);
       this._updateFind();
     }, 1e4);
@@ -5958,7 +5963,7 @@ if (!customElements.get("ha-car-editor")) {
 }
 
 // src/main.js
-var VERSION = "3.9.4";
+var VERSION = "3.9.5";
 window.customCards = window.customCards || [];
 var _hasCard = window.customCards.some((c) => c && c.type === "ha-car");
 if (!_hasCard) window.customCards.push({
