@@ -40,6 +40,41 @@ from .registry_sync import async_sync_entity_categories
 
 PARALLEL_UPDATES = 1
 
+
+# v7.2.2: 云端状态枚举的中文兜底。此前只映射了少数几个值（如 STATUS_GOOD/
+# STATUS_NEEDS_SERVICE），云端新增/少见值（如机油 STATUS_LOW）会原样露出
+# 英文枚举给用户。这里按「全大写 + 下划线」识别枚举串，逐段翻译；只处理
+# 未命中显式 enum_map 的值，不影响已映射的文案，也不动普通中文/数值。
+_STATUS_WORDS = {
+    "GOOD": "良好", "OK": "正常", "NORMAL": "正常", "FINE": "良好",
+    "LOW": "偏低", "MEDIUM": "中等", "MID": "中等", "HIGH": "偏高",
+    "CRITICAL": "严重", "SEVERE": "严重", "WARNING": "警告", "WARN": "警告",
+    "NEEDS": "需要", "SERVICE": "保养", "MAINTENANCE": "保养",
+    "UNKNOWN": "未知", "NONE": "无", "NULL": "无", "EMPTY": "无",
+    "FAULT": "故障", "FAULTY": "故障", "FAIL": "故障", "FAILED": "故障",
+    "ERROR": "异常", "ABNORMAL": "异常", "INVALID": "无效", "VALID": "有效",
+    "ON": "开启", "OFF": "关闭", "OPEN": "打开", "CLOSED": "关闭",
+    "FULL": "满", "LEVEL": "档位", "STATE": "状态",
+}
+_ENUM_PREFIXES = ("STATUS", "SYSTM", "STATE", "SYS", "TEMP")
+
+
+def _localize_enum(value):
+    """把 ``STATUS_LOW`` 这类云端枚举串转成中文；无法完整翻译时原样返回。"""
+    if not isinstance(value, str) or not value or " " in value:
+        return value
+    raw = value.strip()
+    if "_" not in raw or not raw.replace("_", "").isupper():
+        return value
+    tokens = [t for t in raw.split("_") if t]
+    if tokens and tokens[0] in _ENUM_PREFIXES:
+        tokens = tokens[1:] or tokens
+    words = [_STATUS_WORDS.get(t) for t in tokens]
+    if not tokens or any(w is None for w in words):
+        return value
+    return "".join(words)
+
+
 def _leaf(status, *keys, default=None):
     cur = status
     for k in keys:
@@ -281,7 +316,12 @@ def _make_sensors(coordinator: FordPassCoordinator) -> list[SensorEntity]:
     ]
 
     # ===== B 组：健康诊断（机油 / 电池 / 胎压） =====
-    _health_map = {"STATUS_GOOD": "良好", "STATUS_NEEDS_SERVICE": "需要保养", "STATUS_WARNING": "警告", "STATUS_CRITICAL": "严重"}
+    # v7.2.2: 补全机油/蓄电池健康档位——云端会返回 STATUS_LOW（机油余量偏低）
+    # 等档位值，此前漏映射导致实体显示英文枚举。
+    _health_map = {"STATUS_GOOD": "良好", "STATUS_OK": "正常", "STATUS_NORMAL": "正常",
+                   "STATUS_LOW": "偏低", "STATUS_MEDIUM": "中等", "STATUS_HIGH": "偏高",
+                   "STATUS_NEEDS_SERVICE": "需要保养", "STATUS_WARNING": "警告",
+                   "STATUS_CRITICAL": "严重", "STATUS_UNKNOWN": "未知"}
     _tire_status_map = {"Fault": "故障", "OK": "正常", "Normal": "正常", "Not_Supported": "不支持"}
     if _not_ev:  # v4.9.3: 机油健康仅非纯电车型创建
         sensors.append(FordPassSensor(coordinator, "oil_health", "机油健康状态", None, None, "mdi:oil", ["oil", "oilLife"], enum_map=_health_map))
@@ -1103,7 +1143,12 @@ class FordPassSensor(FordPassRestoreMixin, SensorEntity):
         if self._round_value and isinstance(value, (int, float)) and not isinstance(value, bool):
             value = round(value)
         if self._enum_map is not None:
-            value = self._enum_map.get(value, value)
+            # v7.2.2: 显式映射优先；未命中的云端枚举（STATUS_LOW 等）走中文兜底，
+            # 避免状态值直接露出英文枚举串。
+            if isinstance(value, (str, int, float, bool)) and value in self._enum_map:
+                value = self._enum_map[value]
+            else:
+                value = _localize_enum(value)
         if self._transform is not None:
             value = self._transform(value)
         if isinstance(value, float) and value.is_integer():
