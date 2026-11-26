@@ -52,11 +52,14 @@ async def brand_with_vehicles(
             async with asyncio.timeout(timeout):
                 vehicles = await api.get_vehicles()
         except Exception as err:  # noqa: BLE001 - 单品牌失败按「该品牌不适用」继续
-            _LOGGER.debug("品牌 %s 车辆探测失败：%s", brand, err)
+            # v7.1.9: 提升到 warning——添加流程里"选了 A 品牌却只能建 B 品牌"
+            # 的诊断全靠这一行，debug 级别在默认日志里看不见。
+            _LOGGER.warning("品牌 %s 车辆探测失败：%s", brand, err)
             continue
         reachable = True
         if vehicles:
             return brand, True
+        _LOGGER.warning("品牌 %s 车辆列表为空", brand)
     return None, reachable
 
 

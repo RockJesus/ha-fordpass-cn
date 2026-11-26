@@ -33,7 +33,9 @@ from .const import (
     CONF_CHIRP_TYPE,
     CONF_COORDINATE_SYSTEM,
     CONF_HONK_DURATION,
+    CONF_PHONE,
     CONF_REFRESH_TOKEN,
+    CONF_USERNAME,
     DEFAULT_BRAND,
     DEFAULT_CHIRP_TYPE,
     DEFAULT_COORDINATE_SYSTEM,
@@ -574,15 +576,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _brand_factory, _cur_brand
         )
         if vehicles and _brand != _cur_brand:
-            # 车辆确实归属另一品牌：把 entry 的品牌改正，并用新品牌 api 继续
-            # setup，用户无需删除重配（与添加流程自动切换保持一致）。
-            hass.config_entries.async_update_entry(
-                entry, data={**entry.data, CONF_BRAND: _brand}
-            )
-            api = _api
-            _LOGGER.info(
-                "车辆归属品牌纠正：%s → %s（entry 品牌已更新）", _cur_brand, _brand
-            )
+            # v7.1.9: 同号另一品牌条目已存在时禁止把本条目改成同一品牌——
+            # 否则两条条目会撞成同品牌同手机号（实体归属混在一起、查重也无从
+            # 拦截）。只有确认不存在这样的同号条目时才做品牌纠正。
+            _phone = entry.data.get(CONF_PHONE) or entry.data.get(CONF_USERNAME)
+            _conflict = False
+            if _phone:
+                for _other in hass.config_entries.async_entries(DOMAIN):
+                    if _other.entry_id == entry.entry_id:
+                        continue
+                    if _other.data.get(CONF_BRAND, DEFAULT_BRAND) != _brand:
+                        continue
+                    _o_phone = _other.data.get(CONF_PHONE) or _other.data.get(
+                        CONF_USERNAME
+                    )
+                    if _o_phone and str(_o_phone).strip() == str(_phone).strip():
+                        _conflict = True
+                        break
+            if _conflict:
+                _LOGGER.warning(
+                    "FordPass 品牌纠正跳过：同手机号已存在「%s」条目，本条目保持「%s」",
+                    _brand,
+                    _cur_brand,
+                )
+            else:
+                # 车辆确实归属另一品牌：把 entry 的品牌改正，并用新品牌 api 继续
+                # setup，用户无需删除重配。
+                hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_BRAND: _brand}
+                )
+                api = _api
+                _LOGGER.info(
+                    "车辆归属品牌纠正：%s → %s（entry 品牌已更新）", _cur_brand, _brand
+                )
 
     if not vehicles:
         # v5.3.1: 空账号不再抛 RuntimeError（HA 不自动重试、entry 永久失败

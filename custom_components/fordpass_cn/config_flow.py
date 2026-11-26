@@ -418,12 +418,35 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # ConfigEntryNotReady 走重试
             _LOGGER.warning("FordPass 车辆归属判定全部请求失败，按临时故障继续创建")
         elif resolved != self._brand:
-            _LOGGER.info(
-                "FordPass 账号在「%s」品牌下无可用车辆，已自动切换到「%s」",
-                BRAND_LABELS.get(self._brand, self._brand),
+            # v7.1.9: 不再静默改用另一品牌。用户明确选了品牌，而该账号只在
+            # 另一品牌下有车——静默顶替会绕过"同号同品牌"查重，直接生成一条
+            # 与已有条目重复的另一品牌条目（实测：选林肯却建出第二条福特）。
+            selected = self._brand
+            _LOGGER.warning(
+                "FordPass 账号在「%s」品牌下未发现车辆，「%s」品牌下有车；"
+                "保持用户所选品牌，不自动切换",
+                BRAND_LABELS.get(selected, selected),
                 BRAND_LABELS.get(resolved, resolved),
             )
-            self._brand = resolved
+            if resolved != selected:
+                self._brand = resolved
+                dup = self._check_duplicate_entry()
+                self._brand = selected
+                if dup is not None:
+                    return dup
+                return self.async_abort(
+                    reason="brand_mismatch",
+                    description_placeholders={
+                        "selected": BRAND_LABELS.get(selected, selected),
+                        "actual": BRAND_LABELS.get(resolved, resolved),
+                    },
+                )
+
+        # v7.1.9: 创建前按最终品牌再查一次重——先前查重发生在品牌解析之前，
+        # 品牌若被调整会绕过拦截（本次修复的重复条目成因）。
+        dup = self._check_duplicate_entry()
+        if dup is not None:
+            return dup
 
         return self.async_create_entry(
             title=f"{self._phone or self._username or DOMAIN}（{BRAND_LABELS.get(self._brand, self._brand)}）",
