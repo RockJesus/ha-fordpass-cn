@@ -1356,7 +1356,7 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["vehiclestatus"] = status.get("vehiclestatus", status)
             # v7.1.0: 记录"该车曾具备远程控车能力"——crccFlag=ON 时持久化，
             # 车辆休眠（云端置 OFF）后不撤销，保证寻车实体不被误删。
-            if not self.rcc_capable:
+            if not getattr(self, "rcc_capable", False):
                 _vs = data["vehiclestatus"]
                 _raw = _vs.get("crccFlag") if isinstance(_vs, dict) else None
                 _on = (
