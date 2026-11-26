@@ -320,6 +320,11 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # v5.8.7: 命令失败黑名单 TTL——90 天自动过期（云端车型能力可能后台
         # 变更，永久黑名单会导致新能力永远不出现）
         self._cmd_fail_ttl_seconds: float = 90 * 86400
+        # v7.1.0: 远程控车能力记忆——云端在车辆深度休眠时会把 crccFlag
+        # 置 OFF（它是"远程控车当前在线可用"标志，不是车型能力位）。只用
+        # 当轮值判断会让寻车类实体在重启/重载后凭空消失（registry 残留 →
+        # 「不再提供此实体」）。命中过一次 ON 即持久化记住，离线不撤销。
+        self.rcc_capable: bool = False
         # v3.3.7: 云端 send-command 白名单（探测结果）——平台实体按此动态创建
         self.command_whitelist: list[str] | None = None
         # v3.4.5: 家充桩管理探测结果（None=无该功能/未探测成功）
@@ -564,6 +569,8 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data = await self._probe_store.async_load()
             if isinstance(data, dict):
                 self._probe_cache = data
+                # v7.1.0: 恢复远程控车能力记忆（历史上见过 crccFlag=ON 的车型）
+                self.rcc_capable = self._probe_cache.get("rcc_capable") is not None
                 # v5.8.7: cmd_fail TTL 淘汰（条目结构 {"msg":..., "ts":...}）
                 fails = self._probe_cache.get("cmd_fail")
                 if isinstance(fails, dict):
@@ -1347,6 +1354,32 @@ class FordPassCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             status = await self.api.get_vehicle_status(self.vin)
             data["status"] = status
             data["vehiclestatus"] = status.get("vehiclestatus", status)
+            # v7.1.0: 记录"该车曾具备远程控车能力"——crccFlag=ON 时持久化，
+            # 车辆休眠（云端置 OFF）后不撤销，保证寻车实体不被误删。
+            if not self.rcc_capable:
+                _vs = data["vehiclestatus"]
+                _raw = _vs.get("crccFlag") if isinstance(_vs, dict) else None
+                _on = (
+                    _raw is True
+                    or (
+                        isinstance(_raw, (int, float))
+                        and not isinstance(_raw, bool)
+                        and _raw == 1
+                    )
+                    or (
+                        isinstance(_raw, str)
+                        and _raw.strip().lower()
+                        in {"1", "true", "on", "yes", "enabled"}
+                    )
+                )
+                if _on:
+                    self.rcc_capable = True
+                    if isinstance(self._probe_cache, dict):
+                        self._probe_cache["rcc_capable"] = {"ts": time.time()}
+                        await self._probe_save()
+                    self.logger.info(
+                        "FordPass 远程控车能力已确认并持久化（crccFlag=ON）"
+                    )
         except ConfigEntryAuthFailed:
             # 凭据永久失效（refresh 也失败）→ 透传，停止轮询并触发 reauth。
             raise

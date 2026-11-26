@@ -41,6 +41,7 @@ from .const import (
     CMD_VA_INIT,
     COMMAND_STATE_LABELS,
     CONF_CHIRP_TYPE,
+    DOMAIN,
     CONF_HONK_DURATION,
     DEFAULT_CHIRP_TYPE,
     DEFAULT_HONK_DURATION,
@@ -74,6 +75,38 @@ def _as_bool(value: Any) -> bool | None:
     return text not in ("false", "0", "no", "off")
 
 
+def _rcc_supported(
+    hass: HomeAssistant, coordinator: FordPassCoordinator, status: dict | None
+) -> bool:
+    """v7.1.0: 是否创建寻车类开关（灯光/鸣笛/声光）。
+
+    判定顺序：当轮 crccFlag=ON → 曾命中 ON 的持久化记忆 → 三个寻车实体
+    在注册表里已存在（历史支持过）。任一成立即创建。
+
+    为什么不能只看当轮值：crccFlag 是"远程控车当前可用"标志，车辆深度
+    休眠时云端会置 OFF；此时重启/重载集成会把已存在的寻车实体直接跳过
+    创建，前端报「不再提供此实体」，违反"重启不删实体"。P1-9 的原意
+    （未开通远程控车的车型不创建）保留：从未出现过 ON 且无历史实体的
+    车型依然不创建。
+    """
+    if capability.is_on(status, [["crccFlag"]]):
+        return True
+    if getattr(coordinator, "rcc_capable", False):
+        return True
+    try:
+        from homeassistant.helpers import entity_registry as er
+
+        reg = er.async_get(hass)
+        for suffix in ("light_find", "honk", "va_switch"):
+            if reg.async_get_entity_id(
+                "switch", DOMAIN, f"{coordinator.uid_key}-{suffix}"
+            ):
+                return True
+    except Exception:  # noqa: BLE001 - registry 读取失败不阻塞实体创建
+        _LOGGER.debug("FordPass rcc registry hint failed", exc_info=True)
+    return False
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -91,10 +124,9 @@ async def async_setup_entry(
             isinstance(_wl0, list) and any("RemoteStart" in c for c in _wl0)
         ):
             switches.append(FordPassEngineSwitch(coordinator))
-        # 远程控车能力 crccFlag 开启（ON）才创建寻车类开关
-        # P1-9: usable→is_on——OFF（未开通远程控车）也属"有效值"，
-        # 此前会创建三个点了必失败的寻车开关。
-        if capability.is_on(status, [["crccFlag"]]):
+        # 远程控车能力才创建寻车类开关（v7.1.0: 判定见 _rcc_supported——
+        # 当轮 OFF 但曾为 ON、或注册表已有实体时仍创建，避免休眠期重启丢实体）
+        if _rcc_supported(hass, coordinator, status):
             # v3.1.10: 恢复灯光寻车（v3.1.8 曾因实测网关 228205 移除；
             # 其他车型云端可能支持——登录后按能力创建）
             # v5.8.3: 按车型创建——灯光寻车命令被云端确定性拒绝（实测

@@ -1727,7 +1727,15 @@ class FordPassCloudProbeSensor(SensorEntity):
         feats = capability.parse_cloud_features(
             (self.coordinator.data or {}).get("ccfeatures")
         )
-        attrs: dict[str, Any] = {}
+        # v7.1.0: 暴露远程控车能力原始标志与记忆结果——排查"寻车实体消失"
+        # 时可直接看 crccFlag 当轮值与是否曾命中 ON。
+        _vs = (self.coordinator.data or {}).get("vehiclestatus") or {}
+        attrs: dict[str, Any] = {
+            "crcc_flag": capability.first_leaf(_vs, [["crccFlag"]]),
+            "rcc_capable_memory": bool(
+                getattr(self.coordinator, "rcc_capable", False)
+            ),
+        }
         if not feats:
             return attrs
         attrs["capabilities"] = [f"{f['zh']}（{f['en']}）" for f in feats]
