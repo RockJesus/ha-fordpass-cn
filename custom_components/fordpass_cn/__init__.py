@@ -157,17 +157,43 @@ async def _cleanup_retired_lock_entities(hass: HomeAssistant, entry: ConfigEntry
         _LOGGER.debug("fordpass_cn lock cleanup failed", exc_info=True)
 
 
+async def _cleanup_retired_event_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """v7.2.3: 清理 event 平台退役后的注册表残留。
+
+    车门开合事件由 6 个门位传感器 + 门锁状态承载，告警事件由「车辆异常警示」
+    传感器（含 alert_count / latest_alert_time 属性）承载，两个 event 实体
+    只是对同一份快照再触发一次，且轮询间隔决定事件时间并不可靠。平台退役后
+    旧 item 会永远 unavailable，需显式移除；仅限本 entry，跳过用户手动禁用项。
+    """
+    try:
+        from homeassistant.helpers import entity_registry as er
+        reg = er.async_get(hass)
+        for entry_ in er.async_entries_for_config_entry(reg, entry.entry_id):
+            if entry_.platform != DOMAIN:
+                continue
+            if not entry_.entity_id.startswith("event."):
+                continue
+            if entry_.disabled_by == "user":
+                continue
+            _LOGGER.debug("fordpass_cn event platform retired: removing %s", entry_.entity_id)
+            reg.async_remove(entry_.entity_id)  # HA 2026.x: 同步返回 None，不要 await
+    except Exception:  # noqa: BLE001 - 清理失败不阻断 setup
+        _LOGGER.debug("fordpass_cn event cleanup failed", exc_info=True)
+
+
 PLATFORMS = [
     # v6.4.4: lock 平台整体退役——门锁拆为「开锁」「关锁」按钮（v6.4.3），
     # 后备箱锁改为「后备箱解锁」按钮（网关只有 TrunkUnlock 弹开命令，
     # 没有独立的后备箱锁命令）。锁状态由「门锁状态」传感器承载。
+    # v7.2.3: event 平台退役——车门开合/告警事件由各门位传感器与
+    # 「车辆异常警示」传感器替代（事件只是对同一份快照再触发一次，
+    # 且云端按间隔拉取，事件时间不等于真实动作时间，价值有限）。
     Platform.SWITCH,
     Platform.BUTTON,
     Platform.SENSOR,
     Platform.DEVICE_TRACKER,
     Platform.IMAGE,
     Platform.SELECT,
-    Platform.EVENT,  # v5.9.5: 告警 / 车门开合事件
     Platform.UPDATE,  # v5.9.5: 车机固件版本
     Platform.BINARY_SENSOR,  # v6.6.8: 车门窗未关汇总（对齐 App 未关提醒）
     Platform.CLIMATE,  # v6.7.3: 远程空调（EV/插混 preconditioning）
@@ -815,6 +841,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # v6.4.4: lock 平台退役——清掉旧 lock.* 注册表残留（门锁 / 后备箱锁）
     await _cleanup_retired_lock_entities(hass, entry)
+    # v7.2.3: event 平台退役，清理旧的 event.* 注册表条目
+    await _cleanup_retired_event_entities(hass, entry)
 
     # v5.7.1: unique_id/identifiers 脱敏迁移——清理旧 VIN 前缀实体与设备
     # （registry 持久化不得再留真实 VIN）。在平台注册新实体后执行，

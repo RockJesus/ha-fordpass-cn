@@ -79,17 +79,11 @@ def test_invalid_and_placeholder_return_none():
         assert capability.local_str_to_iso(bad) is None
 
 
-def test_sensor_and_event_emit_isoformat():
-    """两个平台的时间格式化都必须走 isoformat，不得再拼固定格式串。"""
-    for name in ("sensor.py", "event.py"):
-        src = (SRC / name).read_text(encoding="utf-8")
-        assert 'strftime("%Y-%m-%d %H:%M:%S")' not in src, name
-    assert 'isoformat(timespec="seconds")' in (SRC / "sensor.py").read_text(
-        encoding="utf-8"
-    )
-    assert 'isoformat(timespec="seconds")' in (SRC / "event.py").read_text(
-        encoding="utf-8"
-    )
+def test_sensor_emits_isoformat():
+    """v7.2.3: event 平台退役后，只保留 sensor 的时间格式化断言。"""
+    src = (SRC / "sensor.py").read_text(encoding="utf-8")
+    assert 'strftime("%Y-%m-%d %H:%M:%S")' not in src
+    assert 'isoformat(timespec="seconds")' in src
 
 
 def test_clock_skew_limit_declared():
@@ -109,14 +103,11 @@ def test_alert_items_and_upload_time_use_iso():
     这里按源码特征断言三处都已接入，避免同源漏改再次出现。
     """
     sensor_src = (SRC / "sensor.py").read_text(encoding="utf-8")
-    event_src = (SRC / "event.py").read_text(encoding="utf-8")
     tracker_src = (SRC / "device_tracker.py").read_text(encoding="utf-8")
-    for src in (sensor_src, event_src, tracker_src):
+    for src in (sensor_src, tracker_src):
         assert "capability.local_str_to_iso(" in src
     flat_sensor = "".join(sensor_src.split())
     flat_tracker = "".join(tracker_src.split())
-    flat_event = "".join(event_src.split())
     assert 'capability.local_str_to_iso(a.get("eventTime"))' in flat_sensor
     assert '"upload_time":capability.local_str_to_iso(loc.get("uploadTime"))' in flat_sensor
     assert '"upload_time":capability.local_str_to_iso(loc.get("uploadTime"))' in flat_tracker
-    assert 'capability.local_str_to_iso(first.get("eventTime"))' in flat_event

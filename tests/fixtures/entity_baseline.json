@@ -390,16 +390,6 @@
     "zh": "鸣笛寻车类型"
   },
   {
-    "platform": "event",
-    "key": "door_event",
-    "zh": "车门开合事件"
-  },
-  {
-    "platform": "event",
-    "key": "vehicle_alert_event",
-    "zh": "告警事件"
-  },
-  {
     "platform": "sensor",
     "key": "vehicle_data_time",
     "zh": "车机数据最后刷新时间"

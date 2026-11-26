@@ -432,14 +432,6 @@
         "name": "Climate Target Temperature"
       }
     },
-    "event": {
-      "door_event": {
-        "name": "Door Event"
-      },
-      "vehicle_alert_event": {
-        "name": "Alert Event"
-      }
-    },
     "update": {
       "firmware_update": {
         "name": "Vehicle Firmware"

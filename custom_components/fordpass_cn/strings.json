@@ -425,14 +425,6 @@
         "name": "远程空调目标温度"
       }
     },
-    "event": {
-      "door_event": {
-        "name": "车门开合事件"
-      },
-      "vehicle_alert_event": {
-        "name": "告警事件"
-      }
-    },
     "update": {
       "firmware_update": {
         "name": "车机固件"
