@@ -73,7 +73,7 @@ def test_none_branch_does_not_switch_brand():
     src = (SRC / "config_flow.py").read_text(encoding="utf-8")
     assert "elif resolved is None:" in src, "resolved 为 None 必须是 elif 分支"
     assert "elif resolved != self._brand:" in src, "品牌切换必须是 elif 分支"
-    assert "self._brand = resolved" in src, "需要保留品牌切换赋值"
+    assert "self._brand = resolved" not in src, "不得静默把品牌切成另一品牌"
     # 两条 elif 必须出现在同一个 if 链、且切换在两个 None 分支之后
     idx_abort = src.index("if resolved is None and reachable:")
     idx_none = src.index("elif resolved is None:")

@@ -71,7 +71,7 @@
       "reauth_successful": "Account re-authenticated successfully",
       "reconfigure_successful": "Configuration updated",
       "no_vehicles": "No vehicles found under the selected brand \"{brand}\". Make sure the vehicle is bound in the matching app, or choose the other brand in step 1.",
-      "brand_mismatch": "No vehicle found under {selected} for this account, while {actual} has vehicles. Add the integration again and choose {actual}; if an entry for that brand already exists, use it directly."
+      "no_vehicles_in_selected_brand": "No vehicles were found under {selected} (both brands were queried). This account's vehicles belong to {actual}; choose {actual} when adding, or use the existing entry of that brand if present."
     }
   },
   "options": {

@@ -65,7 +65,7 @@
       "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
       "reauth_phone_mismatch": "重新认证账号与原手机号不一致，请删除后重新配置集成",
       "no_vehicles": "No vehicles found under the selected brand \"{brand}\". Make sure the vehicle is bound in the matching app, or choose the other brand in step 1.",
-      "brand_mismatch": "该账号在「{selected}」下未发现车辆，而「{actual}」下有车辆。请重新添加并选择「{actual}」；若已有该品牌的配置条目，直接使用现有条目即可。"
+      "no_vehicles_in_selected_brand": "「{selected}」品牌下未发现车辆（两个品牌已分别查询）。该账号的车辆属于「{actual}」；如需添加请在第 1 步选择「{actual}」，若已有该品牌的条目可直接使用现有条目。"
     }
   },
   "options": {

@@ -428,19 +428,15 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 BRAND_LABELS.get(selected, selected),
                 BRAND_LABELS.get(resolved, resolved),
             )
-            if resolved != selected:
-                self._brand = resolved
-                dup = self._check_duplicate_entry()
-                self._brand = selected
-                if dup is not None:
-                    return dup
-                return self.async_abort(
-                    reason="brand_mismatch",
-                    description_placeholders={
-                        "selected": BRAND_LABELS.get(selected, selected),
-                        "actual": BRAND_LABELS.get(resolved, resolved),
-                    },
-                )
+            # v7.2.1: 如实报告"所选品牌下没有车"，不再拿另一品牌条目的
+            # 已配置状态来顶替——两件事互不相干，提示也不能互相污染。
+            return self.async_abort(
+                reason="no_vehicles_in_selected_brand",
+                description_placeholders={
+                    "selected": BRAND_LABELS.get(selected, selected),
+                    "actual": BRAND_LABELS.get(resolved, resolved),
+                },
+            )
 
         # v7.1.9: 创建前按最终品牌再查一次重——先前查重发生在品牌解析之前，
         # 品牌若被调整会绕过拦截（本次修复的重复条目成因）。

@@ -43,9 +43,11 @@ def test_brand_mismatch_aborts_instead_of_switching():
     text = ast.get_source_segment(
         (SRC / "config_flow.py").read_text(encoding="utf-8"), flow
     )
-    assert "brand_mismatch" in text, "_finish_login 缺少品牌不一致中止"
-    # 中止前必须先恢复用户所选品牌（避免把切换后的品牌写进 entry）
-    assert "self._brand = selected" in text, "品牌切换后未恢复用户选择"
+    assert "no_vehicles_in_selected_brand" in text, "缺少「所选品牌无车」的中止"
+    # 不得把品牌静默切成另一品牌
+    assert "self._brand = resolved" not in text, "仍存在静默切换品牌"
+    # 真实原因必须先报：如实中止出现在任何查重之前
+    assert text.index("no_vehicles_in_selected_brand") < text.index("_check_duplicate_entry")
 
 
 def test_duplicate_check_runs_before_create_entry():
