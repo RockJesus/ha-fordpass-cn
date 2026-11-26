@@ -27,6 +27,7 @@ from . import brand_probe, capability
 from .api import FordPassApi, FordPassApiError
 from .const import (
     BRAND_LABELS,
+    BRAND_LINCOLN,
     CONF_ACCESS_TOKEN,
     CONF_BRAND,
     CONF_CHIRP_TYPE,
@@ -41,7 +42,11 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import FordPassCoordinator
-from .crypto_data import async_ensure_crypto_data, missing_help
+from .crypto_data import (
+    async_ensure_crypto_data,
+    async_ensure_lincoln_pack,
+    missing_help,
+)
 from .frontend import async_register_card
 from .wbsk import FordPassCrypto
 
@@ -441,6 +446,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # v6.1.2: 数据已齐（含自动重试成功的情况），清掉可能挂着的缺失通知。
     # dismiss 不存在的通知是幂等的，无需先查询。
     persistent_notification.async_dismiss(hass, _NOTIFICATION_CRYPTO_MISSING)
+
+    # v7.1.2: 林肯品牌才需要附加包（六域独立密钥 + 固定值覆盖）。
+    # 取不到不阻断——签名回落主包福特密钥，与 v7.1.1 完全一致。
+    if entry.data.get(CONF_BRAND, DEFAULT_BRAND) == BRAND_LINCOLN:
+        try:
+            lc_ok, lc_note = await async_ensure_lincoln_pack(hass)
+            _LOGGER.debug("林肯附加包准备结果：%s（%s）", lc_ok, lc_note)
+        except Exception as err:  # noqa: BLE001 - 附加包失败不影响集成
+            _LOGGER.warning("林肯附加包准备失败，签名回落福特密钥：%s", err)
 
     # v6.3.7: 幂等兜底——重载 entry 不会重跑 async_setup，此处确保服务仍在
     # （此前修复前重载后服务永久丢失，见 _async_register_services 注释）。

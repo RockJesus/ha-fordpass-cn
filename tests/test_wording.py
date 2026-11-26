@@ -41,7 +41,11 @@ BANNED = (
     "\u4e0b\u8f7d\u6570\u636e\u5305",  # 词表 14：下载数据包
     "\u89e3\u5bc6\u5bc6\u94a5",  # 词表 15：解密密钥
 )
-ALLOW_LINE = "whitebox_keys_for_prod.json"  # 功能性文件名，不算叙述
+# 功能性文件名（加载逻辑直接依赖），不算叙述；v7.1.2 起含林肯侧密钥文件。
+ALLOW_LINES = (
+    "whitebox_keys_for_prod.json",
+    "whitebox_keys_lincoln.json",
+)
 SUFFIXES = {".py", ".md", ".yaml", ".yml", ".json", ".html"}
 SKIP_DIRS = {".git", "__pycache__", ".ruff_cache", ".venv", "node_modules"}
 
@@ -95,7 +99,7 @@ def test_no_removed_material_narrative() -> None:
     for path in _text_files():
         text = path.read_text(encoding="utf-8", errors="ignore")
         for lineno, line in enumerate(text.splitlines(), 1):
-            if ALLOW_LINE in line:
+            if any(allow in line for allow in ALLOW_LINES):
                 continue
             for word in BANNED:
                 if word in line:

@@ -633,3 +633,18 @@ CRYPTO_DATA_SHA256 = "e4e7bff99f88009619749476ff5718115f681d0722d10b37d53eff69d3
 FORD_DATA_DIR_ENV = "FORDPASS_DATA_DIR"
 FORD_DATA_URL_ENV = "FORDPASS_DATA_URL"
 FORD_DATA_SUBDIR = "fordpass_cn_data"
+
+# ---------------------------------------------------------------------------
+# v7.1.2: 林肯附加数据包（可选，仅林肯品牌需要）
+# ---------------------------------------------------------------------------
+# 两品牌共用同一套表与网关域名，但签名密钥按服务域拆分且分品牌：
+# cevs / lbs_p2c 两域两品牌相同，x_api / jvsl / local / lbs 四域各自独立。
+# 主数据包（CRYPTO_DATA_URLS）始终只装福特侧密钥，本包单独提供林肯侧
+# 六域密钥与 App 固定值覆盖，**不替换主包任何文件**、缺失时自动回落福特
+# 密钥（与历史行为一致），因此福特用户完全不受影响。
+#
+# 只有配置为林肯品牌的 entry 才会去取；取不到不阻断 setup。
+LINCOLN_PACK_URLS: tuple[str, ...] = (
+    "https://github.com/RockJesus/data-packs/releases/download/lincoln-1.0/lincoln-pack-1.0.zip",
+)
+LINCOLN_PACK_SHA256 = "7385358a1f42ad05e43cc04d983e754420cbc8cba9a2f331d03c1fcfdbd7aa36"

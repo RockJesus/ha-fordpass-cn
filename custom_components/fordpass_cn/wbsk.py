@@ -26,6 +26,11 @@ _DATA_DIR = _DEFAULT_DATA_DIR
 KEY_FILE = "whitebox_keys_for_prod.json"
 _KEY_PATH = os.path.join(_DATA_DIR, KEY_FILE)
 
+# v7.1.2: 林肯侧密钥单独成文件（可选）。两品牌共用同一套表与域名，但
+# x_api / jvsl / local / lbs 四个域的密钥各自独立（cevs / lbs_p2c 相同）。
+# 文件缺失时返回 None，调用方回落主包的福特密钥——与历史行为完全一致。
+LINCOLN_KEY_FILE = "whitebox_keys_lincoln.json"
+
 # 数据目录齐备的判据：下列表文件 + KEY_FILE，缺一不可。
 TABLE_FILES: tuple[str, ...] = (
     "wbsk_tables_T_INIT.bin",
@@ -332,6 +337,17 @@ def bundled_data_dir() -> str:
     ``data_ready`` 返回 False，集成自动落到自备/缓存/下载等其他来源。
     """
     return _DEFAULT_DATA_DIR
+
+
+def lincoln_key_file(path: str | None = None) -> str | None:
+    """林肯侧密钥文件的绝对路径；不存在时返回 None（回落主包密钥）。
+
+    只做 isfile 探测，不读内容——调用方在 ``FordPassCrypto.get`` 里按需加载，
+    避免只为探测就把整份密钥读进内存。
+    """
+    d = _DATA_DIR if path is None else path
+    fp = os.path.join(d, LINCOLN_KEY_FILE)
+    return fp if os.path.isfile(fp) else None
 
 
 def set_data_dir(path: str) -> None:

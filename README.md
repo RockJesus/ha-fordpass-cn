@@ -31,7 +31,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 - **Vehicle status** — fuel & range, odometer, tyre pressure, doors & windows, ignition, alerts
 - **Smart features** — departure scheduling & charging (EV/PHEV/HEV), wallbox management, remote image, OTA status, maintenance plan, recall info
 - **Per-vehicle entities** — entities are created per vehicle capability, so no useless entities appear
-- **Two brands** — FordPass CN and Lincoln Way share the same cloud crypto; brand is picked on the first config step
+- **Two brands** — FordPass CN and Lincoln Way share the same cloud endpoints and cipher tables; signing keys are supplied per service group and per brand (the Lincoln set is fetched automatically, and falls back to the shared set when unavailable). Brand is picked on the first config step
 - **Login** — SMS passcode (both brands) or username/password (FordPass only, browser-assisted)
 - **Zero dependencies** — pure Python, no extra packages
 
@@ -44,7 +44,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 ## ✨ 功能特性
 
 **🔑 登录与账号**
-- 双品牌：登录第一步选择「福特派 FordPass」或「林肯之道 Lincoln Way」
+- 双品牌：登录第一步选择「福特派 FordPass」或「林肯之道 Lincoln Way」。两品牌网关域名与加密表相同，签名密钥按服务组分别供给；选林肯时会自动补取林肯侧密钥，取不到则回落共用密钥，不影响使用
 - 双登录方式：手机号短信验证码（无需密码）、用户名密码（浏览器辅助换码）——**林肯之道仅支持短信验证码**
 - 令牌自动续期，过期时集成主动弹出重新认证；云端账号不受影响，官方 App 照常使用
 

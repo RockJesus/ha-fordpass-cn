@@ -34,6 +34,8 @@ from .const import (
     FORD_DATA_DIR_ENV,
     FORD_DATA_SUBDIR,
     FORD_DATA_URL_ENV,
+    LINCOLN_PACK_SHA256,
+    LINCOLN_PACK_URLS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -250,6 +252,111 @@ def _extract_atomic(blob: bytes, dest: str) -> None:
         raise
     shutil.rmtree(dest, ignore_errors=True)
     os.replace(tmp, dest)
+
+
+# ---------------------------------------------------------------------------
+# v7.1.2: 林肯附加包（可选，仅林肯品牌）
+# ---------------------------------------------------------------------------
+# 只写两个白名单文件、只覆盖同名文件，绝不触碰主包的表/app_constants，
+# 也绝不清空目录——主包的任何文件都不会被这次落盘改动。
+_LINCOLN_FILES = ("whitebox_keys_lincoln.json", app_constants.LINCOLN_CONSTANTS_FILE)
+
+
+async def async_ensure_lincoln_pack(hass: HomeAssistant) -> tuple[bool, str]:
+    """为林肯品牌补齐可选附加包（六域密钥 + 固定值覆盖）。
+
+    三种结局都**不阻断 setup**：已有文件 → 直接用；下载成功 → 落盘；
+    失败 → 返回 False，签名回落主包的福特密钥（与 v7.1.1 行为一致）。
+    """
+    data_dir = wbsk.data_dir()
+    if not data_dir:
+        return False, "数据目录未就绪"
+    if await hass.async_add_executor_job(wbsk.lincoln_key_file, data_dir):
+        await hass.async_add_executor_job(app_constants.load_lincoln_from, data_dir)
+        return True, "已有附加包"
+
+    blob = await _async_fetch_lincoln(hass)
+    if blob is None:
+        return False, "未获取到附加包（签名回落福特密钥）"
+    try:
+        written = await hass.async_add_executor_job(
+            _extract_lincoln_into, blob, data_dir
+        )
+    except Exception as err:  # noqa: BLE001 - 附加包失败不影响集成加载
+        _LOGGER.warning("FordPass 林肯附加包写入失败：%s", err)
+        return False, f"写入失败：{err}"
+
+    await hass.async_add_executor_job(app_constants.load_lincoln_from, data_dir)
+    _LOGGER.info("FordPass 林肯附加包已就绪：%s（%d 个文件）", data_dir, written)
+    return True, data_dir
+
+
+async def _async_fetch_lincoln(hass: HomeAssistant) -> bytes | None:
+    """下载林肯附加包并按 LINCOLN_PACK_SHA256 校验。"""
+    if not LINCOLN_PACK_URLS:
+        return None
+    session = async_get_clientsession(hass)
+    for url in LINCOLN_PACK_URLS:
+        try:
+            async with asyncio.timeout(_HTTP_TIMEOUT):
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        _LOGGER.debug(
+                            "林肯附加包获取 %s 返回 HTTP %s", url, resp.status
+                        )
+                        continue
+                    buf = bytearray()
+                    async for chunk in resp.content.iter_chunked(64 * 1024):
+                        buf.extend(chunk)
+                        if len(buf) > _MAX_BYTES:
+                            break
+                    blob = bytes(buf)
+        except (TimeoutError, OSError) as err:
+            _LOGGER.debug("林肯附加包获取失败 %s：%s", url, err)
+            continue
+        except Exception as err:  # noqa: BLE001 - 单源失败继续下一源
+            _LOGGER.debug("林肯附加包获取异常 %s：%s", url, err)
+            continue
+
+        if len(blob) > _MAX_BYTES:
+            _LOGGER.warning("林肯附加包响应过大，已忽略 %s", url)
+            continue
+        digest = hashlib.sha256(blob).hexdigest()
+        if LINCOLN_PACK_SHA256 and digest != LINCOLN_PACK_SHA256:
+            _LOGGER.warning(
+                "林肯附加包校验失败 %s（期望 %s，实得 %s）",
+                url, LINCOLN_PACK_SHA256[:16], digest[:16],
+            )
+            continue
+        return blob
+    return None
+
+
+def _extract_lincoln_into(blob: bytes, dest: str) -> int:
+    """把附加包内的白名单文件写进现有数据目录（阻塞调用，走 executor）。
+
+    与主包的 ``_extract_atomic`` 刻意不同：**不替换目录**，只逐个写白名单
+    文件，避免误删主包的表与福特密钥。
+    """
+    os.makedirs(dest, exist_ok=True)
+    written = 0
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        for info in archive.infolist():
+            name = info.filename
+            if name.endswith("/"):
+                continue
+            if name.startswith(("/", "\\")) or ".." in name.split("/"):
+                raise ValueError(f"附加包含不安全路径：{name}")
+            base = os.path.basename(name)
+            if base not in _LINCOLN_FILES:
+                _LOGGER.debug("林肯附加包跳过非白名单文件：%s", name)
+                continue
+            with archive.open(info) as src, open(os.path.join(dest, base), "wb") as fh:
+                shutil.copyfileobj(src, fh)
+            written += 1
+    if written == 0:
+        raise ValueError("附加包内没有预期文件")
+    return written
 
 
 def missing_help(hass: HomeAssistant) -> str:

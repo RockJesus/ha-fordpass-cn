@@ -194,7 +194,7 @@ from .const import (
     V5_BASE_URL,
 )
 from . import app_constants
-from .wbsk import FordPassCrypto
+from .wbsk import FordPassCrypto, lincoln_key_file
 
 
 def wgs84_to_gcj02(lat: float, lng: float) -> tuple[float, float]:
@@ -632,9 +632,19 @@ class FordPassApi:
             self._account_cache[key] = (time.monotonic() + ttl, val)
             return val
 
+    def _crypto_key_file(self) -> str | None:
+        """当前品牌应使用的签名密钥文件（v7.1.2 品牌分流）。
+
+        林肯：附加包内的六域密钥（缺失时返回 None → 回落主包福特密钥）；
+        福特：None，始终走主包默认密钥，行为与 v7.1.1 逐字节一致。
+        """
+        if getattr(self, "_brand", None) == BRAND_LINCOLN:
+            return lincoln_key_file()
+        return None
+
     @property
     def crypto(self) -> FordPassCrypto:
-        return FordPassCrypto.get()
+        return FordPassCrypto.get(self._crypto_key_file())
 
     def set_token(self, token: str | None, refresh_token: str | None = None) -> None:
         self._access_token = token
@@ -3042,7 +3052,7 @@ class FordPassApi:
         self.cevs_probe: dict[str, Any] = {}
         try:
             _, xjw_now = await asyncio.to_thread(lambda: self.crypto.encrypt_field(vin))
-            cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
+            cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, self._crypto_key_file(), "cevs")
             for name, path, body in (
                 ("departuretimes", PATH_DEPARTURE_TIMES_RETRIEVE, {"vin": None}),
                 ("chargelogs", PATH_CHARGELOGS_RETRIEVE, {"vin": None, "xjw": xjw_now}),
@@ -3075,7 +3085,7 @@ class FordPassApi:
         按 cevs 场景解密）同构：body = {"vin": cevs 场景 AES 密文, "xjw": IV
         hex, ...extra}，raw_body=True（cevs 域 DTO 拒绝外层 timestamp/sign）。
         """
-        cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "cevs")
+        cevs_crypto = await asyncio.to_thread(FordPassCrypto.get, self._crypto_key_file(), "cevs")
         enc, xjw = await asyncio.to_thread(lambda: cevs_crypto.encrypt_field(vin))
         b: dict[str, Any] = {"vin": enc, "xjw": xjw}
         if extra:
@@ -3639,7 +3649,7 @@ class FordPassApi:
         now = time.time()
         if self._lbs_token and self._lbs_token_expiry and now < self._lbs_token_expiry:
             return self._lbs_token
-        xapi = await asyncio.to_thread(FordPassCrypto.get, None, "x_api")
+        xapi = await asyncio.to_thread(FordPassCrypto.get, self._crypto_key_file(), "x_api")
         enc_vin, xjw = await asyncio.to_thread(lambda: xapi.encrypt_field(vin))
         ts = self._signed_ts_ms(now)
         params = {
@@ -3716,7 +3726,7 @@ class FordPassApi:
             key and the response's own iv (verified live: real coordinates).
         """
         token = await self.get_lbs_token(vin)
-        lbs_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "lbs_p2c")
+        lbs_crypto = await asyncio.to_thread(FordPassCrypto.get, self._crypto_key_file(), "lbs_p2c")
         enc_vin, _iv = await asyncio.to_thread(lambda: lbs_crypto.encrypt_field(vin))
         body: dict[str, Any] = {
             "token": token,
@@ -3775,7 +3785,7 @@ class FordPassApi:
             return inner
         try:
             iv = inner["iv"]
-            resp_crypto = await asyncio.to_thread(FordPassCrypto.get, None, "lbs_p2c")
+            resp_crypto = await asyncio.to_thread(FordPassCrypto.get, self._crypto_key_file(), "lbs_p2c")
             lat = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lat"], iv))
             lon = await asyncio.to_thread(lambda: resp_crypto.decrypt_field(inner["lon"], iv))
             # FordPass CN LBS returns GCJ-02 (火星坐标), verified live 2026-09-30:
