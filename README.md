@@ -45,6 +45,7 @@ Custom Home Assistant integration for **FordPass China (Changan Ford)** and **Li
 
 **🔑 登录与账号**
 - 双品牌：登录第一步选择「福特派 FordPass」或「林肯之道 Lincoln Way」
+- 同一手机号可分别添加福特与林肯两个条目（各自独立登录、独立实体），互不影响
 - 双登录方式：手机号短信验证码（无需密码）、用户名密码（浏览器辅助换码）——**林肯之道仅支持短信验证码**
 - 令牌自动续期，过期时集成主动弹出重新认证；云端账号不受影响，官方 App 照常使用
 

@@ -123,7 +123,7 @@ STEP_B2C_CODE_SCHEMA = vol.Schema(
 )
 
 
-def _build_b2c_login_url() -> str:
+def _build_b2c_login_url(brand: str | None = None) -> str:
     """构造 B2C authorize 登录地址（与 api.password_login 的 code 换取流程配套）。
 
     v4.4.6: 供用户在真实浏览器打开完成登录；redirect 后地址栏
@@ -131,15 +131,16 @@ def _build_b2c_login_url() -> str:
     """
     from urllib.parse import urlencode
 
+    const = app_constants.snapshot(brand)
     query = {
-        "client_id": app_constants.get("B2C_CLIENT_ID"),
+        "client_id": const.get("B2C_CLIENT_ID"),
         "nonce": "defaultNonce",
         "redirect_uri": B2C_REDIRECT_URI,
         "scope": "openid",
         "response_type": "code",
         "prompt": "login",
         "country_code": "CHN",
-        "ford_application_id": app_constants.get("APPLICATION_ID"),
+        "ford_application_id": const.get("APPLICATION_ID"),
         "language_code": "zh-CN",
         "tnc_accepted": "true",
         "tnc_consent1_accepted": "true",
@@ -671,7 +672,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors.setdefault("base", "crypto_data_missing")
             login_url = ""
         else:
-            login_url = _build_b2c_login_url()
+            login_url = _build_b2c_login_url(self._brand)
         return self.async_show_form(
             step_id="b2c",
             data_schema=STEP_B2C_CODE_SCHEMA,

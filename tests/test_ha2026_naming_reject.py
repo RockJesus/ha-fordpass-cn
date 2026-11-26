@@ -268,7 +268,7 @@ def _make_api(responses: list[_FakeResp]) -> FordPassApi:
 
 def test_gateway_reject_after_refresh_does_not_trigger_reauth(monkeypatch) -> None:
     """刷新成功、重试仍 600 → gateway_rejected，不置 refresh_failed。"""
-    monkeypatch.setattr(api_mod, "compute_sign", lambda params: "sig")
+    monkeypatch.setattr(api_mod, "compute_sign", lambda *a, **k: "sig")
 
     async def _refresh(_rt):
         return {"access_token": "new-tok"}
@@ -288,7 +288,7 @@ def test_gateway_reject_after_refresh_does_not_trigger_reauth(monkeypatch) -> No
 
 def test_real_auth_failure_still_triggers_reauth(monkeypatch) -> None:
     """刷新本身失败（401/600）才置 refresh_failed，保留重新认证入口。"""
-    monkeypatch.setattr(api_mod, "compute_sign", lambda params: "sig")
+    monkeypatch.setattr(api_mod, "compute_sign", lambda *a, **k: "sig")
 
     async def _refresh(_rt):
         raise FordPassApiError(600, "device locked")

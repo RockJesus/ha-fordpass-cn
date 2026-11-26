@@ -179,7 +179,7 @@ class _FakeSession:
 
 def test_request_retries_once_after_clock_compensation(monkeypatch) -> None:
     """时间窗拒绝 → 按 Date 头补偿后重发一次，成功返回。"""
-    monkeypatch.setattr(api_mod, "compute_sign", lambda params: "sig")
+    monkeypatch.setattr(api_mod, "compute_sign", lambda *a, **k: "sig")
     local = time.time()
     # 实测场景：HA 主机时钟慢 39 分钟 → 云端 Date 比本机早 2359 秒
     server_date = email.utils.formatdate(local + 2359.0, usegmt=True)
@@ -206,7 +206,7 @@ def test_request_retries_once_after_clock_compensation(monkeypatch) -> None:
 
 def test_request_raises_clock_skew_error_when_retry_also_fails(monkeypatch) -> None:
     """补偿重试仍被拒 → 抛 clock_skew=True 的错误（上层走 NotReady 而非 reauth）。"""
-    monkeypatch.setattr(api_mod, "compute_sign", lambda params: "sig")
+    monkeypatch.setattr(api_mod, "compute_sign", lambda *a, **k: "sig")
     local = time.time()
     # 实测场景：HA 主机时钟慢 39 分钟 → 云端 Date 比本机早 2359 秒
     server_date = email.utils.formatdate(local + 2359.0, usegmt=True)

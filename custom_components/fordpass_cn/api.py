@@ -280,7 +280,7 @@ def _canonical(params: dict[str, Any]) -> str:
     return "&".join(f"{k}={v}" for k, v in items)
 
 
-def _secret_key2(timestamp_ms: int) -> str:
+def _secret_key2(timestamp_ms: int, payload_key: str | None = None) -> str:
     """secretKey2 = URLEncode(SHA256(SHA256(BeijingDate) + PAYLOAD_KEY)).
 
     Interoperability note (aligned with the cloud gateway's signing scheme):
@@ -295,11 +295,16 @@ def _secret_key2(timestamp_ms: int) -> str:
     )
     date = beijing.strftime("%Y-%m-%d")
     h1 = hashlib.sha256(date.encode("utf-8")).hexdigest()
-    h2 = hashlib.sha256((h1 + app_constants.get("PAYLOAD_KEY")).encode("utf-8")).hexdigest()
+    pk = payload_key if payload_key is not None else app_constants.get("PAYLOAD_KEY")
+    h2 = hashlib.sha256((h1 + pk).encode("utf-8")).hexdigest()
     return urllib.parse.quote(h2, safe="")
 
 
-def compute_sign(params: dict[str, Any]) -> str:
+def compute_sign(
+    params: dict[str, Any],
+    secret_key: str | None = None,
+    payload_key: str | None = None,
+) -> str:
     """Re-produce the app's request signature.
 
     sign = SHA256("secretKey2=<sk2>&" + sorted(k=v) + "&secretKey=<sk1>")
@@ -307,8 +312,9 @@ def compute_sign(params: dict[str, Any]) -> str:
     """
     biz = _canonical(params)
     ts = int(params.get("timestamp") or 0)
-    sk2 = _secret_key2(ts)
-    raw = f"secretKey2={sk2}&{biz}&secretKey={app_constants.get('SECRET_KEY')}"
+    sk2 = _secret_key2(ts, payload_key)
+    sk1 = secret_key if secret_key is not None else app_constants.get("SECRET_KEY")
+    raw = f"secretKey2={sk2}&{biz}&secretKey={sk1}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -316,7 +322,12 @@ def _new_traceid() -> str:
     return f"FPC{uuid.uuid4()}{int(time.time() * 1000)}"
 
 
-def compute_lbs_sign(body: dict[str, Any], timestamp_ms: int) -> str:
+def compute_lbs_sign(
+    body: dict[str, Any],
+    timestamp_ms: int,
+    app_key: str | None = None,
+    payload_key: str | None = None,
+) -> str:
     """Re-produce the LBS gateway `x-sign`.
 
     raw = SK + sorted_body_params + ts + PKL + SK[:5] + ts[8:]
@@ -326,7 +337,9 @@ def compute_lbs_sign(body: dict[str, Any], timestamp_ms: int) -> str:
     """
     biz = "&".join(f"{k}={body[k]}" for k in sorted(body))
     ts = str(timestamp_ms)
-    raw = f"{app_constants.get('LBS_APP_KEY')}{biz}{ts}{app_constants.get('LBS_PAYLOAD_KEY')}{app_constants.get('LBS_APP_KEY')[:5]}{ts[8:]}"
+    ak = app_key if app_key is not None else app_constants.get("LBS_APP_KEY")
+    pkl = payload_key if payload_key is not None else app_constants.get("LBS_PAYLOAD_KEY")
+    raw = f"{ak}{biz}{ts}{pkl}{ak[:5]}{ts[8:]}"
     digest = hashlib.sha256(raw.encode("utf-8")).digest()
     return base64.b64encode(digest).decode("ascii").upper()
 
@@ -561,17 +574,20 @@ class FordPassApi:
         # 实机样本(2026-10-23 v6.7.0) 实证：touchPoint=LINCOLN_APP_LOGIN、
         # brand=LINCOLN、vehicles/list appKey=lincoln&clientType=LW
         _profile = BRAND_PROFILE.get(brand) or BRAND_PROFILE[BRAND_FORD]
+        # v7.1.8: 按品牌取一份固定值快照——多条目并存时各 entry 的 api
+        # 只读自己的快照，另一品牌随后的加载/覆盖不会改写本方请求参数。
+        self._const = app_constants.snapshot(brand)
         self._brand = brand
         self._brand_code = _profile["brand_code"]
         self._app_key = _profile["app_key"]
         # v6.2.1: client_type/app_version 属 App 固定值，运行时从数据包
         # app_constants 注入（缺失为 None，走既有降级：数据包缺失仅签名请求不可用）
         if brand == BRAND_LINCOLN:
-            self._client_type = app_constants.get("LINCOLN_CLIENT_TYPE") or _profile.get("client_type")
-            self._app_version = app_constants.get("LINCOLN_APP_VERSION") or _profile.get("app_version")
+            self._client_type = self._c("LINCOLN_CLIENT_TYPE") or _profile.get("client_type")
+            self._app_version = self._c("LINCOLN_APP_VERSION") or _profile.get("app_version")
         else:
-            self._client_type = app_constants.get("CLIENT_TYPE") or _profile.get("client_type")
-            self._app_version = app_constants.get("APP_VERSION") or _profile.get("app_version")
+            self._client_type = self._c("CLIENT_TYPE") or _profile.get("client_type")
+            self._app_version = self._c("APP_VERSION") or _profile.get("app_version")
         self._touch_point = _profile["touch_point"]
         self._access_token: str | None = None
         self._refresh_token: str | None = None
@@ -651,14 +667,26 @@ class FordPassApi:
         if refresh_token is not None:
             self._refresh_token = refresh_token
 
+    def _c(self, key: str) -> str | None:
+        """取本条目品牌的固定值。
+
+        正常实例在 __init__ 里持有按品牌取好的快照；以 ``__new__`` 构造的
+        测试桩没有该属性，回退到模块级加载结果（与 v7.1.7 之前的读取
+        行为一致），避免桩对象因缺属性整片失败。
+        """
+        const = getattr(self, "_const", None)
+        if const is None:
+            return app_constants.get(key)
+        return const.get(key)
+
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
             "user-agent": "Dart (dart:io)",
             "appversion": self._app_version,
-            "ostype": app_constants.get('OS_TYPE'),
-            "osversion": app_constants.get('OS_VERSION'),
+            "ostype": self._c('OS_TYPE'),
+            "osversion": self._c('OS_VERSION'),
             "clienttype": self._client_type,
-            "application-id": app_constants.get('APPLICATION_ID'),
+            "application-id": self._c('APPLICATION_ID'),
             "content-type": "application/json; charset=utf-8",
             "accept-encoding": "gzip",
             "x-dynatrace": "",
@@ -770,12 +798,20 @@ class FordPassApi:
                 # Unrecognized field "timestamp"）——raw_body=True 时 body
                 # 原样发送（cevs 走 RSA 密文自校验，不依赖外层签名）
                 signed["timestamp"] = self._signed_ts_ms()
-                signed["sign"] = compute_sign(signed)
+                signed["sign"] = compute_sign(
+                    signed,
+                    self._c("SECRET_KEY"),
+                    self._c("PAYLOAD_KEY"),
+                )
             kwargs: dict[str, Any] = {"json": signed}
         else:
             params = dict(query or {})
             params["timestamp"] = self._signed_ts_ms()
-            params["sign"] = compute_sign(params)
+            params["sign"] = compute_sign(
+                params,
+                self._c("SECRET_KEY"),
+                self._c("PAYLOAD_KEY"),
+            )
             kwargs = {"params": params}
         # v5.2.4: 请求体日志只记录字段名不记录值——encryptedRefreshToken/
         # encryptedPasscode/encryptedAuthCode 的还原数据经运行时数据包提供，完整值进
@@ -3659,7 +3695,11 @@ class FordPassApi:
             "encryptedVin": enc_vin,
             "xjw": xjw,
         }
-        params["sign"] = compute_sign(params)
+        params["sign"] = compute_sign(
+            params,
+            self._c("SECRET_KEY"),
+            self._c("PAYLOAD_KEY"),
+        )
         async with self._session.get(
             BASE_URL + PATH_THIRD_PARTY_TOKEN, headers=self._headers(), params=params,
             timeout=aiohttp.ClientTimeout(total=60),
@@ -3740,13 +3780,18 @@ class FordPassApi:
             "user-agent": "Dart (dart:io)",
             "x-dynatrace": "",
             "accept-encoding": "gzip",
-            "ocp-application-id": app_constants.get('LBS_APP_ID'),
+            "ocp-application-id": self._c('LBS_APP_ID'),
             "x-timestamp": str(ts),
-            "x-appkey": app_constants.get('LBS_APP_KEY'),
+            "x-appkey": self._c('LBS_APP_KEY'),
             "ostype": "android",
             "content-type": "application/json",
             "clienttype": "FP",
-            "x-sign": compute_lbs_sign(body, ts),
+            "x-sign": compute_lbs_sign(
+                body,
+                ts,
+                self._c("LBS_APP_KEY"),
+                self._c("LBS_PAYLOAD_KEY"),
+            ),
         }
         # v5.2.4: LBS 请求日志不记录 body 值——body 携带 LBS 明文 token
         # （token 不得进日志）。header 仅保留键名，

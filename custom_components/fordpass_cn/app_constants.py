@@ -33,6 +33,12 @@ _VALUES: dict[str, str] = {}
 # 林肯覆盖值（可选附加包提供，优先级高于主包同名键）
 _LINCOLN: dict[str, str] = {}
 
+# v7.1.8: 覆盖值所属数据目录。多条目并存时两个品牌各自 setup 都会调用
+# load_*，此前每次 load_from 成功都清空覆盖值，后 setup 的条目会把先前
+# 条目用到的覆盖值清掉（同一 HA 下福特/林肯互相干扰）。改为只在数据目录
+# 真的换了才失效，日常刷新不再互相清零。
+_LINCOLN_DIR: str | None = None
+
 
 def load_from(path: str) -> bool:
     """从数据目录读取 app_constants.json 并填充全局字典。
@@ -57,7 +63,9 @@ def load_from(path: str) -> bool:
         _LOGGER.warning("FordPass app_constants.json 内容非法（非对象）")
         return False
     _VALUES = {str(k): str(v) for k, v in data.items() if isinstance(v, (str, int))}
-    _LINCOLN = {}
+    if _LINCOLN_DIR not in (None, path):
+        _LINCOLN = {}
+        _LOGGER.debug("FordPass 数据目录已变更，附加固定值失效")
     _LOGGER.debug("FordPass App 固定值已加载（%d 项）", len(_VALUES))
     return True
 
@@ -68,7 +76,7 @@ def load_lincoln_from(path: str) -> bool:
     与 ``load_from`` 一样只看单文件；不存在/非法一律返回 False 且不改动
     已有覆盖值以外的内容——附加包缺失属于正常情况（福特用户永远没有它）。
     """
-    global _LINCOLN
+    global _LINCOLN, _LINCOLN_DIR
     fp = os.path.join(path, LINCOLN_CONSTANTS_FILE)
     if not os.path.isfile(fp):
         _LINCOLN = {}
@@ -85,8 +93,25 @@ def load_lincoln_from(path: str) -> bool:
         _LINCOLN = {}
         return False
     _LINCOLN = {str(k): str(v) for k, v in data.items() if isinstance(v, (str, int))}
+    _LINCOLN_DIR = path
     _LOGGER.debug("FordPass 林肯固定值覆盖已加载（%d 项）", len(_LINCOLN))
     return True
+
+
+# 品牌标识（与 const.BRAND_LINCOLN 同值；本模块不 import const 以避免循环）
+_LINCOLN_BRAND = "lincoln"
+
+
+def snapshot(brand: str | None = None) -> dict[str, str]:
+    """按品牌返回一份固定的取值快照。
+
+    多条目并存时，各条目（api / config_flow）在构造时各取一份快照，
+    之后不再读取模块级可变状态——任一品牌后续 load_* 都不会影响另一
+    品牌已生效的请求参数。
+    """
+    if brand == _LINCOLN_BRAND:
+        return {**_VALUES, **_LINCOLN}
+    return dict(_VALUES)
 
 
 def get(name: str) -> str | None:

@@ -250,8 +250,22 @@ def _extract_atomic(blob: bytes, dest: str) -> None:
     except Exception:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
+    # v7.1.8: 主包刷新是整体替换目录，必须把附加包的独立文件带走——
+    # 否则福特侧一次数据包更新就会抹掉林肯侧的文件，两个品牌互相干扰。
+    preserved: dict[str, bytes] = {}
+    for fname in _LINCOLN_FILES:
+        src_fp = os.path.join(dest, fname)
+        if os.path.isfile(src_fp):
+            try:
+                with open(src_fp, "rb") as fh:
+                    preserved[fname] = fh.read()
+            except OSError:
+                pass
     shutil.rmtree(dest, ignore_errors=True)
     os.replace(tmp, dest)
+    for fname, payload in preserved.items():
+        with open(os.path.join(dest, fname), "wb") as fh:
+            fh.write(payload)
 
 
 # ---------------------------------------------------------------------------
