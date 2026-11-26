@@ -8,17 +8,63 @@
 """
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import os
+import sys
+import types
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from custom_components.fordpass_cn import api as api_mod
-from custom_components.fordpass_cn import app_constants, crypto_data, wbsk
-from custom_components.fordpass_cn.const import BRAND_FORD, BRAND_LINCOLN
+SRC = Path(__file__).resolve().parents[1] / "custom_components" / "fordpass_cn"
+
+
+def _need(name: str, **attrs: object) -> types.ModuleType:
+    """CI 精简环境（只装 pytest）按需补齐依赖模块。"""
+    mod = sys.modules.get(name)
+    if mod is None:
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # type: ignore[attr-defined]
+        sys.modules[name] = mod
+    for key, val in attrs.items():
+        if not hasattr(mod, key):
+            setattr(mod, key, val)
+    return mod
+
+
+def _bootstrap() -> None:
+    # api.py 顶层 import aiohttp；crypto_data 依赖 homeassistant 两处符号。
+    _need("aiohttp", ClientTimeout=type("ClientTimeout", (), {}),
+          ClientSession=type("ClientSession", (), {}))
+    ha = _need("homeassistant")
+    ha.__path__ = []  # type: ignore[attr-defined]
+    _need("homeassistant.core", HomeAssistant=object)
+    helpers = _need("homeassistant.helpers")
+    helpers.__path__ = []  # type: ignore[attr-defined]
+    _need("homeassistant.helpers.aiohttp_client",
+          async_get_clientsession=lambda *a, **k: None)
+
+
+def _load(name: str) -> types.ModuleType:
+    """以私有包名加载，绕开 __init__.py 的 voluptuous 依赖。"""
+    pkg_name = "fplk"
+    if pkg_name not in sys.modules:
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(SRC)]  # type: ignore[attr-defined]
+        sys.modules[pkg_name] = pkg
+    return importlib.import_module(f"{pkg_name}.{name}")
+
+
+_bootstrap()
+api_mod = _load("api")
+app_constants = _load("app_constants")
+crypto_data = _load("crypto_data")
+wbsk = _load("wbsk")
+const_mod = _load("const")
+BRAND_FORD, BRAND_LINCOLN = const_mod.BRAND_FORD, const_mod.BRAND_LINCOLN
 
 MAIN_KEY = "whitebox_keys_for_prod.json"
 LINCOLN_KEY = wbsk.LINCOLN_KEY_FILE
