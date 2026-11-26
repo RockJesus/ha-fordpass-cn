@@ -263,10 +263,10 @@ _LINCOLN_FILES = ("whitebox_keys_lincoln.json", app_constants.LINCOLN_CONSTANTS_
 
 
 async def async_ensure_lincoln_pack(hass: HomeAssistant) -> tuple[bool, str]:
-    """为林肯品牌补齐可选附加包（六域密钥 + 固定值覆盖）。
+    """为林肯品牌补齐可选附加包（附加签名数据 + 固定值覆盖）。
 
     三种结局都**不阻断 setup**：已有文件 → 直接用；下载成功 → 落盘；
-    失败 → 返回 False，签名回落主包的福特密钥（与 v7.1.1 行为一致）。
+    失败 → 返回 False，签名沿用主包默认数据（与 v7.1.1 行为一致）。
     """
     data_dir = wbsk.data_dir()
     if not data_dir:
@@ -277,7 +277,7 @@ async def async_ensure_lincoln_pack(hass: HomeAssistant) -> tuple[bool, str]:
 
     blob = await _async_fetch_lincoln(hass)
     if blob is None:
-        return False, "未获取到附加包（签名回落福特密钥）"
+        return False, "未获取到附加包（签名沿用默认数据）"
     try:
         written = await hass.async_add_executor_job(
             _extract_lincoln_into, blob, data_dir
@@ -336,7 +336,7 @@ def _extract_lincoln_into(blob: bytes, dest: str) -> int:
     """把附加包内的白名单文件写进现有数据目录（阻塞调用，走 executor）。
 
     与主包的 ``_extract_atomic`` 刻意不同：**不替换目录**，只逐个写白名单
-    文件，避免误删主包的表与福特密钥。
+    文件，避免误删主包的表与默认数据。
     """
     os.makedirs(dest, exist_ok=True)
     written = 0

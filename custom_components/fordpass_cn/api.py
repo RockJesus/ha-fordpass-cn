@@ -486,7 +486,7 @@ def _log_summary(text: str, limit: int = 2000) -> str:
 
 def _token_resp_summary(text: str) -> str:
     """LBS third-party-token 响应 DEBUG 摘要（v5.2.7）：
-    data.encryptedAccessToken 的密钥（x_api scene）随集成发布，值不得进日志——
+    data.encryptedAccessToken 的还原数据（x_api scene）随集成发布，值不得进日志——
     只保留状态码与 data 字段名（含加密字段的键名，不含任何值）。"""
     try:
         obj = json.loads(text)
@@ -633,10 +633,10 @@ class FordPassApi:
             return val
 
     def _crypto_key_file(self) -> str | None:
-        """当前品牌应使用的签名密钥文件（v7.1.2 品牌分流）。
+        """当前品牌应使用的签名数据文件（v7.1.2 品牌分流）。
 
-        林肯：附加包内的六域密钥（缺失时返回 None → 回落主包福特密钥）；
-        福特：None，始终走主包默认密钥，行为与 v7.1.1 逐字节一致。
+        林肯：附加包内的附加数据（缺失时返回 None → 沿用默认）；
+        福特：None，始终走默认数据，行为与 v7.1.1 逐字节一致。
         """
         if getattr(self, "_brand", None) == BRAND_LINCOLN:
             return lincoln_key_file()
@@ -778,7 +778,7 @@ class FordPassApi:
             params["sign"] = compute_sign(params)
             kwargs = {"params": params}
         # v5.2.4: 请求体日志只记录字段名不记录值——encryptedRefreshToken/
-        # encryptedPasscode/encryptedAuthCode 的还原密钥经运行时数据包提供，完整值进
+        # encryptedPasscode/encryptedAuthCode 的还原数据经运行时数据包提供，完整值进
         # debug 日志等于泄露 refresh token（用户会把日志贴进 issue）。
         _payload_fields = (
             ",".join(sorted(kwargs["json"].keys()))
@@ -2060,7 +2060,7 @@ class FordPassApi:
           嵌套序列化：list→[a&b]、dict→{k=v}）——200 保存成功；
           GET preference-list 回读确认（AnnouncementType/Duration 槽位）。
         旧 RCC profile-by-vin 通道（CHIRP_TYPE）已废弃（其 100400 sign 为
-        R2 独立密钥体系；真实通道即本 UserPreferenceV2）。
+        R2 独立签名体系；真实通道即本 UserPreferenceV2）。
         """
         announce = CHIRP_TO_ANNOUNCE.get(
             CHIRP_TYPE_OPTIONS[chirp_type - 1] if 0 < chirp_type <= 5 else DEFAULT_CHIRP_TYPE,
@@ -3037,7 +3037,7 @@ class FordPassApi:
         return result or None
 
     async def probe_cevs_auto(self, vin: str) -> None:
-        """cevs 域自动探测（v3.7.20）：**链式模式 + cevs 场景专用密钥**
+        """cevs 域自动探测（v3.7.20）：**链式模式 + cevs 场景专用签名数据**
         （数据包中的 cevs.encrypt——v3.7.20 实证此前 x_api 场景加密被
         服务器 cevs 场景解密报 bad key）。单变体
         wbk_cevs_shared（共享会话 IV），3 请求/次防福特云风控静默降级；
@@ -3679,7 +3679,7 @@ class FordPassApi:
                     resp.status, "网关返回非文本响应（瞬时异常，已按重试策略处理）"
                 ) from None
             # v5.2.7: LBS token 响应日志只保留字段名，不打印任何值——
-            # data.encryptedAccessToken 的密钥（x_api scene）随集成发布，
+            # data.encryptedAccessToken 的还原数据（x_api scene）随集成发布，
             # 值进 debug 日志即等于泄露。
             self._log.debug(
                 "FordPass third-party-token -> %s %s", resp.status, _token_resp_summary(text)

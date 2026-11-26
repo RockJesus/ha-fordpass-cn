@@ -26,9 +26,8 @@ _DATA_DIR = _DEFAULT_DATA_DIR
 KEY_FILE = "whitebox_keys_for_prod.json"
 _KEY_PATH = os.path.join(_DATA_DIR, KEY_FILE)
 
-# v7.1.2: 林肯侧密钥单独成文件（可选）。两品牌共用同一套表与域名，但
-# x_api / jvsl / local / lbs 四个域的密钥各自独立（cevs / lbs_p2c 相同）。
-# 文件缺失时返回 None，调用方回落主包的福特密钥——与历史行为完全一致。
+# v7.1.2: 另一品牌的附加签名数据单独成文件（可选）。
+# 文件缺失时返回 None，调用方沿用主包默认数据——与历史行为完全一致。
 LINCOLN_KEY_FILE = "whitebox_keys_lincoln.json"
 
 # 数据目录齐备的判据：下列表文件 + KEY_FILE，缺一不可。
@@ -78,7 +77,7 @@ class _WhiteBox:
     """表驱动的块运算（共享单例，只读）。
 
     从数据目录加载 ``TABLE_FILES`` 中的表，实现与云端一致的加/解密块；
-    支持外部密钥流 rk（第二索引源）注入与任意轮数。
+    支持外部签名数据流 rk（第二索引源）注入与任意轮数。
     """
 
     ROT = (0, 24, 16, 8)  # 加密行 0..3 的循环右移量
@@ -194,7 +193,7 @@ class FordPassCrypto:
     """Thread-safe wrapper around the pure-Python table-driven block cipher.
 
     全局单例按身份（key_file#scene）缓存——每个场景（x_api/cevs/lbs_p2c/
-    lbs 等）各持一份密钥流与实例锁；表数据为模块级共享只读单例，
+    lbs 等）各持一份签名数据流与实例锁；表数据为模块级共享只读单例，
     构造零阻塞（不加载原生库、不映射内存）。
     """
 
@@ -340,10 +339,10 @@ def bundled_data_dir() -> str:
 
 
 def lincoln_key_file(path: str | None = None) -> str | None:
-    """林肯侧密钥文件的绝对路径；不存在时返回 None（回落主包密钥）。
+    """林肯侧附加数据文件的绝对路径；不存在时返回 None（沿用主包默认数据）。
 
     只做 isfile 探测，不读内容——调用方在 ``FordPassCrypto.get`` 里按需加载，
-    避免只为探测就把整份密钥读进内存。
+    避免只为探测就把整份数据读进内存。
     """
     d = _DATA_DIR if path is None else path
     fp = os.path.join(d, LINCOLN_KEY_FILE)
@@ -351,7 +350,7 @@ def lincoln_key_file(path: str | None = None) -> str | None:
 
 
 def set_data_dir(path: str) -> None:
-    """注入数据目录并使已缓存的表/密钥失效。
+    """注入数据目录并使已缓存的表/数据失效。
 
     单例按目录缓存：``_get_tables()`` 缓存整批表、``FordPassCrypto._instances``
     按 ``key_file#scene`` 缓存实例。换目录后不清空会继续用旧表（数据目录

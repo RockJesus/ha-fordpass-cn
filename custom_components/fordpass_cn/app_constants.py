@@ -1,6 +1,6 @@
 """App 固定值运行时加载器（v6.2.1）。
 
-LBS 网关 ID/Key、应用 ID、客户端/OS 标识、签名密钥等云端互操作所需的
+LBS 网关 ID/Key、应用 ID、客户端/OS 标识、签名数据等云端互操作所需的
 App 固定值，自 v6.2.1 起不再硬编码在 const.py，改由**运行时数据包**
 （data-pack 内的 app_constants.json）提供：
 
