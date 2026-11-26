@@ -71,10 +71,7 @@
       "reauth_successful": "账号重新认证成功",
       "reconfigure_successful": "配置已更新",
       "no_vehicles": "当前品牌「{brand}」下未发现车辆。请确认车辆已在对应 App 内绑定并开通互联服务；若车型属另一品牌，重新添加时请在第 1 步选择对应品牌",
-      "brand_mismatch": {
-        "title": "品牌不一致",
-        "description": "该账号在「{selected}」下未发现车辆，而「{actual}」下有车辆。请重新添加并选择「{actual}」；若已有该品牌的配置条目，直接使用现有条目即可。"
-      }
+      "brand_mismatch": "该账号在「{selected}」下未发现车辆，而「{actual}」下有车辆。请重新添加并选择「{actual}」；若已有该品牌的配置条目，直接使用现有条目即可。"
     }
   },
   "options": {
