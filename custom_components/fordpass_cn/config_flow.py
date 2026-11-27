@@ -128,6 +128,9 @@ def _build_b2c_login_url(brand: str | None = None) -> str:
 
     v4.4.6: 供用户在真实浏览器打开完成登录；redirect 后地址栏
     redirect_uri?code=xxx 中的 xxx 即 authorization code。
+
+    v7.2.4: 林肯品牌复用同一登录页与授权标识（与福特派共用账号体系），
+    brand 参数只决定取哪一份 App 固定值快照。
     """
     from urllib.parse import urlencode
 
@@ -209,42 +212,36 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             mode = user_input[CONF_LOGIN_MODE]
             if mode == LOGIN_MODE_PASSWORD:
-                if self._brand == BRAND_LINCOLN:
-                    # P0-4（v5.6.0）：林肯无 B2C 租户配置，密码登录会落到
-                    # 福特登录页——防御性转短信验证码。
-                    mode = LOGIN_MODE_SMS
-                else:
-                    return self.async_show_form(
-                        step_id="password",
-                        data_schema=STEP_PASSWORD_SCHEMA,
-                        description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_PASSWORD]},
-                    )
+                # v7.2.4: 林肯品牌同样开放密码登录。旧版（v5.6.0）判断林肯
+                # 没有独立的 B2C 租户而强制转短信验证码；林肯之道 App 本身
+                # 支持账号密码登录，且与福特派共用同一账号体系与登录页，
+                # 密码链路（浏览器授权拿 code + brand=lincoln 换令牌）通用。
+                return self.async_show_form(
+                    step_id="password",
+                    data_schema=STEP_PASSWORD_SCHEMA,
+                    description_placeholders={
+                        "login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_PASSWORD],
+                        "brand": BRAND_LABELS.get(self._brand, self._brand),
+                    },
+                )
             return self.async_show_form(
                 step_id="phone",
                 data_schema=STEP_PHONE_SCHEMA,
                 description_placeholders={"login_mode": LOGIN_MODE_LABELS[LOGIN_MODE_SMS]},
             )
         schema = STEP_LOGIN_MODE_SCHEMA
-        # v5.8.8: 描述文案只列**实际可选**的登录方式——林肯分支下方 schema
-        # 仅剩短信验证码一项，此前仍用 LOGIN_MODE_LABELS.values() 拼全部
-        # 两种，表单描述出现「用户名密码登录」却无对应选项，前后矛盾。
+        # v7.2.4: 两种品牌都提供两种登录方式。此前林肯分支只给短信验证码
+        # （旧判断：林肯没有独立 B2C 租户），但林肯之道 App 自身支持账号密码
+        # 登录、与福特派共用账号体系与登录页，密码链路对两者通用。
         login_modes_text = "、".join(LOGIN_MODE_LABELS.values())
-        if self._brand == BRAND_LINCOLN:
-            # P0-4（v5.6.0）：林肯品牌仅提供短信验证码登录（密码登录无
-            # 对应 B2C 租户，选择后必失败——隐藏该方式避免死胡同）。
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_LOGIN_MODE, default=LOGIN_MODE_SMS): vol.In(
-                        {LOGIN_MODE_SMS: LOGIN_MODE_LABELS[LOGIN_MODE_SMS]}
-                    ),
-                }
-            )
-            login_modes_text = LOGIN_MODE_LABELS[LOGIN_MODE_SMS]
         return self.async_show_form(
             step_id="login_mode",
             data_schema=schema,
             errors=errors,
-            description_placeholders={"login_modes": login_modes_text},
+            description_placeholders={
+                "login_modes": login_modes_text,
+                "brand": BRAND_LABELS.get(self._brand, self._brand),
+            },
         )
 
     async def async_step_reauth(
@@ -699,6 +696,7 @@ class FordPassConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "login_url": login_url,
                 "username": self._username or "",
+                "brand": BRAND_LABELS.get(self._brand, self._brand),
             },
         )
 

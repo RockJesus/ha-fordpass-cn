@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "选择品牌",
-        "description": "选择要接入的品牌：{brands}。\n\n- 福特派 FordPass：完整支持（验证码/密码登录、全部功能）\n- 林肯之道 Lincoln Way：完整支持（短信验证码登录，与福特派共用同一套云端加密体系）",
+        "description": "选择要接入的品牌：{brands}。\n\n- 福特派 FordPass：完整支持（验证码 / 密码登录、全部功能）\n- 林肯之道 Lincoln Way：完整支持（验证码 / 密码登录，与福特派共用同一套云端加密体系）",
         "data": {
           "brand": "品牌"
         }
@@ -24,7 +24,7 @@
       },
       "password": {
         "title": "用户名密码登录",
-        "description": "输入福特派账号（手机号）与密码。然后请在真实浏览器中打开登录链接完成登录，把地址栏里的 authorization code 粘贴到下一步（2026-10 起福特登录页的安全防护会拦截纯 HTTP 客户端，浏览器登录可正常通过）。",
+        "description": "输入{brand}账号（手机号）与密码。密码仅保存在 Home Assistant 本地配置中。下一步在浏览器中打开登录链接完成登录，粘贴授权码即可（登录页的安全防护会拦截纯 HTTP 客户端，浏览器登录可正常通过）。",
         "data": {
           "username": "用户名（手机号）",
           "password": "密码"
@@ -32,7 +32,7 @@
       },
       "b2c": {
         "title": "粘贴授权码",
-        "description": "请在浏览器中打开以下链接，用福特派账号登录（用户名：{username}）。登录成功后浏览器会跳转到 ford.com.cn，地址栏 URL 带 ?code=xxx——把 xxx 复制粘贴到这里。该授权码一次性有效，换取令牌后立即失效。\n\n登录链接：\n{login_url}",
+        "description": "请在浏览器中打开以下链接，用{brand}账号登录（用户名：{username}）。登录成功后浏览器会跳转到 ford.com.cn，地址栏 URL 带 ?code=xxx——把 xxx 复制粘贴到这里。该授权码一次性有效，换取令牌后立即失效。\n\n登录链接：\n{login_url}",
         "data": {
           "code": "授权码"
         }
